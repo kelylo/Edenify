@@ -138,8 +138,13 @@ const Home: React.FC = () => {
   const [newTaskDate, setNewTaskDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newTaskAlarmEnabled, setNewTaskAlarmEnabled] = useState(true);
   const [newTaskAlarmSource, setNewTaskAlarmSource] = useState<'default' | 'upload'>('default');
-  const [newTaskAlarmSound, setNewTaskAlarmSound] = useState('Aggressive Bell');
-  const [newTaskPreferredMusic, setNewTaskPreferredMusic] = useState('Instrumental Warmth');
+  const [newTaskAlarmSound, setNewTaskAlarmSound] = useState(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+  const [newTaskPreferredMusic, setNewTaskPreferredMusic] = useState(() => {
+    const playlist = user?.preferences.customFocusPlaylistNames || [];
+    if (playlist.length > 0 && playlist[0]) return playlist[0];
+    if (user?.preferences.customFocusSongName) return user.preferences.customFocusSongName;
+    return 'Instrumental Warmth';
+  });
   const [newTaskCustomAlarmName, setNewTaskCustomAlarmName] = useState('');
   const [newTaskCustomAlarmDataUrl, setNewTaskCustomAlarmDataUrl] = useState('');
   const [isGeneratingTask, setIsGeneratingTask] = useState(false);
@@ -177,6 +182,39 @@ const Home: React.FC = () => {
     user?.preferences.notifications.dailyScripture &&
     user?.preferences.notifications.streakProtection
   );
+
+  const favoriteFocusTrack = useMemo(() => {
+    const names = user?.preferences.customFocusPlaylistNames || [];
+    const urls = user?.preferences.customFocusPlaylistDataUrls || [];
+    if (names.length > 0 && urls.length > 0 && names[0] && urls[0]) {
+      return { name: names[0], dataUrl: urls[0] };
+    }
+    if (user?.preferences.customFocusSongName && user?.preferences.customFocusSongDataUrl) {
+      return { name: user.preferences.customFocusSongName, dataUrl: user.preferences.customFocusSongDataUrl };
+    }
+    return null;
+  }, [
+    user?.preferences.customFocusPlaylistNames,
+    user?.preferences.customFocusPlaylistDataUrls,
+    user?.preferences.customFocusSongName,
+    user?.preferences.customFocusSongDataUrl,
+  ]);
+
+  useEffect(() => {
+    if (showQuickAdd) return;
+    setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+    if (favoriteFocusTrack) {
+      setNewTaskPreferredMusic(favoriteFocusTrack.name);
+      setNewTaskAlarmSource('upload');
+      setNewTaskCustomAlarmName(favoriteFocusTrack.name);
+      setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
+    } else {
+      setNewTaskPreferredMusic('Instrumental Warmth');
+      setNewTaskAlarmSource('default');
+      setNewTaskCustomAlarmName('');
+      setNewTaskCustomAlarmDataUrl('');
+    }
+  }, [favoriteFocusTrack, user?.preferences.focusAlarmSound, showQuickAdd]);
 
   const stopActiveAlarm = () => {
     if (alarmIntervalRef.current) {
@@ -970,11 +1008,19 @@ const Home: React.FC = () => {
     setNewTaskPeriod(roundedParts.period);
     setNewTaskDate(format(new Date(), 'yyyy-MM-dd'));
     setNewTaskAlarmEnabled(true);
-    setNewTaskAlarmSource('default');
-    setNewTaskAlarmSound('Aggressive Bell');
-    setNewTaskPreferredMusic('Instrumental Warmth');
-    setNewTaskCustomAlarmName('');
-    setNewTaskCustomAlarmDataUrl('');
+    if (favoriteFocusTrack) {
+      setNewTaskAlarmSource('upload');
+      setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+      setNewTaskPreferredMusic(favoriteFocusTrack.name);
+      setNewTaskCustomAlarmName(favoriteFocusTrack.name);
+      setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
+    } else {
+      setNewTaskAlarmSource('default');
+      setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+      setNewTaskPreferredMusic('Instrumental Warmth');
+      setNewTaskCustomAlarmName('');
+      setNewTaskCustomAlarmDataUrl('');
+    }
     setQuickAddError('');
     setShowQuickAdd(false);
   };
@@ -1021,6 +1067,10 @@ const Home: React.FC = () => {
       priority: newTaskPriority,
       preferredTime: newTaskTime,
       intent: newTaskName || 'help me create one meaningful task for today',
+      userPreferences: {
+        favoriteMusicName: favoriteFocusTrack?.name,
+        focusAlarmSound: user?.preferences.focusAlarmSound,
+      },
     });
 
     if (!suggestion) {
@@ -1044,6 +1094,11 @@ const Home: React.FC = () => {
     }
     setNewTaskAlarmSound(suggestion.alarmSound || newTaskAlarmSound);
     setNewTaskPreferredMusic(suggestion.preferredMusic || newTaskPreferredMusic);
+    if (favoriteFocusTrack && suggestion.preferredMusic === favoriteFocusTrack.name) {
+      setNewTaskAlarmSource('upload');
+      setNewTaskCustomAlarmName(favoriteFocusTrack.name);
+      setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
+    }
     setIsGeneratingTask(false);
   };
 

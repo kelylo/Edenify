@@ -80,6 +80,14 @@ const defaultTelegramDefaults: TelegramDefaults = {
 const songOptions = ['Instrumental Warmth', 'Piano Prayer', 'Ambient Strings', 'Lo-fi Study'];
 const alarmOptions = ['Aggressive Bell', 'Emergency Pulse', 'Sharp Chime', 'Focus Siren'];
 
+type UserPreferencesShape = Partial<{
+  focusAlarmSound: string;
+  customFocusSongName: string;
+  customFocusSongDataUrl: string;
+  customFocusPlaylistNames: string[];
+  customFocusPlaylistDataUrls: string[];
+}>;
+
 const defaultUserPreferences = {
   focusDuration: 25,
   shortBreakDuration: 5,
@@ -270,6 +278,55 @@ function ensureTelegramDefaults(store: TelegramStoreItem): TelegramDefaults {
     ...defaultTelegramDefaults,
     ...(store.defaults || {}),
   };
+}
+
+function resolveUserPreferences(db: DbShape, userId?: string): UserPreferencesShape {
+  if (!userId) return {};
+  const fromUsers = db.users?.find((user) => user.id === userId)?.preferences || {};
+  const state = db.data?.[userId] || {};
+  const fromStateUser = state?.user?.preferences || {};
+  const fromStateRoot = state?.preferences || {};
+
+  return {
+    ...(fromUsers || {}),
+    ...(fromStateUser || {}),
+    ...(fromStateRoot || {}),
+  };
+}
+
+function resolveUserSongChoices(db: DbShape, userId?: string): string[] {
+  const prefs = resolveUserPreferences(db, userId);
+  const dynamicNames: string[] = [];
+
+  if (Array.isArray(prefs.customFocusPlaylistNames)) {
+    prefs.customFocusPlaylistNames.forEach((name) => {
+      const clean = String(name || '').trim();
+      if (clean) dynamicNames.push(clean);
+    });
+  }
+
+  if (String(prefs.customFocusSongName || '').trim()) {
+    dynamicNames.push(String(prefs.customFocusSongName || '').trim());
+  }
+
+  return Array.from(new Set([...songOptions, ...dynamicNames]));
+}
+
+function inferTelegramDefaultsFromUser(db: DbShape, userId?: string): Partial<TelegramDefaults> {
+  const prefs = resolveUserPreferences(db, userId);
+  const inferred: Partial<TelegramDefaults> = {};
+
+  if (String(prefs.focusAlarmSound || '').trim()) {
+    inferred.alarmSound = String(prefs.focusAlarmSound || '').trim();
+  }
+
+  const choices = resolveUserSongChoices(db, userId);
+  const customOnly = choices.filter((name) => !songOptions.includes(name));
+  if (customOnly.length > 0) {
+    inferred.preferredMusic = customOnly[0];
+  }
+
+  return inferred;
 }
 
 const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
@@ -608,15 +665,19 @@ async function startServer() {
       const priority = String(req.body?.priority || 'C');
       const preferredTime = String(req.body?.preferredTime || '08:00');
       const intent = String(req.body?.intent || 'create one practical task');
+      const preferredMusicHint = String(req.body?.userPreferences?.favoriteMusicName || '').trim();
+      const preferredAlarmHint = String(req.body?.userPreferences?.focusAlarmSound || '').trim();
       const layerKnowledge = req.body?.layerKnowledge || {};
       const appKnowledge = Array.isArray(req.body?.appKnowledge) ? req.body.appKnowledge : [];
 
       const raw = await generateWithServerGemini({
-        contents: `Create one practical task for Edenify.\nReturn strict JSON only:\n{\n  "name": "task title",\n  "time": "08:00 AM",\n  "alarmSound": "Aggressive Bell",\n  "preferredMusic": "Instrumental Warmth"\n}\nContext:\n- User: ${userName}\n- Layer: ${layer}\n- Priority: ${priority}\n- Preferred Time: ${preferredTime}\n- Intent: ${intent}\n- Layer knowledge: ${Array.isArray(layerKnowledge[layer?.toLowerCase?.() || '']) ? layerKnowledge[layer.toLowerCase()].join(' ') : ''}\n- App knowledge: ${appKnowledge.join(' ')}`,
+        contents: `Create one practical task for Edenify.\nReturn strict JSON only:\n{\n  "name": "task title",\n  "time": "08:00 AM",\n  "alarmSound": "Aggressive Bell",\n  "preferredMusic": "Instrumental Warmth"\n}\nContext:\n- User: ${userName}\n- Layer: ${layer}\n- Priority: ${priority}\n- Preferred Time: ${preferredTime}\n- Intent: ${intent}\n- Preferred user song: ${preferredMusicHint || 'none'}\n- Preferred user alarm: ${preferredAlarmHint || 'none'}\n- Layer knowledge: ${Array.isArray(layerKnowledge[layer?.toLowerCase?.() || '']) ? layerKnowledge[layer.toLowerCase()].join(' ') : ''}\n- App knowledge: ${appKnowledge.join(' ')}`,
         responseMimeType: 'application/json',
       });
 
       const suggestion = parseJsonSafely<{ name: string; time: string; alarmSound: string; preferredMusic: string }>(raw);
+      if (!suggestion.alarmSound && preferredAlarmHint) suggestion.alarmSound = preferredAlarmHint;
+      if (!suggestion.preferredMusic && preferredMusicHint) suggestion.preferredMusic = preferredMusicHint;
       res.json({ success: true, suggestion });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message || 'Could not suggest task.' });
@@ -879,6 +940,12 @@ async function startServer() {
       userId,
     };
 
+    db.telegram!.byChatId![normalizedChatId].defaults = {
+      ...ensureTelegramDefaults(db.telegram!.byChatId![normalizedChatId]),
+      ...(db.telegram!.byChatId![normalizedChatId].defaults || {}),
+      ...inferTelegramDefaultsFromUser(db, userId),
+    };
+
     const linkedTasks = mergeTelegramTasksByIdentity(
       previousUnifiedTasks,
       db.telegram!.byChatId![normalizedChatId].tasks || []
@@ -1028,6 +1095,7 @@ async function startServer() {
         const activePendingTasks = activeTasks.filter((task) => task.repeat !== 'daily');
         const command = text.toLowerCase();
         const defaults = ensureTelegramDefaults(store);
+        const dynamicSongOptions = resolveUserSongChoices(db, store.userId);
 
         const clearWizard = () => {
           store.wizard = undefined;
@@ -1054,7 +1122,7 @@ async function startServer() {
           await sendTelegramMessage(token, chatId, 'Wizard cancelled.');
         } else if (command === '/defaults') {
           store.wizard = { mode: 'defaults', step: 'song' };
-          await sendTelegramMessage(token, chatId, `Default setup 1/4: choose default song by number:\n${formatNumberedOptions(songOptions)}\nCurrent: ${defaults.preferredMusic}`);
+          await sendTelegramMessage(token, chatId, `Default setup 1/4: choose default song by number:\n${formatNumberedOptions(dynamicSongOptions)}\nCurrent: ${defaults.preferredMusic}`);
         } else if (command === '/help' || command === '/start') {
           await sendTelegramMessage(
             token,
@@ -1103,9 +1171,9 @@ async function startServer() {
         } else if (store.wizard?.mode === 'defaults') {
           store.defaults = store.defaults || {};
           if (store.wizard.step === 'song') {
-            const selectedSong = resolveNumberedChoice(text, songOptions);
+            const selectedSong = resolveNumberedChoice(text, dynamicSongOptions);
             if (!selectedSong) {
-              await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(songOptions)}`);
+              await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(dynamicSongOptions)}`);
             } else {
               store.defaults.preferredMusic = selectedSong;
               store.wizard.step = 'alarm';
@@ -1174,7 +1242,7 @@ async function startServer() {
               } else if (field === 'priority') {
                 await sendTelegramMessage(token, chatId, `Choose new priority by number:\n${formatNumberedOptions(priorityOptions)}`);
               } else if (field === 'song') {
-                await sendTelegramMessage(token, chatId, `Choose new song by number:\n${formatNumberedOptions(songOptions)}`);
+                await sendTelegramMessage(token, chatId, `Choose new song by number:\n${formatNumberedOptions(dynamicSongOptions)}`);
               } else if (field === 'alarm') {
                 await sendTelegramMessage(token, chatId, `Choose new alarm by number:\n${formatNumberedOptions(alarmOptions)}`);
               } else {
@@ -1238,9 +1306,9 @@ async function startServer() {
                 next.priority = value;
               }
               if (field === 'song') {
-                const value = resolveNumberedChoice(text, songOptions);
+                const value = resolveNumberedChoice(text, dynamicSongOptions);
                 if (!value) {
-                  await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(songOptions)}`);
+                  await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(dynamicSongOptions)}`);
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
                   continue;
@@ -1385,12 +1453,12 @@ async function startServer() {
               total: 7,
               title: 'Preferred Song',
               prompt: 'Choose preferred song by number.',
-              options: songOptions,
+              options: dynamicSongOptions,
               hint: `Send 0 for none, or default (${defaults.preferredMusic})`,
             }));
           } else if (store.wizard.step === 'song') {
             const lowerText = text.toLowerCase();
-            const selectedSong = resolveNumberedChoice(text, songOptions);
+            const selectedSong = resolveNumberedChoice(text, dynamicSongOptions);
             draft.preferredMusic = lowerText === 'none' || lowerText === '0' ? '' : lowerText === 'default' ? defaults.preferredMusic : selectedSong || '';
             if (lowerText !== 'none' && lowerText !== '0' && lowerText !== 'default' && !selectedSong) {
               await sendTelegramMessage(token, chatId, buildWizardCard({
@@ -1399,7 +1467,7 @@ async function startServer() {
                 total: 7,
                 title: 'Preferred Song',
                 prompt: 'Invalid choice. Choose by number.',
-                options: songOptions,
+                options: dynamicSongOptions,
                 hint: 'Send 0 for none',
               }));
               db.telegram!.byChatId![chatId] = store;

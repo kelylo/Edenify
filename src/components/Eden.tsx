@@ -152,7 +152,27 @@ const parseCombinedDateTime = (text: string): { date?: Date; time?: string } | n
 };
 
 const Eden: React.FC = () => {
-  const { tasks, habits, addTask, toggleTask, updateTask, deleteTask, addHabit, toggleHabit } = useApp();
+  const { user, tasks, habits, addTask, toggleTask, updateTask, deleteTask, addHabit, toggleHabit } = useApp();
+
+  const favoriteFocusTrack = React.useMemo(() => {
+    const names = user?.preferences.customFocusPlaylistNames || [];
+    const urls = user?.preferences.customFocusPlaylistDataUrls || [];
+    if (names.length > 0 && urls.length > 0 && names[0] && urls[0]) {
+      return { name: names[0], dataUrl: urls[0] };
+    }
+    if (user?.preferences.customFocusSongName && user?.preferences.customFocusSongDataUrl) {
+      return { name: user.preferences.customFocusSongName, dataUrl: user.preferences.customFocusSongDataUrl };
+    }
+    return null;
+  }, [
+    user?.preferences.customFocusPlaylistNames,
+    user?.preferences.customFocusPlaylistDataUrls,
+    user?.preferences.customFocusSongName,
+    user?.preferences.customFocusSongDataUrl,
+  ]);
+
+  const preferredAlarmSound = user?.preferences.focusAlarmSound || defaultAlarmSound;
+  const preferredTaskMusic = favoriteFocusTrack?.name || defaultPreferredMusic;
 
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'model'; text: string; id: string; timestamp: Date; feedback?: 'helpful' | 'unhelpful' }>>([
     { role: 'model', text: INTRO_MESSAGE, id: 'intro', timestamp: new Date() },
@@ -408,8 +428,10 @@ const Eden: React.FC = () => {
           completed: false,
           date: draft.date || new Date().toISOString(),
           alarmEnabled: true,
-          alarmSound: defaultAlarmSound,
-          preferredMusic: defaultPreferredMusic,
+          alarmSound: preferredAlarmSound,
+          preferredMusic: preferredTaskMusic,
+          customAlarmAudioName: favoriteFocusTrack?.name,
+          customAlarmAudioDataUrl: favoriteFocusTrack?.dataUrl,
         };
 
         addTask(newTask);

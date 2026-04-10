@@ -2392,6 +2392,10 @@ export async function suggestTaskWithGemini(input: {
   priority: string;
   preferredTime?: string;
   intent: string;
+  userPreferences?: {
+    favoriteMusicName?: string;
+    focusAlarmSound?: string;
+  };
 }) {
   const quickLocal = !needsComplexReasoning(input.intent || '') && (input.intent || '').trim().length < 120;
 
@@ -2408,8 +2412,8 @@ export async function suggestTaskWithGemini(input: {
     return {
       name: fallbackByLayer[layer] || 'Complete one high-impact task',
       time: input.preferredTime || '08:00 AM',
-      alarmSound: 'Aggressive Bell',
-      preferredMusic: 'Instrumental Warmth',
+      alarmSound: input.userPreferences?.focusAlarmSound || 'Aggressive Bell',
+      preferredMusic: input.userPreferences?.favoriteMusicName || 'Instrumental Warmth',
     };
   }
 

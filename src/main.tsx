@@ -1,0 +1,73 @@
+import {StrictMode} from 'react';
+import {createRoot} from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
+import App from './App.tsx';
+import './index.css';
+
+const applyPersistedTheme = () => {
+  try {
+    const stored = window.localStorage.getItem('edenify_theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const selected = stored === 'dark' || stored === 'light' || stored === 'system' ? stored : 'system';
+    const theme = selected === 'system' ? (prefersDark ? 'dark' : 'light') : selected;
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.setAttribute('data-theme', selected);
+  } catch {
+    // Ignore storage/theme init failures.
+  }
+};
+
+applyPersistedTheme();
+
+const applyViewportMode = () => {
+  const viewport = document.querySelector('meta[name="viewport"]');
+  if (!viewport) return;
+
+  const isSmallMobile = window.matchMedia('(max-width: 768px), (max-height: 740px)').matches;
+  if (isSmallMobile) {
+    viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover');
+    document.documentElement.style.touchAction = 'manipulation';
+  } else {
+    viewport.setAttribute('content', 'width=device-width, initial-scale=1.0');
+    document.documentElement.style.removeProperty('touch-action');
+  }
+};
+
+applyViewportMode();
+window.addEventListener('resize', applyViewportMode);
+
+if (import.meta.env.PROD) {
+  registerSW({
+    immediate: true,
+    onRegisteredSW(swScriptUrl) {
+      console.log('PWA service worker registered:', swScriptUrl);
+    },
+    onRegisterError(error) {
+      console.error('PWA service worker registration failed:', error);
+    },
+  });
+} else if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => {
+      registration.unregister();
+    });
+  }).catch((error) => {
+    console.warn('Service worker cleanup failed:', error);
+  });
+
+  if ('caches' in window) {
+    caches.keys().then((cacheNames) => {
+      cacheNames.forEach((cacheName) => {
+        caches.delete(cacheName);
+      });
+    }).catch((error) => {
+      console.warn('Cache cleanup failed:', error);
+    });
+  }
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);

@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Newsreader", "EB Garamond", serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: #fef9f2;
+  --color-primary: #964407;
+  --color-primary-container: #b65c21;
+  --color-on-surface: #1d1c18;
+  --color-on-surface-variant: #554339;
+  --color-surface-container-low: #f8f3ec;
+  --color-surface-container-lowest: #ffffff;
+  --color-outline-variant: #dbc1b5;
+  --color-secondary: #6f5b46;
+  
+  /* Layer Colors */
+  --color-spiritual: #7a6550;
+  --color-academic: #4d6b4a;
+  --color-financial: #4a5d6b;
+  --color-physical: #8c3c3c;
+  --color-general: #5c4a6b;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html,
+body {
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 700px at 85% -10%, rgba(182, 92, 33, 0.08), transparent 70%),
+    radial-gradient(900px 500px at 0% 100%, rgba(122, 101, 80, 0.08), transparent 72%);
+}
+
+.dark {
+  color-scheme: dark;
+  --color-background: #13110f;
+  --color-primary: #d88a52;
+  --color-primary-container: #b66e3d;
+  --color-on-surface: #f5eee7;
+  --color-on-surface-variant: #d4c0b2;
+  --color-surface-container-low: #1f1a16;
+  --color-surface-container-lowest: #171310;
+  --color-outline-variant: #5f4a3e;
+  --color-secondary: #c2a891;
+
+  --color-spiritual: #b59c86;
+  --color-academic: #9cb88f;
+  --color-financial: #8faeb8;
+  --color-physical: #c28a8a;
+  --color-general: #a995be;
+}
+
+.dark body::before {
+  background:
+    radial-gradient(1200px 700px at 85% -10%, rgba(216, 138, 82, 0.12), transparent 70%),
+    radial-gradient(900px 500px at 0% 100%, rgba(169, 149, 190, 0.12), transparent 72%);
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-sans antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+.serif-italic {
+  font-family: "Newsreader", serif;
+  font-style: italic;
+}
+
+.editorial-shadow {
+  box-shadow: 0 12px 32px rgba(44, 33, 24, 0.06);
+}
+
+.reflection-marker {
+  @apply relative pl-6;
+}
+
+.reflection-marker::before {
+  content: '';
+  @apply absolute left-0 top-1 bottom-1 w-1 rounded-full;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+.pillar-icon-spiritual {
+  color: #7a6550;
+}
+
+.pillar-icon-academic {
+  color: #4d6b4a;
+}
+
+.pillar-icon-financial {
+  color: #4a5d6b;
+}
+
+.pillar-icon-physical {
+  color: #8c3c3c;
+}
+
+.pillar-icon-general {
+  color: #5c4a6b;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

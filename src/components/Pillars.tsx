@@ -1,0 +1,724 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useApp } from '../AppContext';
+import { ArrowLeft, CheckCircle2, Circle } from 'lucide-react';
+import { cn, formatXP, getProgress } from '../lib/utils';
+import { Habit, Layer, LayerId } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import { getEdenInsight } from '../services/gemini';
+
+const iconByLayer: Record<LayerId, string> = {
+  spiritual: 'auto_awesome',
+  academic: 'menu_book',
+  financial: 'account_balance',
+  physical: 'exercise',
+  general: 'dashboard',
+};
+
+const layerColorClasses: Record<LayerId, { stripe: string; icon: string; level: string; bar: string }> = {
+  spiritual: {
+    stripe: 'bg-[var(--color-spiritual)]',
+    icon: 'text-[var(--color-spiritual)]',
+    level: 'text-[var(--color-spiritual)]',
+    bar: 'bg-[var(--color-spiritual)]',
+  },
+  academic: {
+    stripe: 'bg-[var(--color-academic)]',
+    icon: 'text-[var(--color-academic)]',
+    level: 'text-[var(--color-academic)]',
+    bar: 'bg-[var(--color-academic)]',
+  },
+  financial: {
+    stripe: 'bg-[var(--color-financial)]',
+    icon: 'text-[var(--color-financial)]',
+    level: 'text-[var(--color-financial)]',
+    bar: 'bg-[var(--color-financial)]',
+  },
+  physical: {
+    stripe: 'bg-[var(--color-physical)]',
+    icon: 'text-[var(--color-physical)]',
+    level: 'text-[var(--color-physical)]',
+    bar: 'bg-[var(--color-physical)]',
+  },
+  general: {
+    stripe: 'bg-[var(--color-general)]',
+    icon: 'text-[var(--color-general)]',
+    level: 'text-[var(--color-general)]',
+    bar: 'bg-[var(--color-general)]',
+  },
+};
+
+const layerSubtitle: Record<LayerId, string> = {
+  spiritual: 'Cultivating inner stillness and sacred discipline.',
+  academic: 'Deep work, curiosity, and long-term mastery.',
+  financial: 'Wise stewardship and durable provision.',
+  physical: 'Strength, energy, and embodied discipline.',
+  general: 'Order, focus, and whole-life alignment.',
+};
+
+const layerPractices: Record<LayerId, Array<{ title: string; detail: string; icon: string }>> = {
+  spiritual: [
+    { title: 'Prayer Rhythm', detail: 'Start and end day with focused prayer windows.', icon: 'self_improvement' },
+    { title: 'Scripture Meditation', detail: 'Read one passage and write one obedience action.', icon: 'menu_book' },
+    { title: 'Sabbath Margin', detail: 'Protect one low-noise block for worship and stillness.', icon: 'church' },
+  ],
+  academic: [
+    { title: 'Deep Work Block', detail: 'One uninterrupted 45-minute learning sprint.', icon: 'psychology' },
+    { title: 'Active Recall', detail: 'Summarize from memory before checking notes.', icon: 'quiz' },
+    { title: 'Concept Journal', detail: 'Capture one key idea and one application daily.', icon: 'edit_note' },
+  ],
+  financial: [
+    { title: 'Expense Review', detail: 'Track every expense and label it by need/value.', icon: 'receipt_long' },
+    { title: 'Budget Checkpoint', detail: 'Run a 30-minute budget review each week.', icon: 'account_balance_wallet' },
+    { title: 'Income Growth', detail: 'One action daily toward income or skill expansion.', icon: 'trending_up' },
+  ],
+  physical: [
+    { title: 'Exercise Session', detail: 'Strength or cardio session with progressive load.', icon: 'fitness_center' },
+    { title: 'Nutrition Discipline', detail: 'Whole-food meal with protein and hydration target.', icon: 'restaurant' },
+    { title: 'Recovery Protocol', detail: 'Sleep schedule, stretch, and mobility reset.', icon: 'hotel' },
+  ],
+  general: [
+    { title: 'Daily Planning', detail: 'Define top 3 outcomes before work begins.', icon: 'event_note' },
+    { title: 'Environment Reset', detail: '15-minute cleanup to reduce visual friction.', icon: 'cleaning_services' },
+    { title: 'Digital Boundaries', detail: 'Intentional app windows and distraction blocks.', icon: 'screen_lock_portrait' },
+  ],
+};
+
+const layerHeroTitle: Record<LayerId, string> = {
+  spiritual: 'The Rhythm of Devotion',
+  academic: 'The Rhythm of Mastery',
+  financial: 'The Rhythm of Stewardship',
+  physical: 'The Rhythm of Restoration',
+  general: 'The Rhythm of Alignment',
+};
+
+const layerGuideCards: Record<LayerId, Array<{ title: string; detail: string; mins: string }>> = {
+  spiritual: [
+    { title: 'Morning Prayer Walk', detail: 'Quiet movement plus focused prayer to anchor the day.', mins: '20 mins' },
+    { title: 'Psalm Meditation', detail: 'Read slowly, write one obedience action, and pray it.', mins: '15 mins' },
+    { title: 'Evening Examen', detail: 'Review gratitude, conviction, and next-day intention.', mins: '12 mins' },
+  ],
+  academic: [
+    { title: 'Deep Work Sprint', detail: 'Single-topic 45-minute concentration block.', mins: '45 mins' },
+    { title: 'Active Recall Loop', detail: 'Recall from memory before checking your notes.', mins: '20 mins' },
+    { title: 'Concept Review', detail: 'Capture one core concept and practical application.', mins: '18 mins' },
+  ],
+  financial: [
+    { title: 'Budget Integrity Check', detail: 'Review inflow/outflow and trim non-essential leaks.', mins: '25 mins' },
+    { title: 'Expense Labeling', detail: 'Classify every expense by value and necessity.', mins: '15 mins' },
+    { title: 'Income Expansion', detail: 'One action that increases skill, value, or cashflow.', mins: '30 mins' },
+  ],
+  physical: [
+    { title: 'Full Body Discipline', detail: 'Compound movement session to build strength and stamina.', mins: '60 mins' },
+    { title: 'Core Foundation', detail: 'Stability and breathing for posture and endurance.', mins: '20 mins' },
+    { title: 'Lower Body Power', detail: 'Mobility plus loaded movement for resilient legs.', mins: '30 mins' },
+  ],
+  general: [
+    { title: 'Daily System Reset', detail: 'Declutter and reset work environment friction points.', mins: '15 mins' },
+    { title: 'Priority Lock-in', detail: 'Define top 3 outcomes and sequence execution blocks.', mins: '12 mins' },
+    { title: 'Digital Boundary Block', detail: 'Disable distractions and protect one deep block.', mins: '10 mins' },
+  ],
+};
+
+const layerWisdom: Record<LayerId, Array<{ title: string; detail: string; points: string[] }>> = {
+  spiritual: [
+    { title: 'Prayer Fuel', detail: 'Begin with surrender before strategy.', points: ['Start with thanksgiving', 'Pray for one clear obedience'] },
+    { title: 'Scripture Rooting', detail: 'Truth repeated becomes conviction embodied.', points: ['Read short and deep', 'Journal one practical step'] },
+  ],
+  academic: [
+    { title: 'Pre-Study Setup', detail: 'Reduce cognitive switching before deep work.', points: ['Single objective', 'Phone out of reach'] },
+    { title: 'Retention Loop', detail: 'Learning sticks when recalled without notes.', points: ['Explain aloud', 'Teach in one paragraph'] },
+  ],
+  financial: [
+    { title: 'Cashflow Awareness', detail: 'Stewardship starts with clear visibility.', points: ['Track all spending', 'Tag impulse purchases'] },
+    { title: 'Margin Building', detail: 'Small consistent reserves protect long-term growth.', points: ['Automate weekly savings', 'Reduce recurring leakage'] },
+  ],
+  physical: [
+    { title: 'Pre-Workout Fuel', detail: 'Ignite output with simple quality fuel.', points: ['Oats and nuts', 'Green tea or coffee'] },
+    { title: 'Recovery Greens', detail: 'Repair and reduce inflammation through nutrition.', points: ['Leafy greens daily', 'Hydrate to recovery'] },
+  ],
+  general: [
+    { title: 'Attention Guardrails', detail: 'What you allow in focus determines outcomes.', points: ['Single-task windows', 'Scheduled communication blocks'] },
+    { title: 'Weekly Review', detail: 'Reflection converts activity into learning.', points: ['Review wins and misses', 'Reset next-week systems'] },
+  ],
+};
+
+const physicalGuideSeed = [
+  { title: 'Full Body Discipline', detail: 'A rigorous sequence designed to challenge endurance and build functional strength across all major muscle chains.', duration: '60 Mins', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAKQErgHO8A5Rnc8j4u6Nnb2ZMl1_LfInsxmAKDU8SzvHxQ79wCtv60s5vVuVaFs4Ye52oWiZcGteTllOibwUYU5_rSWqXrSDjecuRAg_aoDBo8Ucw6sdPM92I6oyquy8j-p7EVff9x8xf1MSJGIeiELvPpCvMMfPN8cP8pOUuK6EWajQgqVRttM9henrZfc5zCuSNHd-z54ERYEqBuInONrrGa9D4gwdrl0Wnd0-VfBtOpOOyw_iceCZzNxfuNycinGqudLZsyDA' },
+  { title: 'Upper Body', detail: 'Sculpt and strengthen arms and chest through controlled tempo.', duration: 'Play', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDG5-9XWCyVbEjxHng_RTHR7XKuK3S2-1FXykZSaWuRYnucJWKdpzKiQhjhWdKugmgl39decj1TzMASQYg7oKM9bfJZjdLodU-_RlH86TAgUMUhoLnfIs8jA3jy8czMrZ9o9BTIU9eL-O1ScOv02RVQJNE0dQYO2FeTn_cPpN-PisjDCYa8mXSkk5QU4SkpZjofXk-jcn8-yF2sOvFQJGgmUSh9yTZncnWoVwgHgL67dbpQDqeuaLtOfXNRv2XbFLLEVgHceAn2kw' },
+  { title: 'Core (Abs)', detail: 'Stability and focus for a centered physical foundation.', duration: 'Play', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAKutajJRHrQTl46zs-2yHrzeO5EaTgnYgr_muHLTxdD_z65Vtpcl9cnH72TStxOd2-1QwcTJNKWaxZl_2GkY6U_NfjG1fedIZ0D510abaEOvZF3du7ABy0XH0hc-qo9qo5xZ1p5QgI8D-7dsc-IcYt7SPhUeEwXqZiZoybHUrK5cTUfX6RBZHHGqRV8xhB8ICNVhy1xwa6Kl8yKjaKY3J84JFRDlkE5imIrUaiIkR-rDIHP0PSPR3fqNC2cJrKEc2VzpHdLzk9rA' },
+  { title: 'Lower Body', detail: 'Power and mobility for the lower extremities.', duration: 'Play', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDnsHku6g2kzAIqe9cYN63SXWo5cPRaFY1TDxw2HQmkQGex6T9TRH2tFTLArsGb2cyKGBLSUSRD8ttlROG7toqeWuoocF3pDAkk3M4x2NPML1Pjp59g_A__z1jXGn4O0KQOpXggY5faeYHTr-431MsoPUXjbtny3at42cVdt897sL_oMcapkDSlsLO-g56ek7spWLcqsZX7IBJ4AoMxPpB_AAxT71_ZQMuleZtz5AY5vScm53-BdBxmFfsJ8pk4Y0ZydAyUi11SJA' },
+];
+
+const physicalNutrition = [
+  { title: 'Pre-Workout Fuel', detail: 'Ignite your metabolism with slow-release carbohydrates and natural stimulants.', points: ['Oats with crushed walnuts', 'Green tea or cold-brew espresso'] },
+  { title: 'Recovery Greens', detail: 'Repair muscle fibers and reduce inflammation with alkalizing nutrients.', points: ['Spinach and spirulina smoothie', 'Steamed broccoli with lemon zest'] },
+];
+
+const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId }) => {
+  const { layers, habits, tasks, addHabit, addTask, toggleHabit } = useApp();
+
+  const [activeLayerId, setActiveLayerId] = useState<LayerId | null>(null);
+  const [habitName, setHabitName] = useState('');
+  const [habitMinutes, setHabitMinutes] = useState(15);
+  const [habitFrequency, setHabitFrequency] = useState<'daily' | 'weekly'>('daily');
+  const [habitTime, setHabitTime] = useState('08:00');
+  const [loadingPlan, setLoadingPlan] = useState(false);
+  const [layerPlan, setLayerPlan] = useState('');
+  const [showAllGuides, setShowAllGuides] = useState(false);
+  const [layerActionMessage, setLayerActionMessage] = useState('');
+  const [layerHint, setLayerHint] = useState('');
+  const [loadingHint, setLoadingHint] = useState(false);
+
+  const layerStats = useMemo(() => {
+    return layers.map((layer) => {
+      const layerHabits = habits.filter((h) => h.layerId === layer.id);
+      const layerTasks = tasks.filter((t) => t.layerId === layer.id);
+      const completedHabits = layerHabits.filter((h) => h.completedToday).length;
+      const completedTasks = layerTasks.filter((t) => t.completed).length;
+      const activityDenominator = layerHabits.length + layerTasks.length;
+      const activityProgress = activityDenominator > 0 ? Math.round(((completedHabits + completedTasks) / activityDenominator) * 100) : 0;
+      return {
+        ...layer,
+        habitsActive: layerHabits.length,
+        tasksToday: layerTasks.filter((t) => !t.completed).length,
+        progress: Math.max(Math.round(getProgress(layer.xp, layer.maxXp)), activityProgress),
+      };
+    });
+  }, [layers, habits, tasks]);
+
+  const activeLayer = useMemo<Layer | null>(() => {
+    if (!activeLayerId) return null;
+    return layers.find((layer) => layer.id === activeLayerId) || null;
+  }, [activeLayerId, layers]);
+
+  const activeLayerHabits = useMemo<Habit[]>(() => {
+    if (!activeLayerId) return [];
+    return habits.filter((h) => h.layerId === activeLayerId);
+  }, [habits, activeLayerId]);
+
+  const createHabitForLayer = (layerId: LayerId) => {
+    const name = habitName.trim();
+    if (!name) return;
+
+    const timeMatch = habitTime.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
+    if (!timeMatch) {
+      setLayerActionMessage('Please enter a valid habit time in HH:mm format.');
+      return;
+    }
+
+    const now = new Date();
+    const period = now.getHours() < 12 ? 'morning' : now.getHours() < 17 ? 'afternoon' : 'evening';
+    const habitId = `habit-${Date.now()}`;
+    const habitTaskId = `habit-task-${habitId}`;
+
+    addHabit({
+      id: habitId,
+      name,
+      layerId,
+      frequency: habitFrequency,
+      durationMinutes: Math.max(5, habitMinutes),
+      streak: 0,
+      history: Array(14).fill(false),
+      completedToday: false,
+      timeOfDay: period,
+      time: habitTime,
+      linkedTaskId: habitTaskId,
+    });
+
+    addTask({
+      id: habitTaskId,
+      name: `[Habit] ${name}`,
+      layerId,
+      priority: 'C',
+      repeat: habitFrequency,
+      time: habitTime,
+      completed: false,
+      date: new Date().toISOString(),
+      alarmEnabled: true,
+      alarmSound: 'Aggressive Bell',
+      preferredMusic: 'Instrumental Warmth',
+    });
+
+    setHabitName('');
+    setHabitMinutes(15);
+    setHabitFrequency('daily');
+    setHabitTime('08:00');
+    setLayerActionMessage('Habit created and linked to a repeating task schedule.');
+  };
+
+  useEffect(() => {
+    setShowAllGuides(false);
+    setLayerActionMessage('');
+    setLayerHint('');
+    setLayerPlan('');
+  }, [activeLayerId]);
+
+  useEffect(() => {
+    if (!initialLayerId) return;
+    const valid = layers.some((layer) => layer.id === initialLayerId);
+    if (valid) {
+      setActiveLayerId(initialLayerId as LayerId);
+    }
+  }, [initialLayerId, layers]);
+
+  const askEdenForLayerHint = async (layer: Layer) => {
+    setLoadingHint(true);
+    try {
+      const hint = await getEdenInsight(`Give one tactical coaching hint for ${layer.name} layer. Include one action user can do in next 10 minutes.`);
+      setLayerHint(hint);
+    } finally {
+      setLoadingHint(false);
+    }
+  };
+
+  const createGuideTask = (layerId: LayerId, title: string, minutesLabel: string) => {
+    const timeHint = /\d+/.exec(minutesLabel)?.[0] || '20';
+    addTask({
+      id: `task-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+      name: `${title} (${timeHint}m)`,
+      layerId,
+      priority: layerId === 'spiritual' ? 'B' : 'C',
+      repeat: 'once',
+      time: '08:00 AM',
+      completed: false,
+      date: new Date().toISOString(),
+      alarmEnabled: true,
+      alarmSound: 'Aggressive Bell',
+      preferredMusic: 'Instrumental Warmth',
+    });
+    setLayerActionMessage(`Added to Home tasks: ${title}`);
+  };
+
+  const handleViewPlan = async (layer: Layer) => {
+    setLoadingPlan(true);
+    try {
+      const plan = await getEdenInsight(
+        `Create a practical 3-step action plan for the ${layer.name} layer. Include today's immediate action, this week's structure, and one metric to track. Keep concise.`
+      );
+      setLayerPlan(plan);
+      setLayerActionMessage(`${layer.name} plan generated by Eden.`);
+    } finally {
+      setLoadingPlan(false);
+    }
+  };
+
+  const handleViewAllGuides = (layerId: LayerId) => {
+    setShowAllGuides((prev) => !prev);
+    setLayerActionMessage(showAllGuides ? 'Guide list collapsed.' : 'Guide list expanded.');
+  };
+
+  return (
+    <div className="p-6 pb-24 max-w-4xl mx-auto">
+      <header className="mb-10">
+        <h1 className="display-text text-5xl font-medium text-on-surface mb-2">Your Layers</h1>
+        <p className="text-on-surface-variant text-xs tracking-[0.14em] uppercase font-bold">The Architecture of Your Life</p>
+      </header>
+
+      <section className="flex flex-col gap-6">
+        {layerStats.map((layer, idx) => (
+          <motion.button
+            key={layer.id}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.04 }}
+            onClick={() => setActiveLayerId(layer.id)}
+            className="relative w-full text-left bg-surface-container-lowest border border-outline-variant/20 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className={cn('absolute left-0 top-0 bottom-0 w-1.5', layerColorClasses[layer.id].stripe)} />
+            <div className="p-5 pl-8">
+              <div className="flex justify-between items-start mb-4 gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={cn('material-symbols-outlined text-3xl', layerColorClasses[layer.id].icon)}>{iconByLayer[layer.id]}</span>
+                  <div>
+                    <h3 className="text-xl font-serif font-semibold text-on-surface">{layer.name}</h3>
+                    <p className={cn('text-xs font-label font-bold', layerColorClasses[layer.id].level)}>Level {layer.level}</p>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs text-on-surface-variant mb-1">{layer.habitsActive} habits active</p>
+                  <p className="text-xs text-on-surface-variant">{layer.tasksToday} tasks today</p>
+                </div>
+              </div>
+
+              <div className="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+                <motion.div
+                  className={cn('h-full rounded-full', layerColorClasses[layer.id].bar)}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${layer.progress}%` }}
+                  transition={{ duration: 0.7, ease: 'easeOut' }}
+                />
+              </div>
+              <div className="flex justify-between mt-2">
+                <span className="text-[10px] text-outline uppercase tracking-widest font-bold">XP Progress</span>
+                <span className="text-[10px] text-outline uppercase tracking-widest font-bold">{formatXP(layer.xp, layer.maxXp)}</span>
+              </div>
+            </div>
+          </motion.button>
+        ))}
+      </section>
+
+      <AnimatePresence>
+        {activeLayer && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            className="fixed inset-0 z-[80] bg-background overflow-y-auto"
+          >
+            <header className="sticky top-0 w-full z-50 bg-[#fef9f2]/80 backdrop-blur-md flex justify-between items-center px-4 sm:px-6 h-16 border-b border-outline-variant/25">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveLayerId(null)}
+                  className="h-9 w-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center"
+                  aria-label="Back to layers"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <span className="text-xl font-serif italic text-primary tracking-tight">Edenify</span>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-surface-container-high overflow-hidden">
+                <span className="material-symbols-outlined text-primary text-[18px] h-full w-full flex items-center justify-center">layers</span>
+              </div>
+            </header>
+
+            <main className="pt-6 pb-28 px-4 sm:px-6 max-w-3xl mx-auto min-h-screen">
+              <div className="mb-10 relative">
+                <div className={cn('absolute -left-3 top-0 w-1 h-12 rounded-full', layerColorClasses[activeLayer.id].stripe)} />
+                <h1 className="text-4xl font-serif font-bold tracking-tight text-on-surface mb-2">{activeLayer.name} Layer</h1>
+                <p className="text-on-surface-variant/70 italic">{layerSubtitle[activeLayer.id]}</p>
+              </div>
+
+              {activeLayer.id === 'physical' ? (
+                <>
+                  <section className="mb-16">
+                    <div className="relative overflow-hidden rounded-[32px] bg-surface-container-low min-h-[300px] flex items-center">
+                      <div className="absolute inset-0 opacity-10">
+                        <img className="w-full h-full object-cover" alt="Physical layer" src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=70" />
+                      </div>
+                      <div className="relative z-10 p-8 md:p-12 lg:p-16 flex flex-col md:flex-row gap-12 items-center w-full">
+                        <div className="md:w-1/2">
+                          <div className="flex items-center gap-2 mb-4">
+                            <span className="material-symbols-outlined text-[var(--color-physical)]">auto_awesome</span>
+                            <span className="font-label uppercase text-[10px] tracking-[0.2em] font-bold text-[var(--color-physical)]">Eden Insight</span>
+                          </div>
+                          <h2 className="text-4xl text-on-surface mb-6 leading-tight">The Rhythm of Restoration</h2>
+                          <p className="text-secondary leading-relaxed mb-8 font-body">True physical progress is found in the stillness between the strain. Prioritize magnesium-rich greens and 7 hours of deep recovery tonight to optimize your metabolic threshold.</p>
+                          <button onClick={() => handleViewPlan(activeLayer)} className="bg-gradient-to-br from-primary to-primary-container text-on-primary px-8 py-3 rounded-full font-label font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all">
+                            View Plan
+                          </button>
+                          <button
+                            onClick={() => askEdenForLayerHint(activeLayer)}
+                            className="ml-2 mt-3 md:mt-0 px-8 py-3 rounded-full border border-outline-variant/35 text-[11px] font-bold uppercase tracking-[0.14em] text-primary"
+                          >
+                            Get Eden Hint
+                          </button>
+                        </div>
+                        <div className="md:w-1/2 flex justify-center">
+                          <div className="relative group">
+                            <div className="absolute -inset-4 bg-[var(--color-physical)]/5 rounded-full blur-2xl group-hover:bg-[var(--color-physical)]/10 transition-all" />
+                            <img className="relative w-64 h-64 md:w-80 md:h-80 object-cover rounded-[48px] shadow-sm rotate-3 group-hover:rotate-0 transition-transform duration-500" alt="Recovery bowl" src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=900&q=70" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="mb-20">
+                    <div className="flex justify-between items-center mb-10">
+                      <h3 className="text-3xl text-on-surface">Workout Guides</h3>
+                      <button onClick={() => handleViewAllGuides('physical')} className="font-label text-xs font-bold text-[var(--color-physical)] border-b border-[var(--color-physical)]/20 pb-1 cursor-pointer">{showAllGuides ? 'Collapse' : 'Explore All'}</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                      <div className="md:col-span-7 bg-surface-container-lowest rounded-[28px] overflow-hidden flex flex-col group border-t-2 border-[var(--color-physical)]/5">
+                        <div className="h-64 overflow-hidden relative">
+                          <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Full body discipline" src={physicalGuideSeed[0].image} />
+                          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-[var(--color-physical)]">60 Mins</div>
+                        </div>
+                        <div className="p-8">
+                          <h4 className="text-2xl font-serif italic mb-3">{physicalGuideSeed[0].title}</h4>
+                          <p className="text-secondary text-sm leading-relaxed mb-6">{physicalGuideSeed[0].detail}</p>
+                          <button onClick={() => createGuideTask('physical', physicalGuideSeed[0].title, physicalGuideSeed[0].duration)} className="w-full bg-surface-container-high py-4 rounded-xl font-label font-bold text-[10px] uppercase tracking-widest hover:bg-[var(--color-physical)] hover:text-white transition-colors duration-300">Start Workout</button>
+                        </div>
+                      </div>
+
+                      <div className="md:col-span-5 flex flex-col gap-6">
+                        {(showAllGuides ? physicalGuideSeed.slice(1) : physicalGuideSeed.slice(1, 3)).map((guide) => (
+                          <div key={guide.title} className="bg-surface-container-low p-6 rounded-[24px] flex items-center gap-6 group hover:bg-surface-container-high transition-colors">
+                            <div className="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0">
+                              <img className="w-full h-full object-cover" alt={guide.title} src={guide.image} />
+                            </div>
+                            <div className="flex-grow">
+                              <h4 className="font-serif italic text-lg leading-tight mb-1">{guide.title}</h4>
+                              <p className="text-outline text-xs line-clamp-2">{guide.detail}</p>
+                            </div>
+                            <button onClick={() => createGuideTask('physical', guide.title, guide.duration)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[var(--color-physical)] shadow-sm group-hover:scale-110 transition-transform" aria-label={`Play ${guide.title}`}>
+                              <span className="material-symbols-outlined text-sm">play_arrow</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="mb-20">
+                    <h3 className="text-3xl text-on-surface mb-10">Nutritional Wisdom</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {physicalNutrition.map((card, index) => (
+                        <div key={card.title} className={cn('bg-surface-container-low rounded-[28px] p-8 border-l-4', index === 0 ? 'border-[var(--color-physical)]/30' : 'border-[var(--color-academic)]/30')}>
+                          <div className="flex items-center gap-4 mb-6">
+                            <span className={cn('material-symbols-outlined', index === 0 ? 'text-[var(--color-physical)]' : 'text-[var(--color-academic)]')}>{index === 0 ? 'bolt' : 'eco'}</span>
+                            <h4 className="text-xl font-serif italic">{card.title}</h4>
+                          </div>
+                          <p className="text-secondary text-sm mb-6">{card.detail}</p>
+                          <ul className="space-y-3">
+                            {card.points.map((point) => (
+                              <li key={point} className="flex items-center gap-3 text-on-surface-variant font-body text-sm">
+                                <span className={cn('w-1.5 h-1.5 rounded-full', index === 0 ? 'bg-[var(--color-physical)]/40' : 'bg-[var(--color-academic)]/40')} />
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                </>
+              ) : (
+                <>
+                  <section className="mb-6 relative overflow-hidden rounded-[2rem] border border-outline-variant/25 bg-surface-container-low p-5 sm:p-7">
+                    <div className={cn('absolute top-0 left-0 w-full h-0.5', layerColorClasses[activeLayer.id].stripe)} />
+                    <p className={cn('text-[10px] uppercase tracking-[0.15em] font-bold mb-3', layerColorClasses[activeLayer.id].icon)}>Eden Insight</p>
+                    <h2 className="text-4xl font-serif italic text-on-surface mb-4">{layerHeroTitle[activeLayer.id]}</h2>
+                    <p className="text-sm text-on-surface-variant leading-relaxed">
+                      {layerSubtitle[activeLayer.id]} Focus on consistency over intensity, then let repetition compound your results.
+                    </p>
+                    <button onClick={() => handleViewPlan(activeLayer)} className="mt-5 px-5 py-2 rounded-full bg-gradient-to-br from-primary to-primary-container text-white text-[11px] font-bold uppercase tracking-[0.14em]">
+                      View Plan
+                    </button>
+                    <button
+                      onClick={() => askEdenForLayerHint(activeLayer)}
+                      className="mt-3 ml-2 px-5 py-2 rounded-full border border-outline-variant/35 text-[11px] font-bold uppercase tracking-[0.14em] text-primary"
+                    >
+                      Get Eden Hint
+                    </button>
+                  </section>
+
+                  <section className="mb-6 bg-surface-container-low rounded-2xl border border-outline-variant/30 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-outline mb-3">Core Practices</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {layerPractices[activeLayer.id].map((practice) => (
+                        <div key={practice.title} className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                          <span className="material-symbols-outlined text-primary text-[18px]">{practice.icon}</span>
+                          <p className="text-sm font-semibold text-on-surface mt-1">{practice.title}</p>
+                          <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">{practice.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-3xl font-serif italic text-on-surface">Guides</h3>
+                      <button onClick={() => handleViewAllGuides(activeLayer.id)} className={cn('text-[10px] uppercase tracking-[0.14em] font-bold', layerColorClasses[activeLayer.id].icon)}>{showAllGuides ? 'Collapse' : 'Explore All'}</button>
+                    </div>
+                    <div className="space-y-3">
+                      {(showAllGuides ? layerGuideCards[activeLayer.id] : layerGuideCards[activeLayer.id].slice(0, 2)).map((guide) => (
+                        <div key={guide.title} className="rounded-2xl border border-outline-variant/25 bg-surface-container-lowest p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xl font-serif italic text-on-surface">{guide.title}</p>
+                              <p className="mt-1 text-xs text-on-surface-variant">{guide.detail}</p>
+                            </div>
+                            <button onClick={() => createGuideTask(activeLayer.id, guide.title, guide.mins)} className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary bg-primary/10 px-2 py-1 rounded-full hover:bg-primary hover:text-white transition-colors">{guide.mins}</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="mb-6">
+                    <h3 className="text-3xl font-serif italic text-on-surface mb-3">Layer Wisdom</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {layerWisdom[activeLayer.id].map((block) => (
+                        <div key={block.title} className="rounded-2xl border border-outline-variant/25 bg-surface-container-low p-4">
+                          <p className="text-lg font-serif italic text-on-surface">{block.title}</p>
+                          <p className="text-xs text-on-surface-variant mt-1 mb-3">{block.detail}</p>
+                          <ul className="space-y-2">
+                            {block.points.map((point) => (
+                              <li key={point} className="text-xs text-on-surface-variant flex items-start gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5" />
+                                {point}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {layerActionMessage && (
+                <section className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-xs font-semibold text-primary">{layerActionMessage}</p>
+                </section>
+              )}
+
+              {(loadingHint || layerHint) && (
+                <section className="mb-6 rounded-2xl border border-[var(--color-spiritual)]/20 bg-[var(--color-spiritual)]/5 px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-[var(--color-spiritual)] mb-1">Eden Coach Hint</p>
+                  <p className="text-xs text-on-surface-variant">{loadingHint ? 'Eden is generating a practical hint...' : layerHint}</p>
+                </section>
+              )}
+
+              {(loadingPlan || layerPlan) && (
+                <section className="mb-6 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary mb-1">Eden Plan</p>
+                  <p className="text-xs text-on-surface-variant whitespace-pre-line">{loadingPlan ? 'Eden is building your plan...' : layerPlan}</p>
+                </section>
+              )}
+
+              {activeLayerHabits.length === 0 ? (
+                <section className="bg-surface-container-low rounded-[2rem] p-8 sm:p-12 flex flex-col items-center text-center">
+                  <div className="relative w-44 h-44 mb-6 flex items-center justify-center">
+                    <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100">
+                      <path d="M 20 70 A 30 30 0 0 1 80 70" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary/30" />
+                      <circle cx="50" cy="65" r="3" fill="currentColor" className="text-primary animate-pulse" />
+                    </svg>
+                  </div>
+                  <h2 className="text-2xl font-serif font-bold text-on-surface mb-3">No habits in this layer yet.</h2>
+                  <p className="text-on-surface-variant max-w-xs mb-8 leading-relaxed">Begin with one small habit. Consistency over intensity.</p>
+
+                  <div className="w-full max-w-lg space-y-3 mb-6">
+                    <input
+                      value={habitName}
+                      onChange={(e) => setHabitName(e.target.value)}
+                      title="Habit name"
+                      placeholder="Habit name"
+                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="number"
+                        min={5}
+                        value={habitMinutes}
+                        onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
+                        title="Habit minutes"
+                        placeholder="Minutes"
+                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                      />
+                      <select
+                        value={habitFrequency}
+                        onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
+                        title="Habit frequency"
+                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <input
+                      type="time"
+                      value={habitTime}
+                      onChange={(e) => setHabitTime(e.target.value)}
+                      title="Habit time"
+                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                    <button
+                      onClick={() => createHabitForLayer(activeLayer.id)}
+                      className="bg-gradient-to-br from-primary to-primary-container text-white font-label font-semibold py-3 px-6 rounded-full shadow-lg shadow-primary/10 active:scale-95"
+                    >
+                      Add Habit + Loop Task
+                    </button>
+                  </div>
+                </section>
+              ) : (
+                <section className="space-y-4">
+                  <div className="bg-surface-container-low rounded-2xl border border-outline-variant/30 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-outline mb-3">Habits in {activeLayer.name}</p>
+                    <div className="space-y-3">
+                      {activeLayerHabits.map((habit) => (
+                        <div key={habit.id} className="border border-outline-variant/25 rounded-xl px-3 py-3 bg-surface-container-lowest">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-on-surface truncate">{habit.name}</p>
+                              <p className="text-[10px] uppercase tracking-[0.14em] text-secondary/70 font-bold mt-1">
+                                {habit.frequency} • {habit.durationMinutes} min • {habit.time || '08:00'} • streak {habit.streak}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => toggleHabit(habit.id)}
+                              className={cn('transition-colors', habit.completedToday ? 'text-primary' : 'text-secondary/40 hover:text-primary')}
+                              aria-label={`Toggle habit ${habit.name}`}
+                            >
+                              {habit.completedToday ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                            </button>
+                          </div>
+                          <div className="mt-2 flex gap-1">
+                            {habit.history.slice(-14).map((done, idx) => (
+                              <span key={`${habit.id}-${idx}`} className={cn('h-2 w-2 rounded-full', done ? 'bg-primary' : 'bg-outline-variant/45')} />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-surface-container-low rounded-2xl border border-outline-variant/30 p-4 space-y-3">
+                    <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-outline">Add new habit</p>
+                    <input
+                      value={habitName}
+                      onChange={(e) => setHabitName(e.target.value)}
+                      title="Habit name"
+                      placeholder="Habit name"
+                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="number"
+                        min={5}
+                        value={habitMinutes}
+                        onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
+                        title="Habit minutes"
+                        placeholder="Minutes"
+                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                      />
+                      <select
+                        value={habitFrequency}
+                        onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
+                        title="Habit frequency"
+                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+                    <input
+                      type="time"
+                      value={habitTime}
+                      onChange={(e) => setHabitTime(e.target.value)}
+                      title="Habit time"
+                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                    />
+                    <button
+                      onClick={() => createHabitForLayer(activeLayer.id)}
+                      className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-2.5 text-xs font-bold uppercase tracking-[0.14em]"
+                    >
+                      Save Habit + Loop Task
+                    </button>
+                  </div>
+                </section>
+              )}
+            </main>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default Pillars;

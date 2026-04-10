@@ -543,9 +543,34 @@ const Home: React.FC = () => {
       stopActiveAlarm();
     };
 
-    const playAggressivePulse = (task: Task) => {
+    const resolveTaskUploadedAlarm = (task: Task) => {
       if (task.customAlarmAudioDataUrl) {
-        const media = new Audio(task.customAlarmAudioDataUrl);
+        return { dataUrl: task.customAlarmAudioDataUrl, name: task.customAlarmAudioName || task.preferredMusic || 'Uploaded audio' };
+      }
+
+      const preferredName = String(task.preferredMusic || '').trim();
+      if (!preferredName) return null;
+
+      const playlistNames = user?.preferences.customFocusPlaylistNames || [];
+      const playlistUrls = user?.preferences.customFocusPlaylistDataUrls || [];
+      const index = playlistNames.findIndex((name) => String(name || '').trim().toLowerCase() === preferredName.toLowerCase());
+      if (index >= 0 && playlistUrls[index]) {
+        return { dataUrl: playlistUrls[index], name: playlistNames[index] };
+      }
+
+      const singleName = String(user?.preferences.customFocusSongName || '').trim();
+      const singleUrl = String(user?.preferences.customFocusSongDataUrl || '').trim();
+      if (singleName && singleUrl && singleName.toLowerCase() === preferredName.toLowerCase()) {
+        return { dataUrl: singleUrl, name: singleName };
+      }
+
+      return null;
+    };
+
+    const playAggressivePulse = (task: Task) => {
+      const uploaded = resolveTaskUploadedAlarm(task);
+      if (uploaded?.dataUrl) {
+        const media = new Audio(uploaded.dataUrl);
         media.loop = true;
         media.volume = 1;
         media.play().catch(() => {

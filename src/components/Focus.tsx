@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Pause, Play, RefreshCw, Volume2 } from 'lucide-react';
+import { ArrowLeft, Pause, Play, RefreshCw, Volume2, Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
+import { cn, requestMediaPermission } from '../lib/utils';
 import { User } from '../types';
 
 interface FocusProps {
@@ -34,6 +34,9 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
   });
   const [shufflePlaylist, setShufflePlaylist] = useState(Boolean(user?.preferences.shuffleFocusPlaylist));
   const [previewMode, setPreviewMode] = useState<'alarm' | null>(null);
+  const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
+  const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
+  const focusPageRef = useRef<HTMLDivElement | null>(null);
 
   const runningMediaRef = useRef<HTMLAudioElement | null>(null);
   const previewMediaRef = useRef<HTMLAudioElement | null>(null);
@@ -150,6 +153,26 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
   }, []);
 
   useEffect(() => {
+    const checkMediaPermission = async () => {
+      const permitted = await requestMediaPermission();
+      setMediaPermissionGranted(permitted);
+    };
+    checkMediaPermission();
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const currentFullscreen = document.fullscreenElement;
+      setIsFocusFullscreen(Boolean(currentFullscreen));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     setUser({
       ...user,
@@ -215,6 +238,28 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     uploadedTrackIndexRef.current = 0;
   };
 
+  const toggleFocusFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        const element = focusPageRef.current || document.documentElement;
+        
+        // Ensure theme classes are applied to fullscreen element
+        const isDark = document.documentElement.classList.contains('dark');
+        if (isDark) {
+          element.classList.add('dark');
+        } else {
+          element.classList.remove('dark');
+        }
+        
+        await element.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.warn('Focus fullscreen toggle failed:', error);
+    }
+  };
+
   const previewAlarmSong = () => {
     if (previewMode === 'alarm') {
       stopPreviewPlayback();
@@ -238,24 +283,34 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
   };
 
   return (
-    <div className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
+    <div ref={focusPageRef} className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
       <div className="sticky top-0 z-10 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/25">
         <div className="h-[62px] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between">
           <button aria-label="Close focus page" title="Back" onClick={onClose} className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
             <ArrowLeft size={18} />
           </button>
           <p className="font-label text-[11px] uppercase tracking-[0.16em] text-outline font-bold">Focus Session</p>
-          <button
-            aria-label="Reset timer"
-            title="Reset"
-            onClick={() => {
-              setSecondsLeft(minutes * 60);
-              setIsRunning(false);
-            }}
-            className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary"
-          >
-            <RefreshCw size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={isFocusFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              title={isFocusFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              onClick={toggleFocusFullscreen}
+              className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary"
+            >
+              {isFocusFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button
+              aria-label="Reset timer"
+              title="Reset"
+              onClick={() => {
+                setSecondsLeft(minutes * 60);
+                setIsRunning(false);
+              }}
+              className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary"
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -279,19 +334,29 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
 
         <section className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 space-y-3">
           <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Focus Audio Playlist (Upload Only)</p>
-          <input
-            type="file"
-            accept="audio/*"
-            multiple
-            title="Upload focus songs"
-            onChange={(e) => handleSongUpload(e.target.files)}
-            className="w-full text-sm"
-          />
-          <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 100MB each. Focus uses your uploaded playlist only.</p>
-          {customSongPlaylist.length > 0 ? (
-            <p className="text-xs text-on-surface-variant">Selected: {customSongPlaylist.length} file(s) • First: {customSongPlaylist[0].name}</p>
+          {mediaPermissionGranted === false ? (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+              <p className="text-xs text-red-700 font-semibold">Media access denied</p>
+              <p className="text-xs text-red-600 mt-1">Please enable media/file permissions in your browser settings to upload focus songs.</p>
+            </div>
           ) : (
-            <p className="text-xs text-secondary">No playlist uploaded yet. Timer will run silently until you upload songs.</p>
+            <>
+              <input
+                type="file"
+                accept="audio/*"
+                multiple
+                title="Upload focus songs"
+                onChange={(e) => handleSongUpload(e.target.files)}
+                className="w-full text-sm disabled:opacity-50"
+                disabled={mediaPermissionGranted === false}
+              />
+              <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 100MB each. Focus uses your uploaded playlist only.</p>
+              {customSongPlaylist.length > 0 ? (
+                <p className="text-xs text-on-surface-variant">Selected: {customSongPlaylist.length} file(s) • First: {customSongPlaylist[0].name}</p>
+              ) : (
+                <p className="text-xs text-secondary">No playlist uploaded yet. Timer will run silently until you upload songs.</p>
+              )}
+            </>
           )}
           {customSongPlaylist.length > 1 && (
             <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">

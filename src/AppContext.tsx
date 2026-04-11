@@ -131,7 +131,31 @@ const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[]) => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  // Cache management for session persistence
+  const cacheUser = (user: User | null) => {
+    if (!user) {
+      localStorage.removeItem('edenify_cached_user');
+      return;
+    }
+    try {
+      localStorage.setItem('edenify_cached_user', JSON.stringify(user));
+    } catch (error) {
+      console.warn('Failed to cache user session:', error);
+    }
+  };
+
+  const getCachedUser = (): User | null => {
+    try {
+      const cached = localStorage.getItem('edenify_cached_user');
+      return cached ? JSON.parse(cached) : null;
+    } catch (error) {
+      console.warn('Failed to restore cached user:', error);
+      localStorage.removeItem('edenify_cached_user');
+      return null;
+    }
+  };
+
+  const [user, setUserState] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [layers, setLayers] = useState<Layer[]>(INITIAL_LAYERS);
   const [habits, setHabits] = useState<Habit[]>(INITIAL_HABITS);
@@ -145,20 +169,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyingCloudStateRef = useRef(false);
   const lastCloudStateHashRef = useRef('');
 
+  // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
+  const setUser = (nextUser: User | null | ((prev: User | null) => User | null)) => {
+    if (typeof nextUser === 'function') {
+      setUserState((prev) => {
+        const result = nextUser(prev);
+        cacheUser(result);
+        return result;
+      });
+    } else {
+      setUserState(nextUser);
+      cacheUser(nextUser);
+    }
+  };
+
   // Load from localStorage on init
   useEffect(() => {
     let cancelled = false;
 
     const restore = async () => {
       try {
+        // Step 1: Try to restore from cached user first (enables offline session persistence)
+        const cachedUser = getCachedUser();
+        if (cachedUser) {
+          setUserState(normalizeUser(cachedUser));
+        }
+
+        // Step 2: Check server session to validate/update cached user
         const sessionResponse = await fetch('/api/auth/session');
         const sessionData = await sessionResponse.json();
         if (sessionResponse.ok && sessionData?.success && sessionData?.user) {
-          setUser(normalizeUser(sessionData.user));
+          setUserState(normalizeUser(sessionData.user));
+          cacheUser(normalizeUser(sessionData.user));
+        } else if (!cachedUser) {
+          // Only clear user if there's no cache to fall back on
+          setUserState(null);
         }
 
         const resetMarker = localStorage.getItem('edenify_reset_version');
-
         if (resetMarker !== RESET_VERSION) {
           localStorage.setItem('edenify_reset_version', RESET_VERSION);
         }
@@ -175,6 +223,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch (error) {
         console.warn('Session restore failed:', error);
+        // If offline or error, still try cached user as fallback
+        const cachedUser = getCachedUser();
+        if (cachedUser && !cancelled) {
+          setUserState(normalizeUser(cachedUser));
+        }
       } finally {
         if (!cancelled) {
           setAuthReady(true);

@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
-import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate } from '../lib/utils';
-import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
+import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission } from '../lib/utils';
+import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
+import { sendCrossChannelNotification, requestNotificationPermission, areNotificationsEnabled } from '../services/notifications';
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
@@ -154,6 +155,7 @@ const Home: React.FC = () => {
   const [notificationStatus, setNotificationStatus] = useState('');
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
+  const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
   const isSubPageOpen = showScripturePage || showFocusPage;
 
   const reminderTimeoutsRef = useRef<Record<string, number>>({});
@@ -290,7 +292,7 @@ const Home: React.FC = () => {
     }
   };
 
-  const pushReminderEvent = (title: string, detail: string) => {
+  const pushReminderEvent = async (title: string, detail: string) => {
     const item = {
       id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
       title,
@@ -300,6 +302,23 @@ const Home: React.FC = () => {
 
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
+
+    // Send cross-channel notifications (system + Telegram)
+    if (areNotificationsEnabled() || user?.preferences.telegramChatId) {
+      try {
+        await sendCrossChannelNotification(
+          {
+            title: title,
+            body: detail,
+            icon: '/edenify-logo.png',
+            tag: `reminder-${item.id}`,
+          },
+          user?.preferences.telegramChatId
+        );
+      } catch (error) {
+        console.warn('Failed to send notifications:', error);
+      }
+    }
   };
 
   useEffect(() => {
@@ -493,6 +512,14 @@ const Home: React.FC = () => {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  useEffect(() => {
+    const checkMediaPermission = async () => {
+      const permitted = await requestMediaPermission();
+      setMediaPermissionGranted(permitted);
+    };
+    checkMediaPermission();
   }, []);
 
   useEffect(() => {
@@ -862,7 +889,19 @@ const Home: React.FC = () => {
   const toggleScriptureFullscreen = async () => {
     try {
       if (!document.fullscreenElement) {
-        await (scripturePageRef.current || document.documentElement).requestFullscreen();
+        const element = scripturePageRef.current || document.documentElement;
+        
+        // Ensure theme classes are applied to fullscreen element
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'system';
+        const isDark = document.documentElement.classList.contains('dark');
+        
+        if (isDark) {
+          element.classList.add('dark');
+        } else {
+          element.classList.remove('dark');
+        }
+        
+        await element.requestFullscreen();
       } else {
         await document.exitFullscreen();
       }
@@ -988,6 +1027,18 @@ const Home: React.FC = () => {
     }
 
     addTask(draftTask);
+
+    // Save last used alarm song for future task creation
+    if (newTaskCustomAlarmDataUrl && newTaskCustomAlarmName && user) {
+      setUser({
+        ...user,
+        preferences: {
+          ...user.preferences,
+          lastAlarmSongName: newTaskCustomAlarmName,
+          lastAlarmSongDataUrl: newTaskCustomAlarmDataUrl,
+        },
+      });
+    }
 
     setNewTaskName('');
     setNewTaskLayer('general');
@@ -1828,17 +1879,27 @@ const Home: React.FC = () => {
 
                   <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
                     <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block">Reminder Song (Upload Only)</label>
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      title="Upload reminder song"
-                      onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
-                      className="w-full text-sm"
-                    />
-                    {newTaskCustomAlarmName ? (
-                      <p className="text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
+                    {mediaPermissionGranted === false ? (
+                      <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                        <p className="text-xs text-red-700 font-semibold">Media access denied</p>
+                        <p className="text-xs text-red-600 mt-1">Please enable media/file permissions in your browser settings to upload songs.</p>
+                      </div>
                     ) : (
-                      <p className="text-xs text-secondary">No upload yet. Upload a song to enable task alarm audio.</p>
+                      <>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          title="Upload reminder song"
+                          onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
+                          className="w-full text-sm disabled:opacity-50"
+                          disabled={mediaPermissionGranted === false}
+                        />
+                        {newTaskCustomAlarmName ? (
+                          <p className="text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
+                        ) : (
+                          <p className="text-xs text-secondary">No upload yet. Upload a song to enable task alarm audio.</p>
+                        )}
+                      </>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
                       <button

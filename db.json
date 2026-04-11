@@ -283,10 +283,23 @@
           "repeat": "daily",
           "time": "08:00",
           "completed": false,
-          "date": "2026-04-10T20:13:10.336Z",
+          "date": "2026-04-11T00:06:40.316Z",
           "alarmEnabled": true,
           "alarmSound": "Aggressive Bell",
           "preferredMusic": "Instrumental Warmth"
+        },
+        {
+          "id": "tg-1775867804454-3ec61",
+          "name": "sleep please",
+          "layerId": "physical",
+          "priority": "A",
+          "repeat": "once",
+          "time": "01:40",
+          "completed": false,
+          "date": "2026-04-11T00:36:44.454Z",
+          "alarmEnabled": true,
+          "alarmSound": "Aggressive Bell",
+          "preferredMusic": "Ambient Strings"
         }
       ],
       "journal": [],
@@ -392,7 +405,7 @@
     }
   },
   "telegram": {
-    "offset": 146642071,
+    "offset": 146642082,
     "byChatId": {
       "123456789": {
         "tasks": [
@@ -422,25 +435,52 @@
             "repeat": "daily",
             "time": "08:00",
             "completed": false,
-            "date": "2026-04-10T20:13:10.336Z",
+            "date": "2026-04-11T00:06:40.316Z",
+            "alarmEnabled": true,
+            "alarmSound": "Aggressive Bell",
+            "preferredMusic": "Instrumental Warmth"
+          },
+          {
+            "id": "tg-1775867804454-3ec61",
+            "name": "sleep please",
+            "layerId": "physical",
+            "priority": "A",
+            "repeat": "once",
+            "time": "01:40",
+            "completed": false,
+            "date": "2026-04-11T00:36:44.454Z",
+            "alarmEnabled": true,
+            "alarmSound": "Aggressive Bell",
+            "preferredMusic": "Ambient Strings"
+          }
+        ],
+        "userId": "admin-root",
+        "wizard": {
+          "mode": "set",
+          "step": "name",
+          "draft": {
+            "layerId": "general",
+            "priority": "C",
+            "repeat": "once",
+            "time": "08:00",
             "alarmEnabled": true,
             "alarmSound": "Aggressive Bell",
             "preferredMusic": "Instrumental Warmth"
           }
-        ],
-        "userId": "admin-root"
+        }
       }
     },
     "poller": {
       "ownerId": "8620-766186",
-      "updatedAt": "2026-04-11T00:03:21.141Z"
+      "updatedAt": "2026-04-11T00:55:40.155Z"
     },
     "reminders": {
       "7875504612|tg-1775819316081-7f6b7|2026-04-10T11:10": "2026-04-10T11:09:10.253Z",
       "7875504612|tg-1775823480186-23b90|2026-04-10T12:15": "2026-04-10T12:18:11.283Z",
       "7875504612|tg-1775832735170-2eed5|2026-04-10T14:52": "2026-04-10T14:52:40.659Z",
       "7875504612|tg-1775834783518-3307b|2026-04-10T15:27": "2026-04-10T15:26:41.174Z",
-      "7875504612|task-1775847703330|2026-04-10T19:05": "2026-04-10T19:04:20.331Z"
+      "7875504612|task-1775847703330|2026-04-10T19:05": "2026-04-10T19:04:20.331Z",
+      "7875504612|tg-1775867804454-3ec61|2026-04-11T00:35": "2026-04-11T00:36:52.877Z"
     }
   },
   "sessions": {

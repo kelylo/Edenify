@@ -79,6 +79,9 @@ export interface User {
     customFocusPlaylistNames?: string[];
     customFocusPlaylistDataUrls?: string[];
     shuffleFocusPlaylist?: boolean;
+    lastAlarmSongName?: string; // Remember last used alarm song
+    lastAlarmSongDataUrl?: string; // Remember last used alarm audio
+    mostRepeatedTasks?: Array<{ name: string; layerId: LayerId; priority: string; count: number }>; // Track for AI prediction
     notifications: {
       taskReminders: boolean;
       dailyScripture: boolean;

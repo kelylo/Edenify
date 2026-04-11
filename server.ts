@@ -883,7 +883,11 @@ async function startServer() {
       const normalizedChatId = (chatId || '').trim().replace(/[^0-9-]/g, '');
 
       if (!token) {
-        res.status(400).json({ success: false, error: 'TELEGRAM_BOT_TOKEN is missing in server environment.' });
+        console.error('TELEGRAM_BOT_TOKEN is not configured in server environment. Set this variable in your render.yaml or .env.local');
+        res.status(400).json({
+          success: false,
+          error: 'Telegram integration not configured. Please set TELEGRAM_BOT_TOKEN in server environment.',
+        });
         return;
       }
 
@@ -906,12 +910,14 @@ async function startServer() {
       const data = await telegramResponse.json();
 
       if (!telegramResponse.ok || !data?.ok) {
+        console.error('Telegram API error:', data?.description || 'Unknown error');
         res.status(502).json({ success: false, error: data?.description || 'Telegram API call failed.' });
         return;
       }
 
       res.json({ success: true });
     } catch (error) {
+      console.error('Telegram notification error:', error);
       res.status(500).json({ success: false, error: 'Could not send Telegram notification.' });
     }
   });

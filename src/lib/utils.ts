@@ -6,6 +6,34 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export async function requestMediaPermission(): Promise<boolean> {
+  // Check if permissions API is available
+  if (!navigator.permissions || !navigator.permissions.query) {
+    // Permissions API not available, assume granted and return true
+    return true;
+  }
+
+  try {
+    // Try to query microphone/media permissions
+    // Note: actual file upload doesn't need microphone, but we're indicating media access
+    const permissionStatus = await navigator.permissions.query({ name: 'microphone' as any });
+    
+    if (permissionStatus.state === 'granted') {
+      return true;
+    }
+
+    if (permissionStatus.state === 'denied') {
+      return false;
+    }
+
+    // For 'prompt' state, return true to allow user to grant on first use
+    return true;
+  } catch {
+    // If permission check fails, assume access is available
+    return true;
+  }
+}
+
 export function formatXP(xp: number, maxXp: number) {
   return `${xp.toLocaleString()} / ${maxXp.toLocaleString()}`;
 }

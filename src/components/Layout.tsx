@@ -62,6 +62,25 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
     applyTheme(next, true);
   };
 
+  const cycleTheme = () => {
+    const order: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system'];
+    const currentIndex = order.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % order.length;
+    setExplicitTheme(order[nextIndex]);
+  };
+
+  const getThemeIcon = () => {
+    if (theme === 'light') return <Sun size={14} />;
+    if (theme === 'dark') return <Moon size={14} />;
+    return <Laptop size={14} />;
+  };
+
+  const getThemeLabel = () => {
+    if (theme === 'light') return 'Light';
+    if (theme === 'dark') return 'Dark';
+    return 'System';
+  };
+
   const tabs = [
     { id: 'home', icon: Home, label: 'Home' },
     { id: 'layers', icon: Layers, label: 'Pillars' },
@@ -71,42 +90,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
 
   return (
     <div className="flex flex-col h-screen bg-background max-w-5xl mx-auto relative overflow-hidden">
-      <div className="fixed top-3 right-3 z-[60] rounded-xl border border-outline-variant/50 bg-surface-container-low p-1 shadow-md flex items-center gap-1">
+      <div className="fixed top-3 right-3 z-[60] rounded-xl border border-outline-variant/50 bg-surface-container-low p-1 shadow-md">
         <button
           type="button"
-          onClick={() => setExplicitTheme('light')}
-          aria-label="Use light mode"
-          title="Light mode"
-          className={cn(
-            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
-            theme === 'light' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
-          )}
+          onClick={cycleTheme}
+          aria-label={`Toggle theme (current: ${getThemeLabel()})`}
+          title={`Click to cycle: ${getThemeLabel()} → ${theme === 'light' ? 'Dark' : theme === 'dark' ? 'System' : 'Light'}`}
+          className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors text-primary hover:bg-surface-container-lowest active:scale-95"
         >
-          <Sun size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setExplicitTheme('dark')}
-          aria-label="Use dark mode"
-          title="Dark mode"
-          className={cn(
-            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
-            theme === 'dark' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
-          )}
-        >
-          <Moon size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setExplicitTheme('system')}
-          aria-label="Use system theme"
-          title="System theme"
-          className={cn(
-            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
-            theme === 'system' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
-          )}
-        >
-          <Laptop size={14} />
+          {getThemeIcon()}
         </button>
       </div>
 

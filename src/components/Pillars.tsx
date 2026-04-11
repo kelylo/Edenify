@@ -162,6 +162,10 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [habitMinutes, setHabitMinutes] = useState(15);
   const [habitFrequency, setHabitFrequency] = useState<'daily' | 'weekly'>('daily');
   const [habitTime, setHabitTime] = useState('08:00');
+  const [habitTimeFormat, setHabitTimeFormat] = useState<'24' | '12'>('24');
+  const [habitHourInput, setHabitHourInput] = useState('08');
+  const [habitMinuteInput, setHabitMinuteInput] = useState('00');
+  const [habitPeriod, setHabitPeriod] = useState<'AM' | 'PM'>('AM');
   const [habitSongName, setHabitSongName] = useState('');
   const [habitSongDataUrl, setHabitSongDataUrl] = useState('');
   const [loadingPlan, setLoadingPlan] = useState(false);
@@ -198,6 +202,20 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     if (!activeLayerId) return [];
     return habits.filter((h) => h.layerId === activeLayerId);
   }, [habits, activeLayerId]);
+
+  const buildHabitTime = () => {
+    if (habitTimeFormat === '24') {
+      const hour = parseInt(habitHourInput) || 0;
+      const minute = parseInt(habitMinuteInput) || 0;
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    } else {
+      let hour24 = parseInt(habitHourInput) || 0;
+      if (habitPeriod === 'PM' && hour24 !== 12) hour24 += 12;
+      if (habitPeriod === 'AM' && hour24 === 12) hour24 = 0;
+      const minute = parseInt(habitMinuteInput) || 0;
+      return `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+  };
 
   const handleSongUpload = (file: File | undefined) => {
     if (!file) return;
@@ -242,9 +260,10 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       return;
     }
 
-    const timeMatch = habitTime.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
+    const finalTime = buildHabitTime();
+    const timeMatch = finalTime.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
     if (!timeMatch) {
-      setLayerActionMessage('Please enter a valid habit time in HH:mm format.');
+      setLayerActionMessage('Please enter a valid habit time.');
       return;
     }
 
@@ -263,7 +282,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       history: Array(14).fill(false),
       completedToday: false,
       timeOfDay: period,
-      time: habitTime,
+      time: finalTime,
       linkedTaskId: habitTaskId,
     });
 
@@ -273,7 +292,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       layerId,
       priority: 'C',
       repeat: habitFrequency,
-      time: habitTime,
+      time: finalTime,
       completed: false,
       date: new Date().toISOString(),
       alarmEnabled: true,
@@ -285,7 +304,10 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     setHabitName('');
     setHabitMinutes(15);
     setHabitFrequency('daily');
-    setHabitTime('08:00');
+    setHabitTimeFormat('24');
+    setHabitHourInput('08');
+    setHabitMinuteInput('00');
+    setHabitPeriod('AM');
     setHabitSongName('');
     setHabitSongDataUrl('');
     setLayerActionMessage('Habit created and linked to a repeating task schedule.');

@@ -1686,6 +1686,10 @@ async function startServer() {
           for (const task of normalizedAppTasks) {
             if (task.completed || task.alarmEnabled === false) continue;
 
+            // Skip if this task is already handled by Telegram store (avoid duplicates)
+            const isTelegramTask = store.tasks?.some((t: any) => t.id === task.id);
+            if (isTelegramTask) continue;
+
             const reminderMoment = getTelegramReminderMoment(task, now);
             if (!reminderMoment) continue;
 

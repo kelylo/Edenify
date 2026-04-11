@@ -132,7 +132,7 @@
               "name": "Plan top priorities and clear workspace|general",
               "layerId": "general",
               "priority": "C",
-              "count": 1
+              "count": 2
             },
             {
               "name": "Eating|spiritual",
@@ -147,14 +147,8 @@
               "count": 1
             },
             {
-              "name": "Sleep|spiritual",
-              "layerId": "spiritual",
-              "priority": "A",
-              "count": 1
-            },
-            {
-              "name": "Eat|spiritual",
-              "layerId": "spiritual",
+              "name": "Going to the restaurent to eat food|physical",
+              "layerId": "physical",
               "priority": "A",
               "count": 1
             }
@@ -263,27 +257,28 @@
           "preferredMusic": "Instrumental Warmth"
         },
         {
-          "id": "tg-1775921968866-ae713",
-          "name": "Sleep",
-          "layerId": "spiritual",
-          "priority": "A",
+          "id": "task-1775928179848",
+          "name": "Plan top priorities and clear workspace",
+          "layerId": "general",
+          "priority": "C",
           "repeat": "once",
-          "time": "16:55",
+          "time": "18:25",
           "completed": true,
-          "date": "2026-04-11T15:39:28.866Z",
+          "date": "2026-04-11T17:22:59.848Z",
           "alarmEnabled": true,
-          "alarmSound": "Aggressive Bell",
-          "preferredMusic": "Instrumental Warmth"
+          "preferredMusic": "Instrumental Warmth",
+          "estimatedDuration": 5,
+          "durationStartedAt": "2026-04-11T17:22:59.848Z"
         },
         {
-          "id": "tg-1775922102442-5955a",
-          "name": "eat",
-          "layerId": "spiritual",
+          "id": "tg-1775928616793-d088b",
+          "name": "going to the restaurent to eat food 😁😁",
+          "layerId": "physical",
           "priority": "A",
           "repeat": "once",
-          "time": "16:43",
-          "completed": true,
-          "date": "2026-04-11T15:41:42.442Z",
+          "time": "18:37",
+          "completed": false,
+          "date": "2026-04-11T17:30:16.793Z",
           "alarmEnabled": true,
           "alarmSound": "Aggressive Bell",
           "preferredMusic": "Instrumental Warmth"
@@ -303,7 +298,7 @@
   },
   "sessions": {},
   "telegram": {
-    "offset": 146642131,
+    "offset": 146642140,
     "byChatId": {
       "7875504612": {
         "tasks": [
@@ -314,7 +309,7 @@
             "priority": "C",
             "repeat": "once",
             "time": "17:35",
-            "completed": true,
+            "completed": false,
             "date": "2026-04-11T16:29:24.209Z",
             "alarmEnabled": true,
             "alarmSound": "Aggressive Bell",
@@ -327,7 +322,7 @@
             "priority": "A",
             "repeat": "once",
             "time": "18:00",
-            "completed": true,
+            "completed": false,
             "date": "2026-04-11T16:57:09.934Z",
             "alarmEnabled": true,
             "alarmSound": "Aggressive Bell",
@@ -340,34 +335,21 @@
             "priority": "A",
             "repeat": "once",
             "time": "17:32",
-            "completed": true,
+            "completed": false,
             "date": "2026-04-11T16:31:18.891Z",
             "alarmEnabled": true,
             "alarmSound": "Aggressive Bell",
             "preferredMusic": "Instrumental Warmth"
           },
           {
-            "id": "tg-1775921968866-ae713",
-            "name": "Sleep",
-            "layerId": "spiritual",
+            "id": "tg-1775928616793-d088b",
+            "name": "going to the restaurent to eat food 😁😁",
+            "layerId": "physical",
             "priority": "A",
             "repeat": "once",
-            "time": "16:55",
-            "completed": true,
-            "date": "2026-04-11T15:39:28.866Z",
-            "alarmEnabled": true,
-            "alarmSound": "Aggressive Bell",
-            "preferredMusic": "Instrumental Warmth"
-          },
-          {
-            "id": "tg-1775922102442-5955a",
-            "name": "eat",
-            "layerId": "spiritual",
-            "priority": "A",
-            "repeat": "once",
-            "time": "16:43",
-            "completed": true,
-            "date": "2026-04-11T15:41:42.442Z",
+            "time": "18:37",
+            "completed": false,
+            "date": "2026-04-11T17:30:16.793Z",
             "alarmEnabled": true,
             "alarmSound": "Aggressive Bell",
             "preferredMusic": "Instrumental Warmth"
@@ -398,11 +380,17 @@
       "admin-root|task-1775924964209|2026-04-11T16:35|alarm": "2026-04-11T16:35:03.876Z",
       "7875504612|tg-1775926629934-d97e1|2026-04-11T16:55": "2026-04-11T16:57:12.507Z",
       "admin-root|tg-1775926629934-d97e1|2026-04-11T17:00|reminder": "2026-04-11T16:57:19.985Z",
-      "admin-root|tg-1775926629934-d97e1|2026-04-11T17:00|alarm": "2026-04-11T17:00:01.248Z"
+      "admin-root|tg-1775926629934-d97e1|2026-04-11T17:00|alarm": "2026-04-11T17:00:01.248Z",
+      "7875504612|task-1775928179848|2026-04-11T17:20": "2026-04-11T17:23:03.742Z",
+      "admin-root|task-1775928179848|2026-04-11T17:25|reminder": "2026-04-11T17:23:17.891Z",
+      "admin-root|task-1775928179848|2026-04-11T17:25|alarm": "2026-04-11T17:25:17.861Z",
+      "7875504612|tg-1775928616793-d088b|2026-04-11T17:32": "2026-04-11T17:31:03.886Z",
+      "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|reminder": "2026-04-11T17:32:17.935Z",
+      "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|alarm": "2026-04-11T17:37:19.678Z"
     },
     "poller": {
       "ownerId": "37448-b437a9",
-      "updatedAt": "2026-04-11T17:18:59.596Z"
+      "updatedAt": "2026-04-11T17:41:40.768Z"
     }
   }
 }

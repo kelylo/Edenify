@@ -23,7 +23,6 @@ interface TelegramTask {
   completed: boolean;
   date: string;
   alarmEnabled?: boolean;
-  alarmSound?: string;
   preferredMusic?: string;
 }
 
@@ -36,7 +35,6 @@ interface WizardState {
 
 interface TelegramDefaults {
   preferredMusic: string;
-  alarmSound: string;
   repeat: RepeatMode;
   layerId: LayerId;
   priority: Priority;
@@ -70,7 +68,6 @@ const repeatOptions: RepeatMode[] = ['once', 'daily', 'weekly'];
 const priorityOptions: Priority[] = ['A', 'B', 'C', 'D', 'E'];
 const defaultTelegramDefaults: TelegramDefaults = {
   preferredMusic: 'Instrumental Warmth',
-  alarmSound: 'Aggressive Bell',
   repeat: 'once',
   layerId: 'general',
   priority: 'C',
@@ -316,10 +313,6 @@ function inferTelegramDefaultsFromUser(db: DbShape, userId?: string): Partial<Te
   const prefs = resolveUserPreferences(db, userId);
   const inferred: Partial<TelegramDefaults> = {};
 
-  if (String(prefs.focusAlarmSound || '').trim()) {
-    inferred.alarmSound = String(prefs.focusAlarmSound || '').trim();
-  }
-
   const choices = resolveUserSongChoices(db, userId);
   const customOnly = choices.filter((name) => !songOptions.includes(name));
   if (customOnly.length > 0) {
@@ -400,7 +393,6 @@ function normalizeTelegramTask(task: Partial<TelegramTask>, defaults?: Partial<T
     completed: Boolean(task.completed),
     date: safeDate,
     alarmEnabled: task.alarmEnabled !== false,
-    alarmSound: String(task.alarmSound || defaults?.alarmSound || defaultTelegramDefaults.alarmSound),
     preferredMusic: String(task.preferredMusic || defaults?.preferredMusic || ''),
   };
 }
@@ -1271,13 +1263,13 @@ async function startServer() {
           clearWizard();
           await sendTelegramMessage(token, chatId, 'Wizard cancelled.');
         } else if (command === '/defaults') {
-          store.wizard = { mode: 'defaults', step: 'song' };
-          await sendTelegramMessage(token, chatId, `Default setup 1/4: choose default song by number:\n${formatNumberedOptions(dynamicSongOptions)}\nCurrent: ${defaults.preferredMusic}`);
+          store.wizard = { mode: 'defaults', step: 'repeat' };
+          await sendTelegramMessage(token, chatId, `Default setup 1/2: choose repeat mode by number:\n${formatNumberedOptions(repeatOptions)}\nCurrent: ${defaults.repeat}`);
         } else if (command === '/help' || command === '/start') {
           await sendTelegramMessage(
             token,
             chatId,
-            'Edenify bot is alive.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show chat id\n/defaults - set default song/alarm/repeat/time\n/cancel - cancel current wizard'
+            'Edenify bot is alive.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show chat id\n/defaults - set default repeat/time\n/cancel - cancel current wizard'
           );
         } else if (command === '/chatid') {
           await sendTelegramMessage(token, chatId, `Your chat ID is: ${chatId}`);
@@ -1299,7 +1291,7 @@ async function startServer() {
           await sendTelegramMessage(token, chatId, buildWizardCard({
             flow: 'TASK SETUP',
             step: 1,
-            total: 7,
+            total: 5,
             title: 'Task Name',
             prompt: 'Type the task name.',
             hint: 'Example: Eat healthy meal',
@@ -1320,32 +1312,14 @@ async function startServer() {
           }
         } else if (store.wizard?.mode === 'defaults') {
           store.defaults = store.defaults || {};
-          if (store.wizard.step === 'song') {
-            const selectedSong = resolveNumberedChoice(text, dynamicSongOptions);
-            if (!selectedSong) {
-              await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(dynamicSongOptions)}`);
-            } else {
-              store.defaults.preferredMusic = selectedSong;
-              store.wizard.step = 'alarm';
-              await sendTelegramMessage(token, chatId, `Default setup 2/4: choose alarm sound by number:\n${formatNumberedOptions(alarmOptions)}\nCurrent: ${defaults.alarmSound}`);
-            }
-          } else if (store.wizard.step === 'alarm') {
-            const selectedAlarm = resolveNumberedChoice(text, alarmOptions);
-            if (!selectedAlarm) {
-              await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(alarmOptions)}`);
-            } else {
-              store.defaults.alarmSound = selectedAlarm;
-              store.wizard.step = 'repeat';
-              await sendTelegramMessage(token, chatId, `Default setup 3/4: choose repeat mode by number:\n${formatNumberedOptions(repeatOptions)}\nCurrent: ${defaults.repeat}`);
-            }
-          } else if (store.wizard.step === 'repeat') {
+          if (store.wizard.step === 'repeat') {
             const value = resolveNumberedChoice(text, repeatOptions) as RepeatMode | null;
             if (!value || !repeatOptions.includes(value)) {
               await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(repeatOptions)}`);
             } else {
               store.defaults.repeat = value;
               store.wizard.step = 'time';
-              await sendTelegramMessage(token, chatId, `Default setup 4/4: send default time in 24h format (example 08:00). Current: ${defaults.time}`);
+              await sendTelegramMessage(token, chatId, `Default setup 2/2: send default time in 24h format (example 08:00). Current: ${defaults.time}`);
             }
           } else if (store.wizard.step === 'time') {
             if (!isValidTaskTime(text)) {
@@ -1353,7 +1327,7 @@ async function startServer() {
             } else {
               store.defaults.time = normalize24HourTime(text);
               clearWizard();
-              await sendTelegramMessage(token, chatId, `Defaults saved. Song: ${store.defaults.preferredMusic}, Alarm: ${store.defaults.alarmSound}, Repeat: ${store.defaults.repeat}, Time: ${store.defaults.time}`);
+              await sendTelegramMessage(token, chatId, `Defaults saved. Repeat: ${store.defaults.repeat}, Time: ${store.defaults.time}`);
             }
           }
         } else if (store.wizard?.mode === 'delete' && store.wizard.step === 'choose') {
@@ -1487,7 +1461,7 @@ async function startServer() {
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 1,
-                total: 7,
+                total: 5,
                 title: 'Task Name',
                 prompt: 'Task name is too short. Type at least 2 characters.',
                 hint: 'Example: Drink water',
@@ -1501,7 +1475,7 @@ async function startServer() {
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 2,
-              total: 7,
+              total: 5,
               title: 'Time (24h)',
               prompt: 'Type task time in 24-hour format HH:mm.',
               hint: 'Example: 21:30',
@@ -1511,7 +1485,7 @@ async function startServer() {
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 2,
-                total: 7,
+                total: 5,
                 title: 'Time (24h)',
                 prompt: 'Invalid time format.',
                 hint: 'Use HH:mm, example 07:05 or 21:30',
@@ -1525,7 +1499,7 @@ async function startServer() {
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 3,
-              total: 7,
+              total: 5,
               title: 'Repeat',
               prompt: 'Choose repeat mode by number.',
               options: repeatOptions,
@@ -1536,7 +1510,7 @@ async function startServer() {
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 3,
-                total: 7,
+                total: 5,
                 title: 'Repeat',
                 prompt: 'Invalid choice. Choose by number.',
                 options: repeatOptions,
@@ -1550,7 +1524,7 @@ async function startServer() {
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 4,
-              total: 7,
+              total: 5,
               title: 'Layer',
               prompt: 'Choose layer by number.',
               options: layerOptions,
@@ -1561,7 +1535,7 @@ async function startServer() {
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 4,
-                total: 7,
+                total: 5,
                 title: 'Layer',
                 prompt: 'Invalid choice. Choose by number.',
                 options: layerOptions,
@@ -1575,7 +1549,7 @@ async function startServer() {
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 5,
-              total: 7,
+              total: 5,
               title: 'Priority',
               prompt: 'Choose priority by number.',
               options: priorityOptions,
@@ -1586,7 +1560,7 @@ async function startServer() {
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 5,
-                total: 7,
+                total: 5,
                 title: 'Priority',
                 prompt: 'Invalid choice. Choose by number.',
                 options: priorityOptions,
@@ -1596,61 +1570,6 @@ async function startServer() {
               continue;
             }
             draft.priority = value;
-            store.wizard = { ...store.wizard, step: 'song', draft };
-            await sendTelegramMessage(token, chatId, buildWizardCard({
-              flow: 'TASK SETUP',
-              step: 6,
-              total: 7,
-              title: 'Preferred Song',
-              prompt: 'Choose preferred song by number.',
-              options: dynamicSongOptions,
-              hint: `Send 0 for none, or default (${defaults.preferredMusic})`,
-            }));
-          } else if (store.wizard.step === 'song') {
-            const lowerText = text.toLowerCase();
-            const selectedSong = resolveNumberedChoice(text, dynamicSongOptions);
-            draft.preferredMusic = lowerText === 'none' || lowerText === '0' ? '' : lowerText === 'default' ? defaults.preferredMusic : selectedSong || '';
-            if (lowerText !== 'none' && lowerText !== '0' && lowerText !== 'default' && !selectedSong) {
-              await sendTelegramMessage(token, chatId, buildWizardCard({
-                flow: 'TASK SETUP',
-                step: 6,
-                total: 7,
-                title: 'Preferred Song',
-                prompt: 'Invalid choice. Choose by number.',
-                options: dynamicSongOptions,
-                hint: 'Send 0 for none',
-              }));
-              db.telegram!.byChatId![chatId] = store;
-              db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
-              continue;
-            }
-            store.wizard = { ...store.wizard, step: 'alarm', draft };
-            await sendTelegramMessage(token, chatId, buildWizardCard({
-              flow: 'TASK SETUP',
-              step: 7,
-              total: 7,
-              title: 'Alarm Sound',
-              prompt: 'Choose alarm sound by number.',
-              options: alarmOptions,
-              hint: `Or send default (${defaults.alarmSound})`,
-            }));
-          } else if (store.wizard.step === 'alarm') {
-            const selectedAlarm = resolveNumberedChoice(text, alarmOptions);
-            if (text.toLowerCase() !== 'default' && !selectedAlarm) {
-              await sendTelegramMessage(token, chatId, buildWizardCard({
-                flow: 'TASK SETUP',
-                step: 7,
-                total: 7,
-                title: 'Alarm Sound',
-                prompt: 'Invalid choice. Choose by number.',
-                options: alarmOptions,
-                hint: `Or send default (${defaults.alarmSound})`,
-              }));
-              db.telegram!.byChatId![chatId] = store;
-              db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
-              continue;
-            }
-            draft.alarmSound = text.toLowerCase() === 'default' ? defaults.alarmSound : selectedAlarm || defaults.alarmSound;
             const task: TelegramTask = {
               id: `tg-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
               name: draft.name || 'Untitled task',
@@ -1661,8 +1580,7 @@ async function startServer() {
               completed: false,
               date: new Date().toISOString(),
               alarmEnabled: true,
-              alarmSound: draft.alarmSound || defaults.alarmSound,
-              preferredMusic: draft.preferredMusic || '',
+              preferredMusic: draft.preferredMusic || defaults.preferredMusic || '',
             };
             store.tasks.push(normalizeTelegramTask(task, defaults));
             clearWizard();
@@ -1672,7 +1590,7 @@ async function startServer() {
           await sendTelegramMessage(
             token,
             chatId,
-            'Become that person you have been dreaming about with Edenify.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show your chat id\n/defaults - configure default song/alarm/repeat/time\n/cancel - cancel current wizard'
+            'Become that person you have been dreaming about with Edenify.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show your chat id\n/defaults - configure default repeat/time\n/cancel - cancel current wizard'
           );
         }
 

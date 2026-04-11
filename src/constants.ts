@@ -1,10 +1,10 @@
 import { Layer, Habit, Task, User, BibleReading } from './types';
 
 export const INITIAL_USER: User = {
-  id: '1',
-  email: 'niyonsabakevin15@gmail.com',
-  name: 'Kevin',
-  avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBcC3JJ6pbiJ4huGdQErp1HqdYXv5QSjjUVdzI5yxMSvCafZOcDElC70vwyd1yvnWQJIkA3SA3qV0hrcU_2aR21a_vYyL4__c5Vk5BMJnULE5kBRr0MVHbedGwSryNzECh11wQ0Gi7A4JRh44ZzxgSYBaozjBW6k6SNLpmcSxQ7sgHqQD_F8t7emA54L4Bk0Efhy-NicS6SGD4bOAOYC_NXfIGeo24tsTpoM26uqQn9erV_qKz6719c8vYXXpA-hWjbbQBp-e6tPA',
+  id: 'user-default',
+  email: 'user@edenify.app',
+  name: 'User',
+  avatar: '',
   preferences: {
     focusDuration: 25,
     shortBreakDuration: 5,

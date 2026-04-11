@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
-import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission } from '../lib/utils';
+import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Plus, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
+import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
 import { sendCrossChannelNotification, areNotificationsEnabled } from '../services/notifications';
@@ -165,6 +165,7 @@ const Home: React.FC = () => {
   });
   const [newTaskCustomAlarmName, setNewTaskCustomAlarmName] = useState('');
   const [newTaskCustomAlarmDataUrl, setNewTaskCustomAlarmDataUrl] = useState('');
+  const [newTaskDuration, setNewTaskDuration] = useState(25); // default 25 minutes
   const [isGeneratingTask, setIsGeneratingTask] = useState(false);
   const [isTaskPreviewPlaying, setIsTaskPreviewPlaying] = useState(false);
   const [quickAddError, setQuickAddError] = useState('');
@@ -196,6 +197,7 @@ const Home: React.FC = () => {
   const taskPreviewEndRef = useRef<number | null>(null);
   const bibleReminderTimeoutRef = useRef<number | null>(null);
   const bibleReminderTriggeredDateRef = useRef('');
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const maxBibleDay = Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 2);
   const canNavigateBible = bibleReading.completed;
@@ -535,15 +537,13 @@ const Home: React.FC = () => {
   }, [todaysTasks]);
 
   const failedTaskIds = useMemo(() => {
-    const now = Date.now();
     return new Set(
       todaysTasks
         .filter((task) => {
           if (String(task.id || '').startsWith('habit-task-')) return false;
           if (isTaskCompletedForToday(task)) return false;
-          const due = parseTaskDueDate(task);
-          if (!due) return false;
-          return now - due.getTime() >= 5 * 60 * 1000;
+          // Use duration-based failure detection if duration is set
+          return isTaskFailedByDuration(task);
         })
         .map((task) => task.id)
     );
@@ -1214,10 +1214,11 @@ const Home: React.FC = () => {
       completed: false,
       date: dueDate.toISOString(),
       alarmEnabled: newTaskAlarmEnabled,
-      alarmSound: newTaskAlarmSound || 'Uploaded Alarm',
       preferredMusic: newTaskPreferredMusic || newTaskCustomAlarmName || 'Uploaded Song',
       customAlarmAudioName: newTaskCustomAlarmName || 'Uploaded Song',
       customAlarmAudioDataUrl: newTaskCustomAlarmDataUrl,
+      estimatedDuration: newTaskDuration,
+      durationStartedAt: new Date().toISOString(),
     };
 
     const due = parseTaskDueDate(draftTask);
@@ -1291,14 +1292,14 @@ const Home: React.FC = () => {
       setQuickAddError('Please choose a valid reminder audio file.');
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setQuickAddError('Reminder audio is too large for quick add. Use a file under 10MB.');
+    if (file.size > 20 * 1024 * 1024) {
+      setQuickAddError('Reminder audio is too large. Use a file under 20MB.');
       return;
     }
 
     const dataUrl = await readFileAsDataUrl(file);
-    if ((dataUrl || '').length > 14 * 1024 * 1024) {
-      setQuickAddError('Reminder audio is too heavy after encoding. Please use a shorter or more compressed file.');
+    if ((dataUrl || '').length > 25 * 1024 * 1024) {
+      setQuickAddError('Reminder audio is too large after encoding. Please use a shorter or more compressed file.');
       return;
     }
 
@@ -1723,7 +1724,7 @@ const Home: React.FC = () => {
         onClick={() => setShowQuickAdd(true)}
         className="fixed bottom-24 right-6 z-[60] h-14 w-14 rounded-full bg-gradient-to-br from-primary to-primary-container text-white shadow-[0_12px_32px_rgba(150,68,7,0.3)] flex items-center justify-center transition-transform active:scale-95"
       >
-        <span className="material-symbols-outlined text-2xl">add</span>
+        <Plus size={24} />
       </button>
       )}
 
@@ -1938,14 +1939,16 @@ const Home: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto mt-2"
+            onClick={() => setShowQuickAdd(false)}
+            className="fixed inset-0 z-[80] bg-black/45 backdrop-blur-sm flex items-center justify-center p-5"
           >
             <motion.div
-              initial={{ y: 12 }}
-              animate={{ y: 0 }}
-              exit={{ y: 12 }}
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
               transition={{ type: 'spring', damping: 24, stiffness: 220 }}
-              className="w-full overflow-hidden rounded-[2rem] bg-surface-container-low border border-outline-variant/25 shadow-[0_20px_50px_rgba(44,33,24,0.08)] p-5 sm:p-6"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl overflow-hidden rounded-[2rem] bg-surface-container-low border border-outline-variant/25 shadow-[0_20px_50px_rgba(44,33,24,0.08)] p-5 sm:p-6 max-h-[90vh] overflow-y-auto no-scrollbar"
             >
               <div className="max-w-3xl mx-auto space-y-4">
                 <div className="flex items-center justify-between gap-3">
@@ -1975,27 +1978,6 @@ const Home: React.FC = () => {
                       placeholder="Write one clear task"
                       className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
                     />
-                    {realtimeTemplateSuggestions.length > 0 && (
-                      <div className="mt-2 rounded-xl border border-outline-variant/35 bg-surface-container-lowest p-2 space-y-1">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-secondary px-1">Suggestions</p>
-                        {realtimeTemplateSuggestions.map((template) => (
-                          <button
-                            key={`live-${template.id}`}
-                            type="button"
-                            onClick={() => applyTemplateDraft(template)}
-                            className="w-full text-left rounded-lg border border-outline-variant/30 bg-surface-container-low px-2 py-2 hover:bg-surface-container-high"
-                          >
-                            <p className="text-xs font-semibold text-on-surface truncate">{template.name}</p>
-                            <p className="text-[10px] text-secondary uppercase tracking-[0.1em] mt-1">
-                              {template.layerId} • {template.time} • {template.repeat}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {newTaskName.trim().length >= 2 && realtimeTemplateSuggestions.length === 0 && (
-                      <p className="mt-2 text-xs text-secondary">No close match yet. Keep typing or finish manually.</p>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2130,6 +2112,23 @@ const Home: React.FC = () => {
                     </select>
                   </div>
 
+                  <div>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Duration (Minutes)</label>
+                    <input
+                      type="number"
+                      min="5"
+                      max="300"
+                      value={newTaskDuration}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (val >= 5 && val <= 300) setNewTaskDuration(val);
+                      }}
+                      className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                      title="Set task duration (5-300 minutes)"
+                    />
+                    <p className="text-xs text-secondary mt-1">Task will be marked as failed if not completed within this time</p>
+                  </div>
+
                   {newTaskRepeat === 'weekly' && (
                     <div>
                       <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Calendar Day</label>
@@ -2152,12 +2151,20 @@ const Home: React.FC = () => {
                       </div>
                     ) : (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => audioFileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
+                        >
+                          Upload song
+                        </button>
                         <input
+                          ref={audioFileInputRef}
                           type="file"
                           accept="audio/*"
                           title="Upload reminder song"
                           onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
-                          className="w-full text-sm disabled:opacity-50"
+                          className="hidden"
                           disabled={mediaPermissionGranted === false}
                         />
                         {newTaskCustomAlarmName ? (

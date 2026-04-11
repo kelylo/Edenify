@@ -37,10 +37,11 @@ export interface Task {
   completed: boolean;
   date: string; // ISO string
   alarmEnabled?: boolean;
-  alarmSound?: string;
   preferredMusic?: string;
   customAlarmAudioName?: string;
   customAlarmAudioDataUrl?: string;
+  estimatedDuration?: number; // in minutes, range 5-300
+  durationStartedAt?: string; // ISO timestamp when task timer started
 }
 
 export interface JournalEntry {

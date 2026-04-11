@@ -111,27 +111,42 @@ const ensureTaskId = (task: Task): Task => {
   return { ...task, id: `task-${compact || Date.now().toString()}` };
 };
 
-const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[]) => {
+const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[], recentlyDeletedIds: Set<string>) => {
   const merged = new Map<string, Task>();
 
   currentTasks.forEach((rawTask) => {
     const task = ensureTaskId(rawTask);
+    if (recentlyDeletedIds.has(task.id)) return; // Skip recently deleted
     const key = task.id || `${task.name}|${task.layerId}|${task.time}`;
     merged.set(key, task);
   });
 
   incomingTasks.forEach((rawTask) => {
     const task = ensureTaskId(rawTask);
+    if (recentlyDeletedIds.has(task.id)) return; // Don't re-add recently deleted from cloud
     const key = task.id || `${task.name}|${task.layerId}|${task.time}`;
     const existing = merged.get(key);
-    merged.set(key, existing ? { ...existing, ...task } : task);
+
+    if (!existing) {
+      merged.set(key, task);
+    } else {
+      // Smart merge: keep local state as source of truth
+      const merged_task = { ...task, ...existing };
+
+      // Preserve local completion status if it's more recent
+      if (existing.completed && !task.completed) {
+        merged_task.completed = true;
+      }
+
+      merged.set(key, merged_task);
+    }
   });
 
   return Array.from(merged.values());
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
+  const getAccountKey = (currentUser: User | null) => String(currentUser?.id || currentUser?.email || '').trim().toLowerCase();
 
   // Cache management for session persistence
   const cacheUser = (user: User | null) => {
@@ -170,6 +185,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hasCompletedInitialCloudSyncRef = useRef(false);
   const applyingCloudStateRef = useRef(false);
   const lastCloudStateHashRef = useRef('');
+  const recentlyDeletedTaskIdsRef = useRef<Set<string>>(new Set());
+  const deletionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
   const setUser = (nextUser: User | null | ((prev: User | null) => User | null)) => {
@@ -269,7 +286,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (remoteState.layers) setLayers(remoteState.layers);
       if (remoteState.habits) setHabits(remoteState.habits);
-      if (remoteState.tasks) setTasks(remoteState.tasks);
+      if (remoteState.tasks) {
+        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, recentlyDeletedTaskIdsRef.current));
+      }
       if (remoteState.journal) setJournal(remoteState.journal);
       if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
       if (remoteState.dailyTaskGoal) setDailyTaskGoalState(remoteState.dailyTaskGoal);
@@ -367,7 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (nextHash === lastTelegramTasksHashRef.current) return;
 
         applyingTelegramSyncRef.current = true;
-        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks));
+        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, recentlyDeletedTaskIdsRef.current));
         lastTelegramTasksHashRef.current = nextHash;
       } catch (error) {
         console.warn('Telegram task pull failed:', error);
@@ -563,6 +582,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteTask = (taskId: string) => {
     setTasks((prev) => prev.filter((task) => task.id !== taskId));
+
+    // Track this deletion to prevent re-adding during merge for next 60 seconds
+    recentlyDeletedTaskIdsRef.current.add(taskId);
+    if (deletionTimeoutRef.current) clearTimeout(deletionTimeoutRef.current);
+    deletionTimeoutRef.current = setTimeout(() => {
+      recentlyDeletedTaskIdsRef.current.clear();
+    }, 60000);
   };
 
   const addJournalEntry = (entry: JournalEntry) => {

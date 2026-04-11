@@ -514,54 +514,58 @@ const buildAllTemplates = (): EdenTemplate[] => {
     basePriority: EdenTemplate['priority'],
     baseRepeat: EdenTemplate['repeat']
   ) => {
-    for (const baseName of taskNames) {
-      for (const slot of SLOTS) {
-        // Determine category based on keywords
-        let category: TemplateCategory = 'core-habit';
-        for (const [keyword, cat] of Object.entries(CATEGORY_MAP)) {
-          if (baseName.toLowerCase().includes(keyword)) {
-            category = cat;
-            break;
-          }
+    // Limit to 2 templates per layer (10 total across 5 layers)
+    const limitedTaskNames = taskNames.slice(0, 2);
+
+    for (const baseName of limitedTaskNames) {
+      // Use only the first slot (morning focus) for each template
+      const slot = SLOTS[2]; // "Morning Focus" slot
+
+      // Determine category based on keywords
+      let category: TemplateCategory = 'core-habit';
+      for (const [keyword, cat] of Object.entries(CATEGORY_MAP)) {
+        if (baseName.toLowerCase().includes(keyword)) {
+          category = cat;
+          break;
         }
-
-        // Determine difficulty
-        let difficulty: 1|2|3|4|5 = 3;
-        for (const [keyword, diff] of Object.entries(DIFFICULTY_MAP)) {
-          if (baseName.toLowerCase().includes(keyword)) {
-            difficulty = diff;
-            break;
-          }
-        }
-
-        // Determine energy level
-        let energyLevel: 'low'|'medium'|'high' = 'medium';
-        for (const [keyword, energy] of Object.entries(ENERGY_MAP)) {
-          if (baseName.toLowerCase().includes(keyword)) {
-            energyLevel = energy;
-            break;
-          }
-        }
-
-        // Override energy based on slot typical energy for consistency
-        if (slot.typicalEnergy === 'low' && energyLevel === 'high') energyLevel = 'medium';
-        if (slot.typicalEnergy === 'high' && energyLevel === 'low') energyLevel = 'medium';
-
-        templates.push({
-          id: `tpl-${layerId}-${idCounter++}`,
-          name: `${baseName} (${slot.label})`,
-          layerId,
-          priority: basePriority,
-          repeat: baseRepeat,
-          time: slot.time,
-          category,
-          estimatedDuration: difficulty === 1 ? 5 : difficulty === 2 ? 15 : difficulty === 3 ? 30 : difficulty === 4 ? 45 : 60,
-          tags: [slot.label.toLowerCase().replace(' ', '-'), layerId, category],
-          difficulty,
-          energyLevel,
-          createdFrom: 'system',
-        });
       }
+
+      // Determine difficulty
+      let difficulty: 1|2|3|4|5 = 3;
+      for (const [keyword, diff] of Object.entries(DIFFICULTY_MAP)) {
+        if (baseName.toLowerCase().includes(keyword)) {
+          difficulty = diff;
+          break;
+        }
+      }
+
+      // Determine energy level
+      let energyLevel: 'low'|'medium'|'high' = 'medium';
+      for (const [keyword, energy] of Object.entries(ENERGY_MAP)) {
+        if (baseName.toLowerCase().includes(keyword)) {
+          energyLevel = energy;
+          break;
+        }
+      }
+
+      // Override energy based on slot typical energy for consistency
+      if (slot.typicalEnergy === 'low' && energyLevel === 'high') energyLevel = 'medium';
+      if (slot.typicalEnergy === 'high' && energyLevel === 'low') energyLevel = 'medium';
+
+      templates.push({
+        id: `tpl-${layerId}-${idCounter++}`,
+        name: baseName,
+        layerId,
+        priority: basePriority,
+        repeat: baseRepeat,
+        time: slot.time,
+        category,
+        estimatedDuration: difficulty === 1 ? 5 : difficulty === 2 ? 15 : difficulty === 3 ? 30 : difficulty === 4 ? 45 : 60,
+        tags: [slot.label.toLowerCase().replace(' ', '-'), layerId, category],
+        difficulty,
+        energyLevel,
+        createdFrom: 'system',
+      });
     }
   };
 
@@ -948,7 +952,6 @@ export const templateToTask = (template: EdenTemplate, customDate?: Date): Omit<
     completed: false,
     date: taskDate.toISOString(),
     alarmEnabled: true,
-    alarmSound: 'Aggressive Bell',
     preferredMusic: 'Instrumental Warmth',
     // Optional: store templateId in metadata for tracking
     // metadata: { templateId: template.id }

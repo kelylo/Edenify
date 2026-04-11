@@ -123,7 +123,7 @@ const Profile: React.FC = () => {
 
   const testTelegramConnection = async () => {
     const chatId = (user.preferences.telegramChatId || '').trim();
-    const accountKey = (user.email || user.id || '').trim().toLowerCase();
+    const accountKey = (user.id || user.email || '').trim().toLowerCase();
     const normalizedChatId = chatId.replace(/[^0-9-]/g, '');
 
     if (normalizedChatId !== chatId) {

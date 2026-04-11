@@ -162,12 +162,15 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [habitMinutes, setHabitMinutes] = useState(15);
   const [habitFrequency, setHabitFrequency] = useState<'daily' | 'weekly'>('daily');
   const [habitTime, setHabitTime] = useState('08:00');
+  const [habitSongName, setHabitSongName] = useState('');
+  const [habitSongDataUrl, setHabitSongDataUrl] = useState('');
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [layerPlan, setLayerPlan] = useState('');
   const [showAllGuides, setShowAllGuides] = useState(false);
   const [layerActionMessage, setLayerActionMessage] = useState('');
   const [layerHint, setLayerHint] = useState('');
   const [loadingHint, setLoadingHint] = useState(false);
+  const songFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -196,9 +199,48 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     return habits.filter((h) => h.layerId === activeLayerId);
   }, [habits, activeLayerId]);
 
+  const handleSongUpload = (file: File | undefined) => {
+    if (!file) return;
+
+    if (!file.type.startsWith('audio/')) {
+      setLayerActionMessage('Please upload an audio file.');
+      return;
+    }
+
+    const maxSize = 20 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setLayerActionMessage('Song file must be under 20MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl.length > 25 * 1024 * 1024) {
+        setLayerActionMessage('Encoded song is too large.');
+        return;
+      }
+      setHabitSongName(file.name);
+      setHabitSongDataUrl(dataUrl);
+      setLayerActionMessage(`Song selected: ${file.name}`);
+    };
+    reader.onerror = () => {
+      setLayerActionMessage('Failed to upload song.');
+    };
+    reader.readAsDataURL(file);
+  };
+
   const createHabitForLayer = (layerId: LayerId) => {
     const name = habitName.trim();
-    if (!name) return;
+    if (!name) {
+      setLayerActionMessage('Please enter a habit name.');
+      return;
+    }
+
+    if (!habitSongDataUrl) {
+      setLayerActionMessage('Please upload a song before creating a habit.');
+      return;
+    }
 
     const timeMatch = habitTime.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
     if (!timeMatch) {
@@ -235,14 +277,17 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       completed: false,
       date: new Date().toISOString(),
       alarmEnabled: true,
-      alarmSound: 'Aggressive Bell',
-      preferredMusic: 'Instrumental Warmth',
+      preferredMusic: habitSongName || 'Instrumental Warmth',
+      customAlarmAudioName: habitSongName,
+      customAlarmAudioDataUrl: habitSongDataUrl,
     });
 
     setHabitName('');
     setHabitMinutes(15);
     setHabitFrequency('daily');
     setHabitTime('08:00');
+    setHabitSongName('');
+    setHabitSongDataUrl('');
     setLayerActionMessage('Habit created and linked to a repeating task schedule.');
   };
 
@@ -283,7 +328,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       completed: false,
       date: new Date().toISOString(),
       alarmEnabled: true,
-      alarmSound: 'Aggressive Bell',
       preferredMusic: 'Instrumental Warmth',
     });
     setLayerActionMessage(`Added to Home tasks: ${title}`);
@@ -580,59 +624,88 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
               )}
 
               {activeLayerHabits.length === 0 ? (
-                <section className="bg-surface-container-low rounded-[2rem] p-8 sm:p-12 flex flex-col items-center text-center">
-                  <div className="relative w-44 h-44 mb-6 flex items-center justify-center">
-                    <svg className="w-full h-full overflow-visible" viewBox="0 0 100 100">
-                      <path d="M 20 70 A 30 30 0 0 1 80 70" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary/30" />
-                      <circle cx="50" cy="65" r="3" fill="currentColor" className="text-primary animate-pulse" />
-                    </svg>
-                  </div>
-                  <h2 className="text-2xl font-serif font-bold text-on-surface mb-3">No habits in this layer yet.</h2>
-                  <p className="text-on-surface-variant max-w-xs mb-8 leading-relaxed">Begin with one small habit. Consistency over intensity.</p>
+                <section className="rounded-2xl border border-primary/20 bg-surface-container-lowest p-8">
+                  <h2 className="text-2xl font-serif font-bold text-on-surface mb-2">Create Your First Habit</h2>
+                  <p className="text-sm text-on-surface-variant mb-8">Begin with one small habit. Consistency over intensity.</p>
 
-                  <div className="w-full max-w-lg space-y-3 mb-6">
-                    <input
-                      value={habitName}
-                      onChange={(e) => setHabitName(e.target.value)}
-                      title="Habit name"
-                      placeholder="Habit name"
-                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                    />
-                    <div className="grid grid-cols-2 gap-3">
+                  <div className="w-full space-y-4">
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Habit Name</label>
                       <input
-                        type="number"
-                        min={5}
-                        value={habitMinutes}
-                        onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
-                        title="Habit minutes"
-                        placeholder="Minutes"
-                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                        value={habitName}
+                        onChange={(e) => setHabitName(e.target.value)}
+                        placeholder="Write one clear habit"
+                        title="Habit name"
+                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
                       />
-                      <select
-                        value={habitFrequency}
-                        onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
-                        title="Habit frequency"
-                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                      </select>
                     </div>
-                    <input
-                      type="time"
-                      value={habitTime}
-                      onChange={(e) => setHabitTime(e.target.value)}
-                      title="Habit time"
-                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                    />
-                  </div>
 
-                  <div className="flex flex-col sm:flex-row gap-3 w-full justify-center">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Duration (Min)</label>
+                        <input
+                          type="number"
+                          min={5}
+                          value={habitMinutes}
+                          onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
+                          placeholder="15"
+                          title="Duration in minutes"
+                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Repeat</label>
+                        <select
+                          value={habitFrequency}
+                          onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
+                          title="Habit frequency"
+                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Time</label>
+                      <input
+                        type="time"
+                        value={habitTime}
+                        onChange={(e) => setHabitTime(e.target.value)}
+                        title="Habit time"
+                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-3">Reminder Song (Required)</label>
+                      <button
+                        type="button"
+                        onClick={() => songFileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
+                      >
+                        {habitSongName ? '✓ Song Loaded' : 'Upload song'}
+                      </button>
+                      <input
+                        ref={songFileInputRef}
+                        type="file"
+                        accept="audio/*"
+                        title="Upload reminder song"
+                        onChange={(e) => handleSongUpload(e.target.files?.[0])}
+                        className="hidden"
+                      />
+                      {habitSongName && (
+                        <p className="text-xs text-primary mt-2 font-semibold">📌 {habitSongName}</p>
+                      )}
+                    </div>
+
                     <button
                       onClick={() => createHabitForLayer(activeLayer.id)}
-                      className="bg-gradient-to-br from-primary to-primary-container text-white font-label font-semibold py-3 px-6 rounded-full shadow-lg shadow-primary/10 active:scale-95"
+                      disabled={!habitName.trim() || !habitSongDataUrl}
+                      className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-6 font-label font-bold text-sm uppercase tracking-[0.12em] disabled:opacity-50 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
                     >
-                      Add Habit + Loop Task
+                      Create Habit + Loop Task
                     </button>
                   </div>
                 </section>
@@ -668,45 +741,84 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                     </div>
                   </div>
 
-                  <div className="bg-surface-container-low rounded-2xl border border-outline-variant/30 p-4 space-y-3">
-                    <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-outline">Add new habit</p>
-                    <input
-                      value={habitName}
-                      onChange={(e) => setHabitName(e.target.value)}
-                      title="Habit name"
-                      placeholder="Habit name"
-                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                    />
-                    <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-4">
+                    <h3 className="text-lg font-serif font-bold text-on-surface">Add New Habit</h3>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Habit Name</label>
                       <input
-                        type="number"
-                        min={5}
-                        value={habitMinutes}
-                        onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
-                        title="Habit minutes"
-                        placeholder="Minutes"
-                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
+                        value={habitName}
+                        onChange={(e) => setHabitName(e.target.value)}
+                        placeholder="Write one clear habit"
+                        title="Habit name"
+                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
                       />
-                      <select
-                        value={habitFrequency}
-                        onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
-                        title="Habit frequency"
-                        className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                      </select>
                     </div>
-                    <input
-                      type="time"
-                      value={habitTime}
-                      onChange={(e) => setHabitTime(e.target.value)}
-                      title="Habit time"
-                      className="w-full rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2 text-sm"
-                    />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Duration (Min)</label>
+                        <input
+                          type="number"
+                          min={5}
+                          value={habitMinutes}
+                          onChange={(e) => setHabitMinutes(Number(e.target.value || 15))}
+                          placeholder="15"
+                          title="Duration in minutes"
+                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Repeat</label>
+                        <select
+                          value={habitFrequency}
+                          onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
+                          title="Habit frequency"
+                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Time</label>
+                      <input
+                        type="time"
+                        value={habitTime}
+                        onChange={(e) => setHabitTime(e.target.value)}
+                        title="Habit time"
+                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Reminder Song (Required)</label>
+                      <button
+                        type="button"
+                        onClick={() => songFileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
+                      >
+                        {habitSongName ? '✓ Song Loaded' : 'Upload song'}
+                      </button>
+                      <input
+                        ref={songFileInputRef}
+                        type="file"
+                        accept="audio/*"
+                        title="Upload reminder song"
+                        onChange={(e) => handleSongUpload(e.target.files?.[0])}
+                        className="hidden"
+                      />
+                      {habitSongName && (
+                        <p className="text-xs text-primary mt-2 font-semibold">📌 {habitSongName}</p>
+                      )}
+                    </div>
+
                     <button
                       onClick={() => createHabitForLayer(activeLayer.id)}
-                      className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-2.5 text-xs font-bold uppercase tracking-[0.14em]"
+                      disabled={!habitName.trim() || !habitSongDataUrl}
+                      className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-6 font-label font-bold text-xs uppercase tracking-[0.12em] disabled:opacity-50 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
                     >
                       Save Habit + Loop Task
                     </button>

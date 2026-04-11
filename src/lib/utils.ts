@@ -146,3 +146,11 @@ export function isTaskCompletedForToday(task: Task, now = new Date()): boolean {
 
   return taskDate.toDateString() === now.toDateString();
 }
+
+export function isTaskFailedByDuration(task: Task): boolean {
+  if (!task.durationStartedAt || !task.estimatedDuration || task.completed) return false;
+  const started = new Date(task.durationStartedAt).getTime();
+  const nowTime = Date.now();
+  const durationMs = task.estimatedDuration * 60 * 1000;
+  return (nowTime - started > durationMs);
+}

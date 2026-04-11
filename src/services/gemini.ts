@@ -2412,12 +2412,11 @@ export async function suggestTaskWithGemini(input: {
     return {
       name: fallbackByLayer[layer] || 'Complete one high-impact task',
       time: input.preferredTime || '08:00 AM',
-      alarmSound: input.userPreferences?.focusAlarmSound || 'Aggressive Bell',
       preferredMusic: input.userPreferences?.favoriteMusicName || 'Instrumental Warmth',
     };
   }
 
-  const data = await postEdenApi<{ success?: boolean; suggestion?: { name: string; time: string; alarmSound: string; preferredMusic: string } }>(
+  const data = await postEdenApi<{ success?: boolean; suggestion?: { name: string; time: string; preferredMusic: string } }>(
     '/api/eden/suggest-task',
     {
       ...input,

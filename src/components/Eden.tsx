@@ -428,7 +428,6 @@ const Eden: React.FC = () => {
           completed: false,
           date: draft.date || new Date().toISOString(),
           alarmEnabled: true,
-          alarmSound: preferredAlarmSound,
           preferredMusic: preferredTaskMusic,
           customAlarmAudioName: favoriteFocusTrack?.name,
           customAlarmAudioDataUrl: favoriteFocusTrack?.dataUrl,

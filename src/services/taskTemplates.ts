@@ -161,6 +161,12 @@ const SPIRITUAL_TASKS: string[] = [
   'Read a chapter from Jonah', 'Study the resurrection body',
   'Pray for those who are persecuted', 'Memorize 1 Peter 1:3-5',
   'Reflect on being salt and light', 'Pray for the world',
+  'Pray morning and night',
+  'Read Scripture daily',
+  'Practice gratitude',
+  'Avoid content that weakens your conscience',
+  'End the day by examining your actions honestly',
+  'Pray for direction, discipline, and a clean mind',
 ];
 
 // --- ACADEMIC (150+ tasks) ---
@@ -222,6 +228,12 @@ const ACADEMIC_TASKS: string[] = [
   'Practice retrieval in different order', 'Self-test without notes',
   'Grade own test', 'Analyze error patterns', 'Create error log',
   'Set improvement goal', 'Celebrate small win', 'Reflect on learning process',
+  'Study 30 minutes',
+  'Review one lecture note or problem set',
+  'Solve one technical problem',
+  'Summarize what you learned in plain words',
+  'Organize your files, formulas, and references',
+  'Ask one useful question in class or to yourself',
 ];
 
 // --- FINANCIAL (150+ tasks) ---
@@ -286,6 +298,12 @@ const FINANCIAL_TASKS: string[] = [
   'Trademark business name', 'Copyright creative work', 'Draft contracts',
   'Review legal agreements', 'Consult with lawyer', 'Plan business succession',
   'Value business', 'Prepare business for sale', 'Read biography of successful entrepreneur',
+  'Track every expense',
+  'Avoid impulse spending',
+  'Save a fixed amount, even if small',
+  'Learn one money skill a day',
+  'Do not buy tools or gear you do not need',
+  'Review spending leaks',
 ];
 
 // --- PHYSICAL (150+ tasks) ---
@@ -335,6 +353,12 @@ const PHYSICAL_TASKS: string[] = [
   'Get fitness assessment', 'Set body composition goal', 'Take progress photos',
   'Measure waist circumference', 'Celebrate non-scale victory', 'Reward consistency',
   'Find workout buddy', 'Join online fitness community', 'Share workout on social for accountability',
+  'Walk, stretch, or train daily',
+  'Sleep on time',
+  'Do not skip meals and then overeat later',
+  'Keep basic hygiene sharp',
+  'Sit with better posture',
+  'Take a quiet break with no screen',
 ];
 
 // --- GENERAL (150+ tasks) ---
@@ -411,6 +435,27 @@ const GENERAL_TASKS: string[] = [
   'Embrace imperfection', 'Done is better than perfect', 'Iterate and improve',
   'Learn from failure', 'Fail forward', 'Take calculated risk',
   'Step out of comfort zone', 'Do one thing that scares you', 'Grow a little every day',
+  'Write your top 3 tasks for the day',
+  'Finish the hardest task first',
+  'Work in timed blocks, no multitasking',
+  'Keep your phone away during deep work',
+  'End the day with a reset of your room, files, and notes',
+  'Journal one pressure, one lesson, one gratitude',
+  'Check your mood honestly, not emotionally',
+  'Avoid useless scrolling when bored',
+  'Speak to people with respect, even when stressed',
+  'Take one quiet break with no screen',
+  'Pray',
+  'Study 30 minutes',
+  'Move your body',
+  'Track your spending',
+  'Do one creator task',
+  'Sleep on time',
+  'Write one idea',
+  'Improve one script, thumbnail, title, or hook',
+  'Save one content reference',
+  'Build one small asset for the future',
+  'Publish or prepare something, not just consume',
 ];
 
 // ----------------------------------------------------------------------
@@ -530,6 +575,151 @@ const buildAllTemplates = (): EdenTemplate[] => {
 };
 
 const ALL_TEMPLATES: EdenTemplate[] = buildAllTemplates();
+
+const normalizeSearchText = (value: string) => {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const getBaseTemplateName = (template: EdenTemplate) => template.name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+const getTemplateAutocompleteScore = (template: EdenTemplate, intent: string, position: number, boost: number) => {
+  const query = normalizeSearchText(intent);
+  if (!query) return 0;
+
+  const baseName = normalizeSearchText(getBaseTemplateName(template));
+  const candidate = normalizeSearchText(template.name);
+  const candidateWords = candidate.split(' ').filter(Boolean);
+  const queryWords = query.split(' ').filter(Boolean);
+
+  let score = boost;
+
+  if (baseName === query || candidate === query) score += 250;
+  if (baseName.startsWith(query) || candidate.startsWith(query)) score += 180;
+  if (baseName.includes(query) || candidate.includes(query)) score += 90;
+
+  const prefixHits = queryWords.filter((word) => {
+    if (!word) return false;
+    return candidateWords.some((candidateWord) => candidateWord.startsWith(word));
+  }).length;
+
+  score += prefixHits * 40;
+
+  const tokenHits = queryWords.filter((word) => candidateWords.some((candidateWord) => candidateWord.includes(word))).length;
+  score += tokenHits * 16;
+
+  if (template.tags.some((tag) => normalizeSearchText(tag).includes(query))) score += 18;
+  if (template.category === 'planning' && /(plan|priority|today|daily|top 3|reset)/.test(query)) score += 12;
+  if (template.category === 'reflection' && /(reflect|journal|gratitude|mood|examine)/.test(query)) score += 12;
+  if (template.category === 'core-habit' && /(pray|scripture|grace|spirit|bible)/.test(query)) score += 12;
+  if (template.category === 'health' && /(move|walk|sleep|hydrate|meal|stretch|body)/.test(query)) score += 12;
+  if (template.category === 'wealth' && /(money|spend|save|expense|budget|financial)/.test(query)) score += 12;
+  if (template.category === 'learning' && /(study|review|problem|learn|academic|lecture)/.test(query)) score += 12;
+
+  score -= Math.min(position * 2, 12);
+  return score;
+};
+
+export const getEdenTypingSuggestions = (params: {
+  tasks: Task[];
+  intent: string;
+  layerId?: LayerId;
+  limit?: number;
+  mostRepeated?: Array<{ name: string; layerId: LayerId; count: number }>;
+  context?: Partial<TemplateRecommendationContext>;
+  userProfile?: UserTemplateProfile;
+}): EdenTemplate[] => {
+  const {
+    tasks,
+    intent,
+    layerId,
+    limit = 6,
+    mostRepeated = [],
+    context = {},
+    userProfile,
+  } = params;
+
+  const query = normalizeSearchText(intent);
+  if (!query) {
+    return getRecommendedEdenTemplates({
+      tasks,
+      layerId,
+      limit,
+      mostRepeated,
+      context,
+      userProfile,
+    });
+  }
+
+  const basePool = layerId ? getEdenTemplatesByLayer(layerId) : getAllEdenTemplates();
+  const exactPhrase = basePool.filter((template) => normalizeSearchText(getBaseTemplateName(template)).startsWith(query));
+
+  const tokenCandidates = basePool
+    .map((template, index) => ({
+      template,
+      score: getTemplateAutocompleteScore(template, query, index, 0),
+    }))
+    .filter((item) => item.score > 0);
+
+  const recommendedPool = getRecommendedEdenTemplates({
+    tasks,
+    layerId,
+    limit: Math.max(limit * 3, 24),
+    mostRepeated,
+    context: {
+      ...context,
+      avoidOverwhelm: context.avoidOverwhelm ?? true,
+    },
+    userProfile,
+  });
+
+  const recommendedBoosts = new Map(recommendedPool.map((template, index) => [template.id, recommendedPool.length - index]));
+  const candidateMap = new Map<string, EdenTemplate>();
+
+  [...exactPhrase, ...basePool].forEach((template) => {
+    if (!candidateMap.has(template.id)) {
+      candidateMap.set(template.id, template);
+    }
+  });
+
+  const ranked = Array.from(candidateMap.values())
+    .map((template, index) => ({
+      template,
+      score:
+        getTemplateAutocompleteScore(template, query, index, recommendedBoosts.get(template.id) || 0) +
+        (template.layerId === layerId ? 12 : 0),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aBase = getBaseTemplateName(a.template);
+      const bBase = getBaseTemplateName(b.template);
+      if (aBase.length !== bBase.length) return aBase.length - bBase.length;
+      return a.template.name.localeCompare(b.template.name);
+    });
+
+  const results: EdenTemplate[] = [];
+  for (const item of ranked) {
+    if (results.length >= limit) break;
+    if (!results.some((template) => template.id === item.template.id)) {
+      results.push(item.template);
+    }
+  }
+
+  if (results.length < limit) {
+    for (const item of tokenCandidates.sort((a, b) => b.score - a.score)) {
+      if (results.length >= limit) break;
+      if (!results.some((template) => template.id === item.template.id)) {
+        results.push(item.template);
+      }
+    }
+  }
+
+  return results.slice(0, limit);
+};
 
 // ----------------------------------------------------------------------
 // Public Exports

@@ -7,7 +7,7 @@ import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
 import { sendCrossChannelNotification, areNotificationsEnabled } from '../services/notifications';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
-import { EDEN_TEMPLATE_COUNT, EdenTemplate, getRecommendedEdenTemplates } from '../services/taskTemplates';
+import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
@@ -223,10 +223,10 @@ const Home: React.FC = () => {
   const [taskByEdenClickCount, setTaskByEdenClickCount] = useState(0);
 
   const realtimeTemplateSuggestions = useMemo(() => {
-    const query = newTaskName.trim().toLowerCase();
+    const query = newTaskName.trim();
     if (!query) return [] as EdenTemplate[];
 
-    const suggestions = getRecommendedEdenTemplates({
+    const suggestions = getEdenTypingSuggestions({
       tasks,
       layerId: newTaskLayer,
       intent: newTaskName,
@@ -238,14 +238,7 @@ const Home: React.FC = () => {
       limit: 12,
     });
 
-    const words = query.split(/\s+/).filter(Boolean);
-    return suggestions
-      .filter((template) => {
-        const candidate = template.name.toLowerCase();
-        if (candidate.includes(query)) return true;
-        return words.every((word) => word.length < 2 || candidate.includes(word));
-      })
-      .slice(0, 6);
+    return suggestions.slice(0, 6);
   }, [newTaskName, newTaskLayer, tasks, user?.preferences.mostRepeatedTasks]);
 
   useEffect(() => {

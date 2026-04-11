@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
-import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2, MessageCircle } from 'lucide-react';
 import { cn, formatXP, getProgress } from '../lib/utils';
 import { Habit, Layer, LayerId } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getEdenInsight } from '../services/gemini';
+import { BibleReadingUI } from './BibleReadingUI';
+import { EdenChat } from './EdenChat';
 
 const iconByLayer: Record<LayerId, string> = {
   spiritual: 'auto_awesome',
@@ -177,6 +179,8 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [showHabitSuggestions, setShowHabitSuggestions] = useState(false);
   const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
+  const [bibleReadingToday, setBibleReadingToday] = useState(false);
+  const [showEdenChat, setShowEdenChat] = useState(false);
   const songFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const layerStats = useMemo(() => {
@@ -576,6 +580,69 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                </>
+              ) : activeLayer.id === 'spiritual' ? (
+                <>
+                  <section className="mb-8">
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-2xl font-serif italic text-on-surface">Daily Scripture</h2>
+                      <button
+                        onClick={() => setShowEdenChat(!showEdenChat)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.12em] hover:bg-primary/90 transition-colors"
+                      >
+                        <MessageCircle size={16} />
+                        Ask Eden
+                      </button>
+                    </div>
+
+                    <BibleReadingUI
+                      currentDay={1}
+                      completedToday={bibleReadingToday}
+                      onToggleComplete={setBibleReadingToday}
+                      isProgressionEnforced={true}
+                    />
+                  </section>
+
+                  {showEdenChat && (
+                    <section className="mb-8 h-96">
+                      <EdenChat
+                        context="User is reading daily scriptures for spiritual growth and discipline"
+                        onClose={() => setShowEdenChat(false)}
+                      />
+                    </section>
+                  )}
+
+                  <section className="mb-6 relative overflow-hidden rounded-[2rem] border border-outline-variant/25 bg-surface-container-low p-5 sm:p-7">
+                    <div className={cn('absolute top-0 left-0 w-full h-0.5', layerColorClasses[activeLayer.id].stripe)} />
+                    <p className={cn('text-[10px] uppercase tracking-[0.15em] font-bold mb-3', layerColorClasses[activeLayer.id].icon)}>Eden Insight</p>
+                    <h2 className="text-4xl font-serif italic text-on-surface mb-4">{layerHeroTitle[activeLayer.id]}</h2>
+                    <p className="text-sm text-on-surface-variant leading-relaxed">
+                      {layerSubtitle[activeLayer.id]} Focus on consistency over intensity, then let repetition compound your results.
+                    </p>
+                    <button onClick={() => handleViewPlan(activeLayer)} className="mt-5 px-5 py-2 rounded-full bg-gradient-to-br from-primary to-primary-container text-white text-[11px] font-bold uppercase tracking-[0.14em]">
+                      View Plan
+                    </button>
+                    <button
+                      onClick={() => askEdenForLayerHint(activeLayer)}
+                      className="mt-3 ml-2 px-5 py-2 rounded-full border border-outline-variant/35 text-[11px] font-bold uppercase tracking-[0.14em] text-primary"
+                    >
+                      Get Eden Hint
+                    </button>
+                  </section>
+
+                  <section className="mb-6 bg-surface-container-low rounded-2xl border border-outline-variant/30 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-outline mb-3">Core Practices</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {layerPractices[activeLayer.id].map((practice) => (
+                        <div key={practice.title} className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-3">
+                          <span className="material-symbols-outlined text-primary text-[18px]">{practice.icon}</span>
+                          <p className="text-sm font-semibold text-on-surface mt-1">{practice.title}</p>
+                          <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">{practice.detail}</p>
                         </div>
                       ))}
                     </div>

@@ -97,6 +97,20 @@ const parseAnyTimeTo24 = (value: string) => {
   return null;
 };
 
+const useDebouncedValue = <T,>(value: T, delayMs: number) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [value, delayMs]);
+
+  return debouncedValue;
+};
+
 const Home: React.FC = () => {
   const {
     user,
@@ -220,26 +234,26 @@ const Home: React.FC = () => {
 
   const [edenTemplatePool, setEdenTemplatePool] = useState<EdenTemplate[]>([]);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [taskByEdenClickCount, setTaskByEdenClickCount] = useState(0);
+  const debouncedTaskName = useDebouncedValue(newTaskName.trim(), 220);
 
   const realtimeTemplateSuggestions = useMemo(() => {
-    const query = newTaskName.trim();
-    if (!query) return [] as EdenTemplate[];
+    const query = debouncedTaskName.trim();
+    if (query.length < 2) return [] as EdenTemplate[];
 
     const suggestions = getEdenTypingSuggestions({
       tasks,
       layerId: newTaskLayer,
-      intent: newTaskName,
+      intent: query,
       mostRepeated: user?.preferences.mostRepeatedTasks?.map((entry) => ({
         name: entry.name,
         layerId: entry.layerId,
         count: entry.count,
       })),
-      limit: 12,
+      limit: 8,
     });
 
-    return suggestions.slice(0, 6);
-  }, [newTaskName, newTaskLayer, tasks, user?.preferences.mostRepeatedTasks]);
+    return suggestions.slice(0, 5);
+  }, [debouncedTaskName, newTaskLayer, tasks, user?.preferences.mostRepeatedTasks]);
 
   useEffect(() => {
     if (showQuickAdd) return;
@@ -1259,7 +1273,6 @@ const Home: React.FC = () => {
     setQuickAddError('');
     setShowTemplatePicker(false);
     setEdenTemplatePool([]);
-    setTaskByEdenClickCount(0);
     setShowQuickAdd(false);
   };
 
@@ -1330,21 +1343,9 @@ const Home: React.FC = () => {
     if (recommendations.length > 0) {
       setEdenTemplatePool(recommendations);
       setShowTemplatePicker(true);
-
-      const candidateIndex = taskByEdenClickCount % recommendations.length;
-      let selected = recommendations[candidateIndex];
-      if (
-        selected &&
-        selected.name.toLowerCase() === newTaskName.trim().toLowerCase() &&
-        recommendations.length > 1
-      ) {
-        selected = recommendations[(candidateIndex + 1) % recommendations.length];
-      }
-
-      if (selected) {
-        applyTemplateDraft(selected);
-      }
-      setTaskByEdenClickCount((prev) => prev + 1);
+    } else {
+      setShowTemplatePicker(false);
+      setQuickAddError('No strong template match yet. You can keep typing or add the task manually.');
     }
 
     const suggestion = await suggestTaskWithGemini({
@@ -1367,6 +1368,7 @@ const Home: React.FC = () => {
       return;
     }
 
+    setQuickAddError('');
     setNewTaskName(suggestion.name || newTaskName);
     const normalizedTime = parseAnyTimeTo24(suggestion.time || newTaskTime);
     if (normalizedTime) {
@@ -1583,114 +1585,6 @@ const Home: React.FC = () => {
           </p>
         </motion.section>
 
-          <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }} className="bg-surface-container-low rounded-2xl p-5 border border-outline-variant/30">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-label text-[11px] uppercase tracking-[0.16em] text-outline font-bold">Reminder Feed</h2>
-              <button
-                type="button"
-                onClick={() => setReminderFeed([])}
-                className="text-[10px] uppercase tracking-[0.14em] text-primary font-bold"
-              >
-                Clear
-              </button>
-            </div>
-
-            {reminderFeed.length === 0 && (
-              <p className="text-sm text-on-surface-variant">No reminders yet. Triggered notifications will appear here.</p>
-            )}
-
-            {reminderFeed.length > 0 && (
-              <div className="space-y-2">
-                {reminderFeed.slice(0, 6).map((entry) => (
-                  <div key={entry.id} className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-                    <p className="text-xs font-semibold text-on-surface">{entry.title}</p>
-                    <p className="text-xs text-on-surface-variant">{entry.detail}</p>
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-outline mt-1">{format(new Date(entry.createdAt), 'hh:mm a')}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.section>
-
-          <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }} className="bg-surface-container-low rounded-2xl p-5 border border-outline-variant/30">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <BellRing size={16} className="text-primary" />
-                <h2 className="font-label text-[11px] uppercase tracking-[0.16em] text-outline font-bold">System Status</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={runSystemCheck}
-                  className="text-[10px] uppercase tracking-[0.14em] text-primary font-bold"
-                >
-                  Run Check
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void refreshOperationalStatus(true)}
-                  className="text-[10px] uppercase tracking-[0.14em] text-primary font-bold"
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Browser Notifications</p>
-                <p className="text-sm font-semibold text-on-surface">{notificationStateLabel}</p>
-                <p className="text-xs text-on-surface-variant">Task, scripture, and streak toggles: {notificationsEnabled ? 'ON' : 'OFF'}</p>
-              </div>
-
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Alarm Engine</p>
-                <p className="text-sm font-semibold text-on-surface">{alarmReadyCount} task alarms armed</p>
-                <p className="text-xs text-on-surface-variant">Audio permission: {mediaPermissionGranted ? 'Granted' : mediaPermissionGranted === false ? 'Blocked' : 'Checking'}</p>
-              </div>
-
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Telegram Delivery</p>
-                <p className="text-sm font-semibold text-on-surface">
-                  {telegramOpsStatus?.configured ? 'Bot configured' : 'Bot token missing'}
-                </p>
-                <p className="text-xs text-on-surface-variant">
-                  Chat linked: {telegramChatId ? 'Yes' : 'No'} • Linked chats: {telegramOpsStatus?.linkedChats ?? 0}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Task Sync Health</p>
-                <p className="text-sm font-semibold text-on-surface">
-                  {!telegramChatId
-                    ? 'Connect Telegram to sync'
-                    : telegramRemoteTaskCount === null
-                      ? 'Checking...'
-                      : syncDrift !== null && syncDrift <= 2
-                        ? 'In sync'
-                        : 'Sync drift detected'}
-                </p>
-                <p className="text-xs text-on-surface-variant">
-                  App tasks: {tasks.length} • Telegram mirror: {telegramRemoteTaskCount ?? 'n/a'}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Telegram Commands</p>
-              <p className="text-xs text-on-surface-variant mt-1">{TELEGRAM_COMMANDS.join('  ')}</p>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-outline">
-              <span>{opsChecking ? 'Checking status...' : 'Status idle'}</span>
-              <span>{opsLastCheckedAt ? `Last check ${format(new Date(opsLastCheckedAt), 'hh:mm a')}` : 'No checks yet'}</span>
-            </div>
-
-            {opsCheckError && (
-              <p className="mt-2 text-xs text-red-600">{opsCheckError}</p>
-            )}
-          </motion.section>
-
         {priorityTask && (
           <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-[0_10px_28px_rgba(44,33,24,0.05)] relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full bg-primary-container" />
@@ -1838,8 +1732,7 @@ const Home: React.FC = () => {
           <motion.div ref={scripturePageRef} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
             {isScriptureFullscreen && (
               <div
-                className="fixed left-0 right-0 z-40 px-3 pointer-events-none"
-                style={{ top: 'env(safe-area-inset-top)' }}
+                className="fixed left-0 right-0 z-40 px-3 pointer-events-none top-[env(safe-area-inset-top)]"
               >
                 <div className="max-w-4xl mx-auto pt-2 flex items-center justify-between pointer-events-auto">
                   <button
@@ -1863,7 +1756,7 @@ const Home: React.FC = () => {
             )}
 
             <header className="sticky top-0 left-0 right-0 z-20 bg-background/80 backdrop-blur-md border-b border-outline-variant/15">
-              <div className="min-h-16 max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top))' }}>
+              <div className="min-h-16 max-w-4xl mx-auto px-4 sm:px-6 pt-[max(0.25rem,env(safe-area-inset-top))] flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <button aria-label="Close scripture page" title="Back" onClick={closeScripturePage} className="h-10 w-10 rounded-full hover:bg-surface-container-low text-primary flex items-center justify-center transition-colors">
                     <ArrowLeft size={18} />
@@ -2045,25 +1938,26 @@ const Home: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[75] bg-black/40 backdrop-blur-sm flex items-end"
-            onClick={() => setShowQuickAdd(false)}
+            className="px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto mt-2"
           >
             <motion.div
-              initial={{ y: '100%' }}
+              initial={{ y: 12 }}
               animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 280 }}
-              className="w-full max-h-[92vh] overflow-y-auto rounded-t-3xl bg-surface p-6 border-t border-outline-variant/35"
-              onClick={(e) => e.stopPropagation()}
+              exit={{ y: 12 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
+              className="w-full overflow-hidden rounded-[2rem] bg-surface-container-low border border-outline-variant/25 shadow-[0_20px_50px_rgba(44,33,24,0.08)] p-5 sm:p-6"
             >
-              <div className="max-w-3xl mx-auto">
-                <div className="flex items-center justify-between mb-5">
-                  <h3 className="display-text text-2xl text-on-surface">Quick Add Task</h3>
+              <div className="max-w-3xl mx-auto space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Quick Add Task</p>
+                    <h3 className="display-text text-2xl text-on-surface mt-1">Create a task without the noise</h3>
+                  </div>
                   <button
                     aria-label="Close quick add"
                     title="Close"
                     onClick={() => setShowQuickAdd(false)}
-                    className="h-9 w-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center"
+                    className="h-9 w-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center border border-outline-variant/30"
                   >
                     <ArrowLeft size={16} />
                   </button>
@@ -2098,6 +1992,9 @@ const Home: React.FC = () => {
                           </button>
                         ))}
                       </div>
+                    )}
+                    {newTaskName.trim().length >= 2 && realtimeTemplateSuggestions.length === 0 && (
+                      <p className="mt-2 text-xs text-secondary">No close match yet. Keep typing or finish manually.</p>
                     )}
                   </div>
 
@@ -2449,31 +2346,6 @@ const Home: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {toastReminder && !isSubPageOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="fixed top-[74px] right-4 z-[85] w-[min(92vw,420px)] rounded-2xl border border-primary/35 bg-[#fff8ee] shadow-[0_12px_26px_rgba(56,37,22,0.2)] p-4"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">{toastReminder.title}</p>
-                <p className="text-sm text-on-surface mt-1">{toastReminder.detail}</p>
-              </div>
-              <button
-                type="button"
-                aria-label="Close reminder toast"
-                onClick={() => setToastReminder(null)}
-                className="h-7 w-7 rounded-full bg-surface-container-low text-primary flex items-center justify-center"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

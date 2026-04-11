@@ -131,6 +131,8 @@ const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[]) => {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
+
   // Cache management for session persistence
   const cacheUser = (user: User | null) => {
     if (!user) {
@@ -244,7 +246,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Load cloud state from Supabase when user is available, then keep it synced.
   useEffect(() => {
-    if (!user?.id) {
+    const accountKey = getAccountKey(user);
+    if (!accountKey) {
       hasCompletedInitialCloudSyncRef.current = false;
       lastCloudStateHashRef.current = '';
       return;
@@ -278,9 +281,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const pullFromCloud = async () => {
-      let remoteState = await loadUserState(user.id);
+      let remoteState = await loadUserState(accountKey);
       if (!remoteState) {
-        remoteState = await loadBackendUserState(user.id);
+        remoteState = await loadBackendUserState(accountKey);
       }
       if (!remoteState || cancelled) return;
       applyRemoteState(remoteState);
@@ -305,7 +308,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [user?.id]);
+  }, [user?.email, user?.id]);
 
   // Save to localStorage on change
   useEffect(() => {
@@ -328,14 +331,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Local cache save skipped (likely storage quota reached):', error);
     }
 
-    if (user?.id) {
+    const accountKey = getAccountKey(user);
+    if (accountKey) {
       const syncState = async () => {
         if (!hasCompletedInitialCloudSyncRef.current) return;
         if (applyingCloudStateRef.current) return;
 
-        const supabaseSaved = await saveUserState(user.id, statePayload);
+        const supabaseSaved = await saveUserState(accountKey, statePayload);
         if (!supabaseSaved) {
-          const backendSaved = await saveBackendUserState(user.id, statePayload);
+          const backendSaved = await saveBackendUserState(accountKey, statePayload);
           if (backendSaved) {
             lastCloudStateHashRef.current = JSON.stringify(statePayload);
           }
@@ -399,7 +403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            userId: user?.id,
+            userId: getAccountKey(user),
             tasks: mergedTasks,
           }),
         });
@@ -411,7 +415,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           },
           body: JSON.stringify({
             chatId,
-            userId: user?.id,
+            userId: getAccountKey(user),
           }),
         });
 
@@ -422,7 +426,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     pushTasks();
-  }, [tasks, user?.id, user?.preferences.telegramChatId]);
+  }, [tasks, user?.email, user?.id, user?.preferences.telegramChatId]);
 
   useEffect(() => {
     const applyTaskCompletionWindow = () => {

@@ -123,6 +123,7 @@ const Profile: React.FC = () => {
 
   const testTelegramConnection = async () => {
     const chatId = (user.preferences.telegramChatId || '').trim();
+    const accountKey = (user.email || user.id || '').trim().toLowerCase();
     const normalizedChatId = chatId.replace(/[^0-9-]/g, '');
 
     if (normalizedChatId !== chatId) {
@@ -169,7 +170,7 @@ const Profile: React.FC = () => {
         },
         body: JSON.stringify({
           chatId: normalizedChatId,
-          userId: user.id,
+          userId: accountKey,
         }),
       });
 
@@ -318,6 +319,8 @@ const Profile: React.FC = () => {
               <span className="text-sm text-on-surface">Reminder Time</span>
               <input
                 type="time"
+                title="Bible reminder time"
+                placeholder="06:30"
                 value={bibleReminderDraft}
                 onChange={(e) => setBibleReminderDraft(e.target.value)}
                 className="w-28 rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm text-right"

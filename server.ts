@@ -112,7 +112,7 @@ const defaultUserPreferences = {
 
 function normalizeUser(user: Partial<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>) {
   return {
-    id: user.id || `usr-${Date.now()}`,
+    id: String(user.email || user.id || `usr-${Date.now()}`).trim().toLowerCase(),
     email: user.email || '',
     name: user.name || (user.email || 'user').split('@')[0],
     role: user.role || 'user',
@@ -835,12 +835,14 @@ async function startServer() {
       let admin = db.users.find((u) => u.email === normalizedEmail && u.role === 'admin');
       if (!admin) {
         admin = normalizeUser({
-          id: 'admin-root',
           email: normalizedEmail,
           name: 'Admin',
           role: 'admin',
         });
         db.users.push(admin);
+        writeDb(DB_PATH, db);
+      } else if (admin.id !== normalizedEmail) {
+        admin.id = normalizedEmail;
         writeDb(DB_PATH, db);
       }
 
@@ -856,13 +858,23 @@ async function startServer() {
     let account = db.users.find((u) => u.email === normalizedEmail);
     if (!account) {
       account = normalizeUser({
-        id: `usr-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
         email: normalizedEmail,
         name: normalizedEmail.split('@')[0],
         password: String(password || ''),
         role: 'user',
       });
       db.users.push(account);
+      writeDb(DB_PATH, db);
+    } else if (account.id !== normalizedEmail) {
+      const previousId = account.id;
+      account.id = normalizedEmail;
+      if (db.sessions) {
+        Object.values(db.sessions).forEach((session) => {
+          if (session.userId === previousId) {
+            session.userId = normalizedEmail;
+          }
+        });
+      }
       writeDb(DB_PATH, db);
     }
 
@@ -926,6 +938,18 @@ async function startServer() {
     }
 
     const user = db.users.find((item) => item.id === session.userId) || null;
+    if (user && user.email && user.id !== user.email) {
+      const previousId = user.id;
+      user.id = user.email.trim().toLowerCase();
+      if (db.sessions) {
+        Object.values(db.sessions).forEach((entry) => {
+          if (entry.userId === previousId) {
+            entry.userId = user!.id;
+          }
+        });
+      }
+      writeDb(DB_PATH, db);
+    }
 
     if (user && !user.preferences?.telegramChatId && db.telegram?.byChatId) {
       const linked = Object.entries(db.telegram.byChatId).find(([, store]) => store?.userId === user.id);

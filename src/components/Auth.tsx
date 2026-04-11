@@ -21,7 +21,7 @@ const Auth: React.FC = () => {
   const ADMIN_EMAIL = 'kelylo.ing@gmail.com';
   const ADMIN_PASSWORD = 'K5l6l4??';
 
-  const buildUserFromAuth = (emailAddress: string, id = Date.now().toString(), nameOverride?: string) => ({
+  const buildUserFromAuth = (emailAddress: string, id = emailAddress.trim().toLowerCase(), nameOverride?: string) => ({
     id,
     email: emailAddress,
     name: nameOverride || emailAddress.split('@')[0],
@@ -65,7 +65,7 @@ const Auth: React.FC = () => {
 
     // Admin bypass: no provider validation required.
     if (normalizedEmail === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-      const adminUser = buildUserFromAuth(ADMIN_EMAIL, 'admin-root', 'Admin') as { id: string; email: string; name: string; role?: 'admin' | 'user' };
+      const adminUser = buildUserFromAuth(ADMIN_EMAIL, ADMIN_EMAIL, 'Admin') as { id: string; email: string; name: string; role?: 'admin' | 'user' };
       await bootstrapSession({ ...adminUser, role: 'admin' });
       setUser(adminUser);
       setIsLoading(false);
@@ -82,7 +82,7 @@ const Auth: React.FC = () => {
         const authUser = data.user;
         const nextUser = buildUserFromAuth(
             authUser?.email || normalizedEmail,
-            authUser?.id || '1',
+            authUser?.email || normalizedEmail,
             (authUser?.user_metadata?.full_name as string) || (authUser?.email || normalizedEmail).split('@')[0]
           ) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
         await bootstrapSession(nextUser);
@@ -113,7 +113,7 @@ const Auth: React.FC = () => {
 
         const nextUser = buildUserFromAuth(
             fallbackData.user.email || normalizedEmail,
-            fallbackData.user.id || Date.now().toString(),
+            fallbackData.user.email || normalizedEmail,
             fallbackData.user.name || normalizedEmail.split('@')[0]
           ) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
         await bootstrapSession(nextUser);
@@ -148,7 +148,7 @@ const Auth: React.FC = () => {
 
       const nextUser = buildUserFromAuth(
           fallbackData.user.email || normalizedEmail,
-          fallbackData.user.id || Date.now().toString(),
+          fallbackData.user.email || normalizedEmail,
           fallbackData.user.name || normalizedEmail.split('@')[0]
         ) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
       await bootstrapSession(nextUser);
@@ -201,7 +201,7 @@ const Auth: React.FC = () => {
     }
 
     setTimeout(() => {
-      const nextUser = buildUserFromAuth(email || 'user@edenify.com', Date.now().toString(), fullName || email.split('@')[0]) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
+      const nextUser = buildUserFromAuth(email || 'user@edenify.com', (email || 'user@edenify.com').trim().toLowerCase(), fullName || email.split('@')[0]) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
       bootstrapSession(nextUser);
       setUser(nextUser);
       setIsLoading(false);

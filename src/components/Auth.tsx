@@ -191,7 +191,7 @@ const Auth: React.FC = () => {
       const authUser = data.user;
       const nextUser = buildUserFromAuth(
         authUser?.email || email,
-        authUser?.id || Date.now().toString(),
+        (authUser?.email || email).trim().toLowerCase(),
         (authUser?.user_metadata?.full_name as string) || fullName || email.split('@')[0]
       ) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
       await bootstrapSession(nextUser);

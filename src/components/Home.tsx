@@ -213,6 +213,33 @@ const Home: React.FC = () => {
 
   const [edenTemplatePool, setEdenTemplatePool] = useState<EdenTemplate[]>([]);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [taskByEdenClickCount, setTaskByEdenClickCount] = useState(0);
+
+  const realtimeTemplateSuggestions = useMemo(() => {
+    const query = newTaskName.trim().toLowerCase();
+    if (!query) return [] as EdenTemplate[];
+
+    const suggestions = getRecommendedEdenTemplates({
+      tasks,
+      layerId: newTaskLayer,
+      intent: newTaskName,
+      mostRepeated: user?.preferences.mostRepeatedTasks?.map((entry) => ({
+        name: entry.name,
+        layerId: entry.layerId,
+        count: entry.count,
+      })),
+      limit: 12,
+    });
+
+    const words = query.split(/\s+/).filter(Boolean);
+    return suggestions
+      .filter((template) => {
+        const candidate = template.name.toLowerCase();
+        if (candidate.includes(query)) return true;
+        return words.every((word) => word.length < 2 || candidate.includes(word));
+      })
+      .slice(0, 6);
+  }, [newTaskName, newTaskLayer, tasks, user?.preferences.mostRepeatedTasks]);
 
   useEffect(() => {
     if (showQuickAdd) return;
@@ -1149,6 +1176,7 @@ const Home: React.FC = () => {
     setQuickAddError('');
     setShowTemplatePicker(false);
     setEdenTemplatePool([]);
+    setTaskByEdenClickCount(0);
     setShowQuickAdd(false);
   };
 
@@ -1219,7 +1247,21 @@ const Home: React.FC = () => {
     if (recommendations.length > 0) {
       setEdenTemplatePool(recommendations);
       setShowTemplatePicker(true);
-      applyTemplateDraft(recommendations[0]);
+
+      const candidateIndex = taskByEdenClickCount % recommendations.length;
+      let selected = recommendations[candidateIndex];
+      if (
+        selected &&
+        selected.name.toLowerCase() === newTaskName.trim().toLowerCase() &&
+        recommendations.length > 1
+      ) {
+        selected = recommendations[(candidateIndex + 1) % recommendations.length];
+      }
+
+      if (selected) {
+        applyTemplateDraft(selected);
+      }
+      setTaskByEdenClickCount((prev) => prev + 1);
     }
 
     const suggestion = await suggestTaskWithGemini({
@@ -1877,6 +1919,24 @@ const Home: React.FC = () => {
                       placeholder="Write one clear task"
                       className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
                     />
+                    {realtimeTemplateSuggestions.length > 0 && (
+                      <div className="mt-2 rounded-xl border border-outline-variant/35 bg-surface-container-lowest p-2 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-secondary px-1">Suggestions</p>
+                        {realtimeTemplateSuggestions.map((template) => (
+                          <button
+                            key={`live-${template.id}`}
+                            type="button"
+                            onClick={() => applyTemplateDraft(template)}
+                            className="w-full text-left rounded-lg border border-outline-variant/30 bg-surface-container-low px-2 py-2 hover:bg-surface-container-high"
+                          >
+                            <p className="text-xs font-semibold text-on-surface truncate">{template.name}</p>
+                            <p className="text-[10px] text-secondary uppercase tracking-[0.1em] mt-1">
+                              {template.layerId} • {template.time} • {template.repeat}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

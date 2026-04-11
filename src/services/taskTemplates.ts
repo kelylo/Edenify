@@ -438,7 +438,7 @@ const CATEGORY_MAP: Record<string, TemplateCategory> = {
   'mobility': 'health', 'strength': 'health', 'cardio': 'health',
   // General
   'plan': 'planning', 'priority': 'planning', 'inbox': 'maintenance',
-  'clean': 'maintenance', 'declutter': 'maintenance', 'review': 'reflection',
+  'clean': 'maintenance', 'declutter': 'maintenance', 'reflective review': 'reflection',
   'organize': 'maintenance', 'call': 'connection', 'message': 'connection',
   'reflect': 'reflection', 'gratitude': 'reflection', 'goal': 'planning',
 };

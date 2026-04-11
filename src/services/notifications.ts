@@ -47,6 +47,24 @@ export const sendSystemNotification = async (payload: NotificationPayload): Prom
   }
 
   try {
+    // Prefer service-worker notifications when available for better background reliability.
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready.catch(() => null);
+      if (registration?.showNotification) {
+        await registration.showNotification(payload.title, {
+          body: payload.body,
+          icon: payload.icon || '/edenify-logo.png',
+          badge: '/edenify-logo.png',
+          tag: payload.tag || 'default',
+          renotify: true,
+          vibrate: [240, 120, 240],
+          requireInteraction: false,
+          data: { url: '/' },
+        });
+        return;
+      }
+    }
+
     const notification = new Notification(payload.title, {
       body: payload.body,
       icon: payload.icon || '/edenify-logo.png',

@@ -610,6 +610,109 @@ async function sendTelegramMessage(token: string, chatId: string, text: string) 
   });
 }
 
+function resolveTelegramBotToken() {
+  const candidates = [
+    process.env.TELEGRAM_BOT_TOKEN,
+    process.env.TELEGRAM_BOT_TOKEN_1,
+    process.env.TELEGRAM_BOT_TOKEN_PRIMARY,
+  ]
+    .map((value) => (value || '').trim())
+    .filter(Boolean);
+
+  return candidates[0] || '';
+}
+
+async function processBackgroundTaskReminders(dbPath: string) {
+  const token = resolveTelegramBotToken();
+  if (!token) return;
+
+  const db = readDb(dbPath);
+  db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
+  db.telegram.reminders = db.telegram.reminders || {};
+
+  const nowMs = Date.now();
+  let changed = false;
+
+  const usersById = new Map((db.users || []).map((user) => [user.id, user]));
+
+  for (const [userId, state] of Object.entries(db.data || {})) {
+    const tasks = Array.isArray((state as any)?.tasks) ? ((state as any).tasks as TelegramTask[]) : [];
+    if (!tasks.length) continue;
+
+    const userFromState = (state as any)?.user;
+    const userFromDb = usersById.get(userId);
+    const preferences = {
+      ...defaultUserPreferences,
+      ...(userFromDb?.preferences || {}),
+      ...(userFromState?.preferences || {}),
+      notifications: {
+        ...defaultUserPreferences.notifications,
+        ...(userFromDb?.preferences?.notifications || {}),
+        ...(userFromState?.preferences?.notifications || {}),
+      },
+    };
+
+    const chatId = normalizeChatId(preferences.telegramChatId);
+    if (!chatId || !preferences.notifications?.taskReminders) continue;
+
+    for (const rawTask of tasks) {
+      const task = normalizeTelegramTask(rawTask);
+      if (task.completed || task.alarmEnabled === false) continue;
+
+      const due = parseTelegramTaskDueDate(task);
+      if (!due) continue;
+
+      const dueMs = due.getTime();
+      const reminderMs = dueMs - 5 * 60 * 1000;
+      const dueStamp = due.toISOString().slice(0, 16);
+
+      const reminderKey = `${userId}|${task.id}|${dueStamp}|reminder`;
+      const alarmKey = `${userId}|${task.id}|${dueStamp}|alarm`;
+
+      if (!db.telegram.reminders[reminderKey] && nowMs >= reminderMs && nowMs <= dueMs + 75_000) {
+        try {
+          await sendTelegramMessage(
+            token,
+            chatId,
+            `Task reminder: ${task.name} starts in 5 minutes (${task.time}).`
+          );
+          db.telegram.reminders[reminderKey] = new Date().toISOString();
+          changed = true;
+        } catch (error) {
+          console.warn('Background reminder send failed:', error);
+        }
+      }
+
+      if (!db.telegram.reminders[alarmKey] && nowMs >= dueMs && nowMs <= dueMs + 75_000) {
+        try {
+          await sendTelegramMessage(
+            token,
+            chatId,
+            `Alarm now: ${task.name} is due (${task.time}).`
+          );
+          db.telegram.reminders[alarmKey] = new Date().toISOString();
+          changed = true;
+        } catch (error) {
+          console.warn('Background alarm send failed:', error);
+        }
+      }
+    }
+  }
+
+  // Keep the reminder map bounded.
+  for (const [key, value] of Object.entries(db.telegram.reminders)) {
+    const ts = Date.parse(value);
+    if (!Number.isFinite(ts) || nowMs - ts > 3 * 24 * 60 * 60 * 1000) {
+      delete db.telegram.reminders[key];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    writeDb(dbPath, db);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 6001);
@@ -621,6 +724,11 @@ async function startServer() {
   if (!fs.existsSync(DB_PATH)) {
     fs.writeFileSync(DB_PATH, JSON.stringify({ users: [], data: {}, sessions: {}, telegram: { offset: 0, byChatId: {} } }));
   }
+
+  setInterval(() => {
+    void processBackgroundTaskReminders(DB_PATH);
+  }, 60_000);
+  void processBackgroundTaskReminders(DB_PATH);
 
   // API routes
   app.post('/api/eden/insight', async (req, res) => {
@@ -878,15 +986,15 @@ async function startServer() {
 
   app.post('/api/telegram/notify', async (req, res) => {
     try {
-      const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+      const token = resolveTelegramBotToken();
       const { chatId, message } = req.body as { chatId?: string; message?: string };
       const normalizedChatId = (chatId || '').trim().replace(/[^0-9-]/g, '');
 
       if (!token) {
-        console.error('TELEGRAM_BOT_TOKEN is not configured in server environment. Set this variable in your render.yaml or .env.local');
+        console.error('Telegram bot token is not configured. Set TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_1) in environment.');
         res.status(400).json({
           success: false,
-          error: 'Telegram integration not configured. Please set TELEGRAM_BOT_TOKEN in server environment.',
+          error: 'Telegram integration not configured. Please set TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_1) in server environment.',
         });
         return;
       }
@@ -910,7 +1018,7 @@ async function startServer() {
       const data = await telegramResponse.json();
 
       if (!telegramResponse.ok || !data?.ok) {
-        console.error('Telegram API error:', data?.description || 'Unknown error');
+        console.error('Telegram API error:', data?.description || 'Unknown error', 'chatId=', normalizedChatId);
         res.status(502).json({ success: false, error: data?.description || 'Telegram API call failed.' });
         return;
       }
@@ -920,6 +1028,18 @@ async function startServer() {
       console.error('Telegram notification error:', error);
       res.status(500).json({ success: false, error: 'Could not send Telegram notification.' });
     }
+  });
+
+  app.get('/api/telegram/status', (req, res) => {
+    const token = resolveTelegramBotToken();
+    const db = readDb(DB_PATH);
+    const linkedChats = Object.keys(db.telegram?.byChatId || {}).length;
+    res.json({
+      success: true,
+      configured: Boolean(token),
+      linkedChats,
+      hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
+    });
   });
 
   app.post('/api/telegram/link', (req, res) => {

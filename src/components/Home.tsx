@@ -5,7 +5,9 @@ import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximiz
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission } from '../lib/utils';
 import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
-import { sendCrossChannelNotification, requestNotificationPermission, areNotificationsEnabled } from '../services/notifications';
+import { sendCrossChannelNotification, areNotificationsEnabled } from '../services/notifications';
+import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
+import { EDEN_TEMPLATE_COUNT, EdenTemplate, getRecommendedEdenTemplates } from '../services/taskTemplates';
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
@@ -199,19 +201,56 @@ const Home: React.FC = () => {
     user?.preferences.customFocusSongDataUrl,
   ]);
 
+  const getDefaultAlarmFromPreferences = () => {
+    if (user?.preferences.lastAlarmSongName && user?.preferences.lastAlarmSongDataUrl) {
+      return {
+        name: user.preferences.lastAlarmSongName,
+        dataUrl: user.preferences.lastAlarmSongDataUrl,
+      };
+    }
+    return favoriteFocusTrack;
+  };
+
+  const [edenTemplatePool, setEdenTemplatePool] = useState<EdenTemplate[]>([]);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+
   useEffect(() => {
     if (showQuickAdd) return;
+    setShowTemplatePicker(false);
+    setEdenTemplatePool([]);
     setNewTaskAlarmSound('Uploaded Alarm');
-    if (favoriteFocusTrack) {
-      setNewTaskPreferredMusic(favoriteFocusTrack.name);
-      setNewTaskCustomAlarmName(favoriteFocusTrack.name);
-      setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
+    const defaultAlarm = getDefaultAlarmFromPreferences();
+    if (defaultAlarm) {
+      setNewTaskPreferredMusic(defaultAlarm.name);
+      setNewTaskCustomAlarmName(defaultAlarm.name);
+      setNewTaskCustomAlarmDataUrl(defaultAlarm.dataUrl);
     } else {
       setNewTaskPreferredMusic('');
       setNewTaskCustomAlarmName('');
       setNewTaskCustomAlarmDataUrl('');
     }
-  }, [favoriteFocusTrack, showQuickAdd]);
+  }, [favoriteFocusTrack, showQuickAdd, user?.preferences.lastAlarmSongName, user?.preferences.lastAlarmSongDataUrl]);
+
+  useEffect(() => {
+    if (!user) return;
+    const mostRepeated = analyzeMostRepeatedTasks(tasks, 12).map((item) => ({
+      name: item.name,
+      layerId: item.layerId,
+      priority: item.priority,
+      count: item.count,
+    }));
+
+    const current = user.preferences.mostRepeatedTasks || [];
+    if (JSON.stringify(current) === JSON.stringify(mostRepeated)) return;
+
+    setUser({
+      ...user,
+      preferences: {
+        ...user.preferences,
+        mostRepeatedTasks: mostRepeated,
+      },
+    });
+  }, [tasks, user?.id]);
 
   const stopActiveAlarm = () => {
     if (alarmIntervalRef.current) {
@@ -653,19 +692,25 @@ const Home: React.FC = () => {
     clearAllScheduledTimeouts();
 
     const now = Date.now();
+    const getFutureDue = (task: Task, nowMs: number) => {
+      const due = parseTaskDueDate(task);
+      if (!due) return null;
+
+      const reminderDue = new Date(due);
+      if (task.repeat === 'daily' && reminderDue.getTime() <= nowMs) {
+        reminderDue.setDate(reminderDue.getDate() + 1);
+      }
+      if (task.repeat === 'weekly' && reminderDue.getTime() <= nowMs) {
+        reminderDue.setDate(reminderDue.getDate() + 7);
+      }
+      return reminderDue;
+    };
+
     tasks.forEach((task) => {
       if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
 
-      const due = parseTaskDueDate(task);
-      if (!due) return;
-
-      const reminderDue = new Date(due);
-      if (task.repeat === 'daily' && reminderDue.getTime() <= now) {
-        reminderDue.setDate(reminderDue.getDate() + 1);
-      }
-      if (task.repeat === 'weekly' && reminderDue.getTime() <= now) {
-        reminderDue.setDate(reminderDue.getDate() + 7);
-      }
+      const reminderDue = getFutureDue(task, now);
+      if (!reminderDue) return;
 
       const dueMs = reminderDue.getTime();
       if (dueMs <= now) return;
@@ -689,8 +734,32 @@ const Home: React.FC = () => {
       }, alarmDelay);
     });
 
+    // Interval catch-up for throttled/background tabs so reminders still fire once app is visible again.
+    const heartbeatId = window.setInterval(() => {
+      const nowMs = Date.now();
+      tasks.forEach((task) => {
+        if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
+        const dueDate = getFutureDue(task, nowMs);
+        if (!dueDate) return;
+
+        const dueMs = dueDate.getTime();
+        const reminderAt = dueMs - 5 * 60 * 1000;
+        const reminderKey = `${task.id}|${dueDate.toISOString().slice(0, 16)}`;
+        const alarmKey = `${task.id}|alarm|${dueDate.toISOString().slice(0, 16)}`;
+
+        if (nowMs >= reminderAt && nowMs <= reminderAt + 90_000) {
+          void triggerReminder(task, reminderKey);
+        }
+
+        if (nowMs >= dueMs && nowMs <= dueMs + 90_000) {
+          triggerAlarm(task, alarmKey);
+        }
+      });
+    }, 20_000);
+
     return () => {
       clearAllScheduledTimeouts();
+      window.clearInterval(heartbeatId);
       if (alarmIntervalRef.current) {
         window.clearInterval(alarmIntervalRef.current);
         alarmIntervalRef.current = null;
@@ -892,8 +961,9 @@ const Home: React.FC = () => {
         const element = scripturePageRef.current || document.documentElement;
         
         // Ensure theme classes are applied to fullscreen element
-        const currentTheme = document.documentElement.getAttribute('data-theme') || 'system';
+        const selectedTheme = document.documentElement.getAttribute('data-theme') || 'system';
         const isDark = document.documentElement.classList.contains('dark');
+        element.setAttribute('data-theme', selectedTheme);
         
         if (isDark) {
           element.classList.add('dark');
@@ -908,6 +978,17 @@ const Home: React.FC = () => {
     } catch (error) {
       console.warn('Fullscreen toggle failed:', error);
     }
+  };
+
+  const closeScripturePage = async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // no-op
+      }
+    }
+    setShowScripturePage(false);
   };
 
   const openReflectionComposer = () => {
@@ -1053,11 +1134,12 @@ const Home: React.FC = () => {
     setNewTaskPeriod(roundedParts.period);
     setNewTaskDate(format(new Date(), 'yyyy-MM-dd'));
     setNewTaskAlarmEnabled(true);
-    if (favoriteFocusTrack) {
+    const defaultAlarm = getDefaultAlarmFromPreferences();
+    if (defaultAlarm) {
       setNewTaskAlarmSound('Uploaded Alarm');
-      setNewTaskPreferredMusic(favoriteFocusTrack.name);
-      setNewTaskCustomAlarmName(favoriteFocusTrack.name);
-      setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
+      setNewTaskPreferredMusic(defaultAlarm.name);
+      setNewTaskCustomAlarmName(defaultAlarm.name);
+      setNewTaskCustomAlarmDataUrl(defaultAlarm.dataUrl);
     } else {
       setNewTaskAlarmSound('Uploaded Alarm');
       setNewTaskPreferredMusic('');
@@ -1065,6 +1147,8 @@ const Home: React.FC = () => {
       setNewTaskCustomAlarmDataUrl('');
     }
     setQuickAddError('');
+    setShowTemplatePicker(false);
+    setEdenTemplatePool([]);
     setShowQuickAdd(false);
   };
 
@@ -1099,9 +1183,44 @@ const Home: React.FC = () => {
     setQuickAddError('');
   };
 
-  const handleAiDraftTask = async () => {
+  const applyTemplateDraft = (template: EdenTemplate) => {
+    setNewTaskName(template.name);
+    setNewTaskLayer(template.layerId);
+    setNewTaskPriority(template.priority);
+    setNewTaskRepeat(template.repeat);
+
+    const parts = parseTimeToEditor(template.time);
+    setNewTaskTime(template.time);
+    if (newTaskTimeFormat === '12') {
+      setNewTaskHourInput(parts.hour12);
+      setNewTaskPeriod(parts.period);
+    } else {
+      setNewTaskHourInput(parts.hour24);
+    }
+    setNewTaskMinuteInput(parts.minute);
+  };
+
+  const handleTaskByEdenDraft = async () => {
     setIsGeneratingTask(true);
     setQuickAddError('');
+
+    const recommendations = getRecommendedEdenTemplates({
+      tasks,
+      layerId: newTaskLayer,
+      intent: newTaskName,
+      mostRepeated: user?.preferences.mostRepeatedTasks?.map((entry) => ({
+        name: entry.name,
+        layerId: entry.layerId,
+        count: entry.count,
+      })),
+      limit: 18,
+    });
+
+    if (recommendations.length > 0) {
+      setEdenTemplatePool(recommendations);
+      setShowTemplatePicker(true);
+      applyTemplateDraft(recommendations[0]);
+    }
 
     const suggestion = await suggestTaskWithGemini({
       userName: user?.name,
@@ -1116,7 +1235,9 @@ const Home: React.FC = () => {
     });
 
     if (!suggestion) {
-      setQuickAddError('AI could not draft a task right now. Try again.');
+      if (recommendations.length === 0) {
+        setQuickAddError('Task by Eden is unavailable right now. Try again.');
+      }
       setIsGeneratingTask(false);
       return;
     }
@@ -1511,10 +1632,36 @@ const Home: React.FC = () => {
       <AnimatePresence>
         {showScripturePage && (
           <motion.div ref={scripturePageRef} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }} className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
+            {isScriptureFullscreen && (
+              <div
+                className="fixed left-0 right-0 z-40 px-3 pointer-events-none"
+                style={{ top: 'env(safe-area-inset-top)' }}
+              >
+                <div className="max-w-4xl mx-auto pt-2 flex items-center justify-between pointer-events-auto">
+                  <button
+                    aria-label="Back to home"
+                    title="Back"
+                    onClick={closeScripturePage}
+                    className="h-11 w-11 rounded-full bg-black/35 text-white flex items-center justify-center backdrop-blur-sm"
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <button
+                    aria-label="Exit fullscreen"
+                    title="Exit fullscreen"
+                    onClick={toggleScriptureFullscreen}
+                    className="h-11 w-11 rounded-full bg-black/35 text-white flex items-center justify-center backdrop-blur-sm"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             <header className="sticky top-0 left-0 right-0 z-20 bg-background/80 backdrop-blur-md border-b border-outline-variant/15">
-              <div className="h-16 max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between">
+              <div className="min-h-16 max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top))' }}>
                 <div className="flex items-center gap-3">
-                  <button aria-label="Close scripture page" title="Back" onClick={() => setShowScripturePage(false)} className="h-10 w-10 rounded-full hover:bg-surface-container-low text-primary flex items-center justify-center transition-colors">
+                  <button aria-label="Close scripture page" title="Back" onClick={closeScripturePage} className="h-10 w-10 rounded-full hover:bg-surface-container-low text-primary flex items-center justify-center transition-colors">
                     <ArrowLeft size={18} />
                   </button>
                   <div>
@@ -1946,13 +2093,36 @@ const Home: React.FC = () => {
                   </label>
 
                   <button
-                    onClick={handleAiDraftTask}
+                    onClick={handleTaskByEdenDraft}
                     disabled={isGeneratingTask}
                     className="w-full rounded-full px-4 py-2 border border-primary/40 text-primary font-label text-xs font-bold uppercase tracking-[0.14em] flex items-center justify-center gap-2 disabled:opacity-60"
                   >
                     {isGeneratingTask ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
-                    {isGeneratingTask ? 'Creating with AI...' : 'AI Create Task Draft'}
+                    {isGeneratingTask ? 'Preparing task by Eden...' : 'Task by Eden'}
                   </button>
+
+                  <div className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">
+                    <p className="text-[11px] text-on-surface-variant">
+                      Task by Eden includes {EDEN_TEMPLATE_COUNT}+ templates across all 5 layers.
+                    </p>
+                    {showTemplatePicker && edenTemplatePool.length > 0 && (
+                      <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                        {edenTemplatePool.map((template, index) => (
+                          <button
+                            key={`${template.layerId}-${template.name}-${index}`}
+                            type="button"
+                            onClick={() => applyTemplateDraft(template)}
+                            className="text-left rounded-lg border border-outline-variant/35 px-2 py-2 bg-surface-container-low hover:bg-surface-container-high"
+                          >
+                            <p className="text-xs font-semibold text-on-surface truncate">{template.name}</p>
+                            <p className="text-[10px] text-secondary uppercase tracking-[0.1em] mt-1">
+                              {template.layerId} • {template.time} • {template.repeat}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="pt-2 flex gap-3">
                     <button

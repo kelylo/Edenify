@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Pause, Play, RefreshCw, Volume2, Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowLeft, Pause, Play, RefreshCw, Volume2, Maximize2, Minimize2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn, requestMediaPermission } from '../lib/utils';
 import { User } from '../types';
@@ -244,7 +244,9 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
         const element = focusPageRef.current || document.documentElement;
         
         // Ensure theme classes are applied to fullscreen element
+        const selectedTheme = document.documentElement.getAttribute('data-theme') || 'system';
         const isDark = document.documentElement.classList.contains('dark');
+        element.setAttribute('data-theme', selectedTheme);
         if (isDark) {
           element.classList.add('dark');
         } else {
@@ -258,6 +260,17 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     } catch (error) {
       console.warn('Focus fullscreen toggle failed:', error);
     }
+  };
+
+  const closeFocusView = async () => {
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // no-op
+      }
+    }
+    onClose();
   };
 
   const previewAlarmSong = () => {
@@ -284,9 +297,35 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
 
   return (
     <div ref={focusPageRef} className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
+      {isFocusFullscreen && (
+        <div
+          className="fixed left-0 right-0 z-40 px-3 pointer-events-none"
+          style={{ top: 'env(safe-area-inset-top)' }}
+        >
+          <div className="max-w-7xl mx-auto pt-2 flex items-center justify-between pointer-events-auto">
+            <button
+              aria-label="Back to home"
+              title="Back"
+              onClick={closeFocusView}
+              className="h-11 w-11 rounded-full bg-black/35 text-white flex items-center justify-center backdrop-blur-sm"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <button
+              aria-label="Exit fullscreen"
+              title="Exit fullscreen"
+              onClick={toggleFocusFullscreen}
+              className="h-11 w-11 rounded-full bg-black/35 text-white flex items-center justify-center backdrop-blur-sm"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="sticky top-0 z-10 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/25">
-        <div className="h-[62px] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between">
-          <button aria-label="Close focus page" title="Back" onClick={onClose} className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
+        <div className="min-h-[62px] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top))' }}>
+          <button aria-label="Close focus page" title="Back" onClick={closeFocusView} className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
             <ArrowLeft size={18} />
           </button>
           <p className="font-label text-[11px] uppercase tracking-[0.16em] text-outline font-bold">Focus Session</p>

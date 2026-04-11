@@ -625,9 +625,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const completeBibleDay = async () => {
+    // Mark today as completed - do NOT move to next day
+    // Next day progression happens automatically on the next calendar day
     const nextHighest = Math.max(bibleReading.highestCompletedDay, bibleReading.day);
-    const nextDay = Math.min(400, nextHighest + 1);
-    await loadBibleDay(nextDay, nextHighest);
+    setBibleReading(prev => ({
+      ...prev,
+      highestCompletedDay: nextHighest,
+      completed: true,
+    }));
   };
 
   const setDailyTaskGoal = (goal: number) => {

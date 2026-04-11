@@ -100,3 +100,11 @@ export interface BibleReading {
   completed: boolean;
   reflection?: string;
 }
+
+export interface BibleReadingStreak {
+  currentStreak: number;
+  lastReadDate: string; // "YYYY-MM-DD"
+  completedDays: Record<string, boolean>; // "YYYY-MM-DD" => true if read
+  nextUnreadDay: number; // Day they need to complete next
+}
+

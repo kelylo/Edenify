@@ -144,3 +144,67 @@ export async function getBibleReadingForDay(day: number): Promise<BibleDayReadin
     context: `Day ${safeDay} covers verse ${startIndex + 1} to ${endIndex + 1} of ${totalVerses}.`,
   };
 }
+
+// Cache for reading plan
+let readingPlan: Record<number, string> | null = null;
+let planLoaded = false;
+
+/**
+ * Load the preset 365-day reading plan from bible_plan.html
+ */
+async function loadReadingPlan(): Promise<Record<number, string>> {
+  if (planLoaded && readingPlan) return readingPlan;
+
+  try {
+    const response = await fetch('/bible_plan.html');
+    const html = await response.text();
+
+    readingPlan = {};
+
+    // Parse lines like "Day 1: John 1; Psalm 1"
+    const lines = html.split('\n');
+    lines.forEach(line => {
+      const match = line.match(/Day\s+(\d+):\s*(.+)/i);
+      if (match) {
+        const day = parseInt(match[1]);
+        const passages = match[2].trim();
+        readingPlan![day] = passages;
+      }
+    });
+
+    planLoaded = true;
+    return readingPlan || {};
+  } catch (error) {
+    console.warn('Could not load preset reading plan, using default distribution:', error);
+    planLoaded = true;
+    return {};
+  }
+}
+
+/**
+ * Get reading for a specific day, preferring the preset plan if available
+ */
+export async function getDayReading(day: number): Promise<BibleDayReading> {
+  const plan = await loadReadingPlan();
+
+  if (plan[day]) {
+    // Use preset plan
+    return {
+      passage: plan[day],
+      text: `Today's reading: ${plan[day]}`,
+      context: `Day ${day} of the 365-day reading plan.`
+    };
+  }
+
+  // Fallback to default distribution
+  return getBibleReadingForDay(day);
+}
+
+/**
+ * Get the total number of days in the reading plan
+ */
+export async function getTotalReadingDays(): Promise<number> {
+  const plan = await loadReadingPlan();
+  const dayCount = Object.keys(plan).length;
+  return dayCount > 0 ? dayCount : 365; // Default to 365 if plan not loaded
+}

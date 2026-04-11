@@ -11,6 +11,7 @@ import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecomme
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
+import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
 
@@ -1559,21 +1560,15 @@ const Home: React.FC = () => {
             </div>
 
             <button aria-label="Open today's scripture" onClick={() => setShowScripturePage(true)} className="p-6 sm:p-7 text-left bg-surface-container-lowest hover:bg-white transition-colors">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Today's Scripture</p>
-                  <p className="font-label text-[10px] uppercase tracking-[0.14em] text-primary font-bold mt-2">Day {bibleReading.day} of {bibleReading.totalDays}</p>
-                </div>
-                <span className="material-symbols-outlined text-primary text-[20px]">book_5</span>
-              </div>
-
-              <h3 className="display-text text-2xl text-on-surface mb-2">{bibleReading.passage}</h3>
-              <p className="serif-text italic text-sm text-on-surface-variant leading-relaxed line-clamp-3">{bibleReading.text}</p>
-
-              <div className="mt-5 flex items-center justify-between">
-                <span className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Read full passage</span>
-                <ArrowRight size={16} className="text-primary" />
-              </div>
+              <BibleReadingUI
+                currentDay={bibleReading.day || 1}
+                completedToday={bibleReading.completed || false}
+                onToggleComplete={(completed) => {
+                  const newReading = { ...bibleReading, completed };
+                  // Update local state and would sync to cloud
+                }}
+                isProgressionEnforced={true}
+              />
             </button>
           </div>
         </motion.section>

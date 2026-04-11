@@ -127,32 +127,7 @@
             "dailyScripture": true,
             "streakProtection": true
           },
-          "mostRepeatedTasks": [
-            {
-              "name": "Plan top priorities and clear workspace|general",
-              "layerId": "general",
-              "priority": "C",
-              "count": 2
-            },
-            {
-              "name": "Eating|spiritual",
-              "layerId": "spiritual",
-              "priority": "A",
-              "count": 1
-            },
-            {
-              "name": "Going to the restaurent|spiritual",
-              "layerId": "spiritual",
-              "priority": "A",
-              "count": 1
-            },
-            {
-              "name": "Going to the restaurent to eat food|physical",
-              "layerId": "physical",
-              "priority": "A",
-              "count": 1
-            }
-          ]
+          "mostRepeatedTasks": []
         },
         "role": "admin"
       },
@@ -214,84 +189,15 @@
         }
       ],
       "habits": [],
-      "tasks": [
-        {
-          "id": "task-1775924964209",
-          "name": "Plan top priorities and clear workspace",
-          "layerId": "general",
-          "priority": "C",
-          "repeat": "once",
-          "time": "17:35",
-          "completed": true,
-          "date": "2026-04-11T16:29:24.209Z",
-          "alarmEnabled": true,
-          "alarmSound": "Aggressive Bell",
-          "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 5,
-          "durationStartedAt": "2026-04-11T16:29:24.210Z"
-        },
-        {
-          "id": "tg-1775926629934-d97e1",
-          "name": "Eating",
-          "layerId": "spiritual",
-          "priority": "A",
-          "repeat": "once",
-          "time": "18:00",
-          "completed": true,
-          "date": "2026-04-11T16:57:09.934Z",
-          "alarmEnabled": true,
-          "alarmSound": "Aggressive Bell",
-          "preferredMusic": "Instrumental Warmth"
-        },
-        {
-          "id": "tg-1775925078891-092fc",
-          "name": "Going to the restaurent",
-          "layerId": "spiritual",
-          "priority": "A",
-          "repeat": "once",
-          "time": "17:32",
-          "completed": true,
-          "date": "2026-04-11T16:31:18.891Z",
-          "alarmEnabled": true,
-          "alarmSound": "Aggressive Bell",
-          "preferredMusic": "Instrumental Warmth"
-        },
-        {
-          "id": "task-1775928179848",
-          "name": "Plan top priorities and clear workspace",
-          "layerId": "general",
-          "priority": "C",
-          "repeat": "once",
-          "time": "18:25",
-          "completed": true,
-          "date": "2026-04-11T17:22:59.848Z",
-          "alarmEnabled": true,
-          "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 5,
-          "durationStartedAt": "2026-04-11T17:22:59.848Z"
-        },
-        {
-          "id": "tg-1775928616793-d088b",
-          "name": "going to the restaurent to eat food 😁😁",
-          "layerId": "physical",
-          "priority": "A",
-          "repeat": "once",
-          "time": "18:37",
-          "completed": false,
-          "date": "2026-04-11T17:30:16.793Z",
-          "alarmEnabled": true,
-          "alarmSound": "Aggressive Bell",
-          "preferredMusic": "Instrumental Warmth"
-        }
-      ],
+      "tasks": [],
       "journal": [],
       "bibleReading": {
-        "day": 1,
+        "day": 18,
         "totalDays": 400,
-        "highestCompletedDay": 0,
-        "passage": "Genesis 1:1-5",
-        "text": "In the beginning God created the heavens and the earth.",
-        "completed": false
+        "highestCompletedDay": 18,
+        "passage": "Genesis 44:2-46:17",
+        "text": "And put my cup, the silver cup, in the sack's mouth of the youngest, and his grain money. And he did according to the word that Joseph had spoken.",
+        "completed": true
       },
       "dailyTaskGoal": 9
     }
@@ -301,60 +207,7 @@
     "offset": 146642140,
     "byChatId": {
       "7875504612": {
-        "tasks": [
-          {
-            "id": "task-1775924964209",
-            "name": "Plan top priorities and clear workspace",
-            "layerId": "general",
-            "priority": "C",
-            "repeat": "once",
-            "time": "17:35",
-            "completed": false,
-            "date": "2026-04-11T16:29:24.209Z",
-            "alarmEnabled": true,
-            "alarmSound": "Aggressive Bell",
-            "preferredMusic": "Instrumental Warmth"
-          },
-          {
-            "id": "tg-1775926629934-d97e1",
-            "name": "Eating",
-            "layerId": "spiritual",
-            "priority": "A",
-            "repeat": "once",
-            "time": "18:00",
-            "completed": false,
-            "date": "2026-04-11T16:57:09.934Z",
-            "alarmEnabled": true,
-            "alarmSound": "Aggressive Bell",
-            "preferredMusic": "Instrumental Warmth"
-          },
-          {
-            "id": "tg-1775925078891-092fc",
-            "name": "Going to the restaurent",
-            "layerId": "spiritual",
-            "priority": "A",
-            "repeat": "once",
-            "time": "17:32",
-            "completed": false,
-            "date": "2026-04-11T16:31:18.891Z",
-            "alarmEnabled": true,
-            "alarmSound": "Aggressive Bell",
-            "preferredMusic": "Instrumental Warmth"
-          },
-          {
-            "id": "tg-1775928616793-d088b",
-            "name": "going to the restaurent to eat food 😁😁",
-            "layerId": "physical",
-            "priority": "A",
-            "repeat": "once",
-            "time": "18:37",
-            "completed": false,
-            "date": "2026-04-11T17:30:16.793Z",
-            "alarmEnabled": true,
-            "alarmSound": "Aggressive Bell",
-            "preferredMusic": "Instrumental Warmth"
-          }
-        ],
+        "tasks": [],
         "userId": "admin-root",
         "defaults": {
           "preferredMusic": "Instrumental Warmth",
@@ -389,8 +242,8 @@
       "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|alarm": "2026-04-11T17:37:19.678Z"
     },
     "poller": {
-      "ownerId": "37448-b437a9",
-      "updatedAt": "2026-04-11T17:41:40.768Z"
+      "ownerId": "7364-7ac411",
+      "updatedAt": "2026-04-11T20:27:51.099Z"
     }
   }
 }

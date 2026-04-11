@@ -1059,7 +1059,7 @@ const Home: React.FC = () => {
     };
 
     loadFullPassage();
-  }, [showScripturePage, bibleReading.passage, bibleReading.text]);
+  }, [showScripturePage, showFullVerses, bibleReading.passage, bibleReading.text]);
 
   useEffect(() => {
     if (!showScripturePage && !showFullVerses) {

@@ -100,7 +100,8 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onReadMore}
+            type="button"
+            onClick={() => onReadMore?.()}
             className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary bg-primary/10 px-3 py-2 rounded-full hover:bg-primary hover:text-white transition-colors flex items-center gap-2"
           >
             <BookOpen size={12} />

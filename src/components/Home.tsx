@@ -2275,53 +2275,49 @@ const Home: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setShowFullVerses(false)}
-            className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-5"
+            className="fixed inset-0 z-[70] bg-surface overflow-y-auto"
           >
-            <motion.div
-              initial={{ y: 16, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 16, opacity: 0 }}
-              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-surface-container-low border border-outline-variant/25 shadow-lg p-5 sm:p-6 overflow-y-auto no-scrollbar"
-            >
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <div>
-                  <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Day {bibleReading.day}</p>
-                  <h3 className="display-text text-lg text-on-surface mt-1">{bibleReading.passage}</h3>
+            <div className="sticky top-0 left-0 right-0 z-40 bg-surface-container-low border-b border-outline-variant/15 px-4 sm:px-6 py-4 flex items-center gap-3">
+              <button
+                aria-label="Back"
+                onClick={() => setShowFullVerses(false)}
+                className="p-2 hover:bg-surface-container rounded-lg transition-colors text-primary"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <div className="flex-1 min-w-0">
+                <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Day {bibleReading.day}</p>
+                <h1 className="text-lg font-serif text-on-surface truncate">{bibleReading.passage}</h1>
+              </div>
+            </div>
+
+            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-20">
+              {loadingScriptureText && (
+                <div className="flex items-center gap-2 text-on-surface-variant">
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Loading full verses...</span>
                 </div>
-                <button
-                  aria-label="Close verses"
-                  title="Close"
-                  onClick={() => setShowFullVerses(false)}
-                  className="h-9 w-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center border border-outline-variant/30 flex-shrink-0"
-                >
-                  <X size={16} />
-                </button>
-              </div>
+              )}
 
-              <div className="space-y-6">
-                {loadingScriptureText && <p className="text-sm text-on-surface-variant">Loading verses...</p>}
+              {!loadingScriptureText && scriptureVerses.length === 0 && (
+                <p className="text-base leading-relaxed text-on-surface-variant font-serif">
+                  {bibleReading.text}
+                </p>
+              )}
 
-                {!loadingScriptureText && scriptureVerses.length === 0 && (
-                  <p className="text-base leading-relaxed text-on-surface-variant font-serif">
-                    {bibleReading.text}
-                  </p>
-                )}
-
-                {!loadingScriptureText && scriptureVerses.length > 0 && (
-                  <div className="space-y-4">
-                    {scriptureVerses.map((verse) => (
-                      <p key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="text-base leading-relaxed text-on-surface-variant font-serif">
-                        <span className="text-primary font-bold mr-1 align-middle">{verse.verse}</span>
-                        {verse.text}
+              {!loadingScriptureText && scriptureVerses.length > 0 && (
+                <div className="space-y-6">
+                  {scriptureVerses.map((verse) => (
+                    <div key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="space-y-1">
+                      <p className="text-sm font-serif">
+                        <span className="text-primary font-bold text-base">{verse.verse}</span>
+                        <span className="text-on-surface-variant ml-2 leading-relaxed">{verse.text}</span>
                       </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

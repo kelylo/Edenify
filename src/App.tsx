@@ -68,6 +68,16 @@ const AppContent: React.FC = () => {
   const { user, authReady } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [bootProgress, setBootProgress] = useState(8);
+  const [bootScreenVisible, setBootScreenVisible] = useState(true);
+
+  const bootStageLabel = bootProgress < 35
+    ? 'Verifying session token'
+    : bootProgress < 70
+      ? 'Loading your profile and focus layers'
+      : bootProgress < 95
+        ? 'Preparing alarms, notifications, and sync'
+        : 'Launching Edenify';
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
@@ -90,13 +100,65 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  if (!authReady) {
+  useEffect(() => {
+    if (authReady) {
+      setBootProgress((current) => Math.max(current, 94));
+      const finishInterval = window.setInterval(() => {
+        setBootProgress((current) => {
+          const next = Math.min(100, current + 2);
+          if (next >= 100) {
+            window.clearInterval(finishInterval);
+            window.setTimeout(() => {
+              setBootScreenVisible(false);
+            }, 180);
+          }
+          return next;
+        });
+      }, 22);
+
+      return () => {
+        window.clearInterval(finishInterval);
+      };
+    }
+
+    setBootScreenVisible(true);
+    const startMs = Date.now();
+    const warmupInterval = window.setInterval(() => {
+      const elapsed = Date.now() - startMs;
+      const cap = elapsed < 1200 ? 34 : elapsed < 2600 ? 69 : 92;
+      setBootProgress((current) => {
+        if (current >= cap) return current;
+        return Math.min(cap, current + 1);
+      });
+    }, 70);
+
+    return () => {
+      window.clearInterval(warmupInterval);
+    };
+  }, [authReady]);
+
+  if (bootScreenVisible) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-6">
-        <div className="text-center space-y-3">
-          <p className="text-xs uppercase tracking-[0.2em] font-bold text-primary">Edenify</p>
-          <div className="h-1.5 w-28 rounded-full bg-surface-container-low overflow-hidden mx-auto">
-            <div className="h-full w-1/2 bg-primary animate-pulse" />
+        <div className="w-full max-w-md text-center space-y-4">
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-xs uppercase tracking-[0.22em] font-bold text-primary"
+          >
+            Edenify
+          </motion.p>
+          <div className="h-2 w-full rounded-full bg-surface-container-low overflow-hidden mx-auto">
+            <motion.div
+              initial={{ width: '0%' }}
+              animate={{ width: `${bootProgress}%` }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="h-full bg-gradient-to-r from-primary to-primary-container"
+            />
+          </div>
+          <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.14em] font-bold text-outline">
+            <span>{bootStageLabel}</span>
+            <span>{bootProgress}%</span>
           </div>
           <p className="text-sm text-on-surface-variant">Loading your session.</p>
         </div>

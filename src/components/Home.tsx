@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
@@ -11,6 +11,8 @@ import { EDEN_TEMPLATE_COUNT, EdenTemplate, getRecommendedEdenTemplates } from '
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
+
+const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
 
 const getRoundedCurrentTime = () => {
   const now = new Date();
@@ -158,6 +160,11 @@ const Home: React.FC = () => {
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
+  const [telegramOpsStatus, setTelegramOpsStatus] = useState<{ configured: boolean; linkedChats: number; hasReminders: boolean } | null>(null);
+  const [telegramRemoteTaskCount, setTelegramRemoteTaskCount] = useState<number | null>(null);
+  const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
+  const [opsCheckError, setOpsCheckError] = useState('');
+  const [opsChecking, setOpsChecking] = useState(false);
   const isSubPageOpen = showScripturePage || showFocusPage;
 
   const reminderTimeoutsRef = useRef<Record<string, number>>({});
@@ -539,6 +546,70 @@ const Home: React.FC = () => {
   const onceCompleted = weeklyTasks.filter((t) => isTaskCompletedForToday(t)).length;
   const dailyPercent = dailyTasks.length ? Math.round((dailyCompleted / dailyTasks.length) * 100) : 0;
   const oncePercent = weeklyTasks.length ? Math.round((onceCompleted / weeklyTasks.length) * 100) : 0;
+  const notificationPermissionState = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
+  const notificationStateLabel = notificationPermissionState === 'granted'
+    ? 'Granted'
+    : notificationPermissionState === 'denied'
+      ? 'Blocked'
+      : notificationPermissionState === 'default'
+        ? 'Pending'
+        : 'Unsupported';
+  const telegramChatId = user?.preferences.telegramChatId?.trim() || '';
+  const alarmReadyCount = useMemo(() => {
+    return tasks.filter((task) => {
+      if (isTaskCompletedForToday(task)) return false;
+      if (task.alarmEnabled === false) return false;
+      return Boolean(parseTaskDueDate(task));
+    }).length;
+  }, [tasks]);
+  const syncDrift = telegramRemoteTaskCount === null ? null : Math.abs(telegramRemoteTaskCount - tasks.length);
+
+  const refreshOperationalStatus = useCallback(async (withFeedback: boolean) => {
+    setOpsChecking(true);
+    setOpsCheckError('');
+
+    try {
+      const statusResponse = await fetch('/api/telegram/status');
+      const statusData = await statusResponse.json();
+      if (!statusResponse.ok || !statusData?.success) {
+        throw new Error(statusData?.error || 'Telegram service status is unavailable.');
+      }
+
+      setTelegramOpsStatus({
+        configured: Boolean(statusData.configured),
+        linkedChats: Number(statusData.linkedChats || 0),
+        hasReminders: Boolean(statusData.hasReminders),
+      });
+
+      if (telegramChatId) {
+        const tasksResponse = await fetch(`/api/telegram/tasks/${encodeURIComponent(telegramChatId)}`);
+        const tasksData = await tasksResponse.json();
+        if (!tasksResponse.ok || !tasksData?.success) {
+          throw new Error(tasksData?.error || 'Telegram task mirror is unavailable.');
+        }
+        setTelegramRemoteTaskCount(Array.isArray(tasksData.tasks) ? tasksData.tasks.length : 0);
+      } else {
+        setTelegramRemoteTaskCount(null);
+      }
+
+      setOpsLastCheckedAt(new Date().toISOString());
+      if (withFeedback) {
+        setNotificationStatus('System status refreshed.');
+      }
+    } catch (error) {
+      setOpsCheckError(error instanceof Error ? error.message : 'Could not refresh operational status.');
+      if (withFeedback) {
+        setNotificationStatus('Could not refresh system status.');
+      }
+    } finally {
+      setOpsChecking(false);
+    }
+  }, [telegramChatId]);
+
+  const runSystemCheck = async () => {
+    await pushReminderEvent('System check', 'Reminder channels are alive and this event is synchronized across your feed.');
+    void refreshOperationalStatus(true);
+  };
 
   useEffect(() => {
     const fetchInsight = async () => {
@@ -817,6 +888,25 @@ const Home: React.FC = () => {
 
     askOnce();
   }, [user?.id]);
+
+  useEffect(() => {
+    void refreshOperationalStatus(false);
+
+    const intervalId = window.setInterval(() => {
+      void refreshOperationalStatus(false);
+    }, 45000);
+
+    const handleVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshOperationalStatus(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisible);
+    };
+  }, [refreshOperationalStatus]);
 
   useEffect(() => {
     if (!user?.preferences.notifications.dailyScripture) return;
@@ -1526,6 +1616,85 @@ const Home: React.FC = () => {
                   </div>
                 ))}
               </div>
+            )}
+          </motion.section>
+
+          <motion.section initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }} className="bg-surface-container-low rounded-2xl p-5 border border-outline-variant/30">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <BellRing size={16} className="text-primary" />
+                <h2 className="font-label text-[11px] uppercase tracking-[0.16em] text-outline font-bold">System Status</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runSystemCheck}
+                  className="text-[10px] uppercase tracking-[0.14em] text-primary font-bold"
+                >
+                  Run Check
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshOperationalStatus(true)}
+                  className="text-[10px] uppercase tracking-[0.14em] text-primary font-bold"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Browser Notifications</p>
+                <p className="text-sm font-semibold text-on-surface">{notificationStateLabel}</p>
+                <p className="text-xs text-on-surface-variant">Task, scripture, and streak toggles: {notificationsEnabled ? 'ON' : 'OFF'}</p>
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Alarm Engine</p>
+                <p className="text-sm font-semibold text-on-surface">{alarmReadyCount} task alarms armed</p>
+                <p className="text-xs text-on-surface-variant">Audio permission: {mediaPermissionGranted ? 'Granted' : mediaPermissionGranted === false ? 'Blocked' : 'Checking'}</p>
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Telegram Delivery</p>
+                <p className="text-sm font-semibold text-on-surface">
+                  {telegramOpsStatus?.configured ? 'Bot configured' : 'Bot token missing'}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  Chat linked: {telegramChatId ? 'Yes' : 'No'} • Linked chats: {telegramOpsStatus?.linkedChats ?? 0}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Task Sync Health</p>
+                <p className="text-sm font-semibold text-on-surface">
+                  {!telegramChatId
+                    ? 'Connect Telegram to sync'
+                    : telegramRemoteTaskCount === null
+                      ? 'Checking...'
+                      : syncDrift !== null && syncDrift <= 2
+                        ? 'In sync'
+                        : 'Sync drift detected'}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  App tasks: {tasks.length} • Telegram mirror: {telegramRemoteTaskCount ?? 'n/a'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-outline-variant/30 bg-surface-container-lowest px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-outline">Telegram Commands</p>
+              <p className="text-xs text-on-surface-variant mt-1">{TELEGRAM_COMMANDS.join('  ')}</p>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-outline">
+              <span>{opsChecking ? 'Checking status...' : 'Status idle'}</span>
+              <span>{opsLastCheckedAt ? `Last check ${format(new Date(opsLastCheckedAt), 'hh:mm a')}` : 'No checks yet'}</span>
+            </div>
+
+            {opsCheckError && (
+              <p className="mt-2 text-xs text-red-600">{opsCheckError}</p>
             )}
           </motion.section>
 

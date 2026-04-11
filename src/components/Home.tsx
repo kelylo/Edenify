@@ -170,6 +170,7 @@ const Home: React.FC = () => {
   const [isGeneratingTask, setIsGeneratingTask] = useState(false);
   const [isTaskPreviewPlaying, setIsTaskPreviewPlaying] = useState(false);
   const [quickAddError, setQuickAddError] = useState('');
+  const [showFullVerses, setShowFullVerses] = useState(false);
   const [alarmTask, setAlarmTask] = useState<Task | null>(null);
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
@@ -1012,7 +1013,7 @@ const Home: React.FC = () => {
   ]);
 
   useEffect(() => {
-    if (!showScripturePage) return;
+    if (!showScripturePage && !showFullVerses) return;
 
     const loadFullPassage = async () => {
       setLoadingScriptureText(true);
@@ -1061,7 +1062,7 @@ const Home: React.FC = () => {
   }, [showScripturePage, bibleReading.passage, bibleReading.text]);
 
   useEffect(() => {
-    if (!showScripturePage) {
+    if (!showScripturePage && !showFullVerses) {
       setShowReflectionComposer(false);
       setIsScriptureFullscreen(false);
       return;
@@ -1078,7 +1079,7 @@ const Home: React.FC = () => {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [showScripturePage, bibleReading.reflection]);
+  }, [showScripturePage, showFullVerses, bibleReading.reflection]);
 
   const toggleScriptureFullscreen = async () => {
     try {
@@ -1114,6 +1115,7 @@ const Home: React.FC = () => {
       }
     }
     setShowScripturePage(false);
+    setShowFullVerses(false);
   };
 
   const openReflectionComposer = () => {
@@ -1559,17 +1561,18 @@ const Home: React.FC = () => {
 
             </div>
 
-            <button aria-label="Open today's scripture" onClick={() => setShowScripturePage(true)} className="p-6 sm:p-7 text-left bg-surface-container-lowest hover:bg-white transition-colors">
+            <div className="p-6 sm:p-7 text-left bg-surface-container-lowest rounded-2xl">
               <BibleReadingUI
                 currentDay={bibleReading.day || 1}
                 completedToday={bibleReading.completed || false}
                 onToggleComplete={(completed) => {
                   const newReading = { ...bibleReading, completed };
-                  // Update local state and would sync to cloud
+                  completeBibleDay(completed);
                 }}
+                onReadMore={() => setShowFullVerses(true)}
                 isProgressionEnforced={true}
               />
-            </button>
+            </div>
           </div>
         </motion.section>
 
@@ -2260,6 +2263,63 @@ const Home: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showFullVerses && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowFullVerses(false)}
+            className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-5"
+          >
+            <motion.div
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-surface-container-low border border-outline-variant/25 shadow-lg p-5 sm:p-6 overflow-y-auto no-scrollbar"
+            >
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Day {bibleReading.day}</p>
+                  <h3 className="display-text text-lg text-on-surface mt-1">{bibleReading.passage}</h3>
+                </div>
+                <button
+                  aria-label="Close verses"
+                  title="Close"
+                  onClick={() => setShowFullVerses(false)}
+                  className="h-9 w-9 rounded-full bg-surface-container-low text-primary flex items-center justify-center border border-outline-variant/30 flex-shrink-0"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {loadingScriptureText && <p className="text-sm text-on-surface-variant">Loading verses...</p>}
+
+                {!loadingScriptureText && scriptureVerses.length === 0 && (
+                  <p className="text-base leading-relaxed text-on-surface-variant font-serif">
+                    {bibleReading.text}
+                  </p>
+                )}
+
+                {!loadingScriptureText && scriptureVerses.length > 0 && (
+                  <div className="space-y-4">
+                    {scriptureVerses.map((verse) => (
+                      <p key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="text-base leading-relaxed text-on-surface-variant font-serif">
+                        <span className="text-primary font-bold mr-1 align-middle">{verse.verse}</span>
+                        {verse.text}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
-import { ArrowLeft, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2 } from 'lucide-react';
 import { cn, formatXP, getProgress } from '../lib/utils';
 import { Habit, Layer, LayerId } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -174,6 +174,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [layerActionMessage, setLayerActionMessage] = useState('');
   const [layerHint, setLayerHint] = useState('');
   const [loadingHint, setLoadingHint] = useState(false);
+  const [showHabitSuggestions, setShowHabitSuggestions] = useState(false);
+  const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
+  const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
   const songFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const layerStats = useMemo(() => {
@@ -310,6 +313,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     setHabitPeriod('AM');
     setHabitSongName('');
     setHabitSongDataUrl('');
+    setShowHabitSuggestions(false);
     setLayerActionMessage('Habit created and linked to a repeating task schedule.');
   };
 
@@ -336,6 +340,34 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     } finally {
       setLoadingHint(false);
     }
+  };
+
+  const getEdenHabitSuggestions = async (layer: Layer) => {
+    setIsGeneratingHabit(true);
+    try {
+      const suggestions = await getEdenInsight(
+        `For someone building a ${layer.name} layer habit, suggest 5 specific, actionable habits they could implement. Format as JSON array with objects: {name, description, duration (in minutes)}. Be concise.`
+      );
+      try {
+        const parsed = JSON.parse(suggestions);
+        setHabitSuggestions(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
+      } catch {
+        setHabitSuggestions([
+          { name: 'Daily Reflection', description: 'Spend 10 minutes reflecting on progress', duration: 10 },
+          { name: 'Practice Session', description: 'Dedicated practice time for skill improvement', duration: 15 },
+          { name: 'Review & Plan', description: 'Review today and plan tomorrow', duration: 12 },
+        ]);
+      }
+      setShowHabitSuggestions(true);
+    } finally {
+      setIsGeneratingHabit(false);
+    }
+  };
+
+  const applyHabitSuggestion = (suggestion: any) => {
+    setHabitName(suggestion.name || '');
+    setHabitMinutes(suggestion.duration || 15);
+    setShowHabitSuggestions(false);
   };
 
   const createGuideTask = (layerId: LayerId, title: string, minutesLabel: string) => {
@@ -681,7 +713,8 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                           value={habitFrequency}
                           onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
                           title="Habit frequency"
-                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                          className="w-full rounded-xl border-2 border-primary/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface appearance-none cursor-pointer transition-all hover:border-primary/60 focus:border-primary focus:outline-none"
+                          style={{ accentColor: 'var(--color-primary, #FF6B35)' }}
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
@@ -691,14 +724,108 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
 
                     <div>
                       <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Time</label>
-                      <input
-                        type="time"
-                        value={habitTime}
-                        onChange={(e) => setHabitTime(e.target.value)}
-                        title="Habit time"
-                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                      />
+
+                      <div className="flex gap-2 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setHabitTimeFormat('24')}
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                            habitTimeFormat === '24'
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                          )}
+                        >
+                          24H
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHabitTimeFormat('12')}
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                            habitTimeFormat === '12'
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                          )}
+                        >
+                          12H
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                        <input
+                          inputMode="numeric"
+                          value={habitHourInput}
+                          onChange={(e) => setHabitHourInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder={habitTimeFormat === '24' ? '00-23' : '01-12'}
+                          className="w-full rounded-lg border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-center text-sm text-on-surface"
+                        />
+                        <span className="text-sm font-bold text-secondary">:</span>
+                        <input
+                          inputMode="numeric"
+                          value={habitMinuteInput}
+                          onChange={(e) => setHabitMinuteInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder="00-59"
+                          className="w-full rounded-lg border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-center text-sm text-on-surface"
+                        />
+                        {habitTimeFormat === '12' ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setHabitPeriod('AM')}
+                              className={cn(
+                                'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-[0.12em] border',
+                                habitPeriod === 'AM'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                              )}
+                            >
+                              AM
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHabitPeriod('PM')}
+                              className={cn(
+                                'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-[0.12em] border',
+                                habitPeriod === 'PM'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                              )}
+                            >
+                              PM
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
+
+                    <button
+                      onClick={() => getEdenHabitSuggestions(activeLayer)}
+                      disabled={isGeneratingHabit}
+                      className="w-full rounded-full px-4 py-2 border border-primary/40 text-primary font-label text-xs font-bold uppercase tracking-[0.14em] flex items-center justify-center gap-2 disabled:opacity-60 hover:bg-primary/5 transition-all"
+                    >
+                      {isGeneratingHabit ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
+                      {isGeneratingHabit ? 'Generating habits...' : 'Habit by Eden'}
+                    </button>
+
+                    {showHabitSuggestions && habitSuggestions.length > 0 && (
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+                        <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary mb-3">Suggested Habits</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {habitSuggestions.map((suggestion, index) => (
+                            <button
+                              key={`${suggestion.name}-${index}`}
+                              type="button"
+                              onClick={() => applyHabitSuggestion(suggestion)}
+                              className="text-left rounded-lg border border-primary/25 px-3 py-2 bg-surface-container-lowest hover:bg-surface-container-low transition-colors"
+                            >
+                              <p className="text-xs font-bold text-on-surface">{suggestion.name}</p>
+                              <p className="text-[11px] text-secondary mt-1">{suggestion.description} • {suggestion.duration}m</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
                       <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-3">Reminder Song (Required)</label>
@@ -796,7 +923,8 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                           value={habitFrequency}
                           onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
                           title="Habit frequency"
-                          className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                          className="w-full rounded-xl border-2 border-primary/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface appearance-none cursor-pointer transition-all hover:border-primary/60 focus:border-primary focus:outline-none"
+                          style={{ accentColor: 'var(--color-primary, #FF6B35)' }}
                         >
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
@@ -806,17 +934,110 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
 
                     <div>
                       <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Time</label>
-                      <input
-                        type="time"
-                        value={habitTime}
-                        onChange={(e) => setHabitTime(e.target.value)}
-                        title="Habit time"
-                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                      />
+
+                      <div className="flex gap-2 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setHabitTimeFormat('24')}
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                            habitTimeFormat === '24'
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                          )}
+                        >
+                          24H
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHabitTimeFormat('12')}
+                          className={cn(
+                            'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                            habitTimeFormat === '12'
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                          )}
+                        >
+                          12H
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                        <input
+                          inputMode="numeric"
+                          value={habitHourInput}
+                          onChange={(e) => setHabitHourInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder={habitTimeFormat === '24' ? '00-23' : '01-12'}
+                          className="w-full rounded-lg border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-center text-sm text-on-surface"
+                        />
+                        <span className="text-sm font-bold text-secondary">:</span>
+                        <input
+                          inputMode="numeric"
+                          value={habitMinuteInput}
+                          onChange={(e) => setHabitMinuteInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          placeholder="00-59"
+                          className="w-full rounded-lg border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-center text-sm text-on-surface"
+                        />
+                        {habitTimeFormat === '12' ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setHabitPeriod('AM')}
+                              className={cn(
+                                'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-[0.12em] border',
+                                habitPeriod === 'AM'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                              )}
+                            >
+                              AM
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHabitPeriod('PM')}
+                              className={cn(
+                                'px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-[0.12em] border',
+                                habitPeriod === 'PM'
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                              )}
+                            >
+                              PM
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
 
+                    <button
+                      onClick={() => getEdenHabitSuggestions(activeLayer)}
+                      disabled={isGeneratingHabit}
+                      className="w-full rounded-full px-4 py-2 border border-primary/40 text-primary font-label text-xs font-bold uppercase tracking-[0.14em] flex items-center justify-center gap-2 disabled:opacity-60 hover:bg-primary/5 transition-all"
+                    >
+                      {isGeneratingHabit ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}
+                      {isGeneratingHabit ? 'Generating habits...' : 'Habit by Eden'}
+                    </button>
+
+                    {showHabitSuggestions && habitSuggestions.length > 0 && (
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+                        <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary mb-3">Suggested Habits</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {habitSuggestions.map((suggestion, index) => (
+                            <button
+                              key={`${suggestion.name}-${index}`}
+                              type="button"
+                              onClick={() => applyHabitSuggestion(suggestion)}
+                              className="text-left rounded-lg border border-primary/25 px-3 py-2 bg-surface-container-lowest hover:bg-surface-container-low transition-colors"
+                            >
+                              <p className="text-xs font-bold text-on-surface">{suggestion.name}</p>
+                              <p className="text-[11px] text-secondary mt-1">{suggestion.description} • {suggestion.duration}m</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div>
-                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Reminder Song (Required)</label>
                       <button
                         type="button"
                         onClick={() => songFileInputRef.current?.click()}

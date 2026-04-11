@@ -150,32 +150,26 @@ let readingPlan: Record<number, string> | null = null;
 let planLoaded = false;
 
 /**
- * Load the preset 365-day reading plan from bible_plan.html
+ * Load the preset 365-day reading plan from bible-plan.json
  */
 async function loadReadingPlan(): Promise<Record<number, string>> {
   if (planLoaded && readingPlan) return readingPlan;
 
   try {
-    const response = await fetch('/bible_plan.html');
-    const html = await response.text();
+    const response = await fetch('/data/bible-plan.json');
+    const data = await response.json() as { readings: Record<string, { passages: string }> };
 
     readingPlan = {};
 
-    // Parse lines like "Day 1: John 1; Psalm 1"
-    const lines = html.split('\n');
-    lines.forEach(line => {
-      const match = line.match(/Day\s+(\d+):\s*(.+)/i);
-      if (match) {
-        const day = parseInt(match[1]);
-        const passages = match[2].trim();
-        readingPlan![day] = passages;
-      }
+    // Convert string keys to numbers for easy access
+    Object.entries(data.readings).forEach(([day, reading]) => {
+      readingPlan![Number(day)] = reading.passages;
     });
 
     planLoaded = true;
     return readingPlan || {};
   } catch (error) {
-    console.warn('Could not load preset reading plan, using default distribution:', error);
+    console.warn('Could not load preset reading plan from JSON, using default distribution:', error);
     planLoaded = true;
     return {};
   }

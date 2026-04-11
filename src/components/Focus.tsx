@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Pause, Play, RefreshCw, Upload, Volume2 } from 'lucide-react';
+import { ArrowLeft, Pause, Play, RefreshCw, Volume2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { User } from '../types';
@@ -10,20 +10,12 @@ interface FocusProps {
   onClose: () => void;
 }
 
-const soundOptions = ['Rain Forest', 'Cathedral Air', 'Brown Noise', 'Light Wind', 'Stream Flow'];
-const musicOptions = ['Instrumental Warmth', 'Piano Prayer', 'Ambient Strings', 'Lo-fi Study'];
-const alarmOptions = ['Aggressive Bell', 'Emergency Pulse', 'Sharp Chime', 'Focus Siren'];
-
 const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
   const [mode, setMode] = useState<'focus' | 'short' | 'long'>('focus');
   const [minutes, setMinutes] = useState(user?.preferences.focusDuration ?? 25);
   const [secondsLeft, setSecondsLeft] = useState((user?.preferences.focusDuration ?? 25) * 60);
   const [isRunning, setIsRunning] = useState(false);
 
-  const [selectedSound, setSelectedSound] = useState(user?.preferences.focusSound ?? 'Rain Forest');
-  const [selectedMusic, setSelectedMusic] = useState('Instrumental Warmth');
-  const [selectedAlarmSound, setSelectedAlarmSound] = useState(user?.preferences.focusAlarmSound ?? 'Aggressive Bell');
-  const [alarmSource, setAlarmSource] = useState<'default' | 'upload'>(user?.preferences.customFocusSongDataUrl ? 'upload' : 'default');
   const [customSongName, setCustomSongName] = useState(user?.preferences.customFocusSongName || '');
   const [customSongDataUrl, setCustomSongDataUrl] = useState(user?.preferences.customFocusSongDataUrl || '');
   const [customSongPlaylist, setCustomSongPlaylist] = useState<Array<{ name: string; dataUrl: string }>>(() => {
@@ -41,14 +33,11 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     return [];
   });
   const [shufflePlaylist, setShufflePlaylist] = useState(Boolean(user?.preferences.shuffleFocusPlaylist));
-  const [previewMode, setPreviewMode] = useState<'sound' | 'music' | 'alarm' | null>(null);
+  const [previewMode, setPreviewMode] = useState<'alarm' | null>(null);
 
   const runningMediaRef = useRef<HTMLAudioElement | null>(null);
   const previewMediaRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioContextRef = useRef<AudioContext | null>(null);
-  const backgroundAudioContextRef = useRef<AudioContext | null>(null);
-  const backgroundIntervalRef = useRef<number | null>(null);
-  const completionAudioContextRef = useRef<AudioContext | null>(null);
   const previewTimeoutRef = useRef<number | null>(null);
   const uploadedTrackIndexRef = useRef(0);
 
@@ -61,57 +50,11 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     return user?.preferences.longBreakDuration ?? 15;
   };
 
-  const playDefaultCompletionTone = (alarmName: string) => {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    if (!completionAudioContextRef.current) {
-      completionAudioContextRef.current = new AudioCtx();
-    }
-
-    const ctx = completionAudioContextRef.current;
-    const alarmPatterns: Record<string, { notes: number[]; type: OscillatorType; gain: number; step: number }> = {
-      'Aggressive Bell': { notes: [880, 1180, 980, 1320], type: 'triangle', gain: 0.24, step: 0.2 },
-      'Emergency Pulse': { notes: [700, 980, 700, 980, 700], type: 'square', gain: 0.2, step: 0.17 },
-      'Sharp Chime': { notes: [1040, 1560, 1320], type: 'sine', gain: 0.16, step: 0.27 },
-      'Focus Siren': { notes: [520, 660, 820, 660, 520], type: 'sawtooth', gain: 0.18, step: 0.19 },
-    };
-
-    const profile = alarmPatterns[alarmName] || alarmPatterns['Aggressive Bell'];
-    const notes = profile.notes;
-    const start = ctx.currentTime + 0.02;
-    notes.forEach((frequency, index) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const t0 = start + index * profile.step;
-      const t1 = t0 + Math.max(0.14, profile.step - 0.03);
-      osc.type = profile.type;
-      osc.frequency.setValueAtTime(frequency, t0);
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(profile.gain, t0 + 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t1);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t1 + 0.01);
-    });
-  };
-
   const stopBackgroundPlayback = () => {
-    if (backgroundIntervalRef.current) {
-      window.clearInterval(backgroundIntervalRef.current);
-      backgroundIntervalRef.current = null;
-    }
-
     if (runningMediaRef.current) {
       runningMediaRef.current.pause();
       runningMediaRef.current.currentTime = 0;
       runningMediaRef.current = null;
-    }
-
-    if (backgroundAudioContextRef.current) {
-      backgroundAudioContextRef.current.close();
-      backgroundAudioContextRef.current = null;
     }
   };
 
@@ -135,107 +78,46 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     setPreviewMode(null);
   };
 
-  const playSynthPattern = (notes: number[], kind: 'preview' | 'background') => {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    let ctx: AudioContext;
-    if (kind === 'preview') {
-      if (previewAudioContextRef.current) {
-        previewAudioContextRef.current.close();
-      }
-      ctx = new AudioCtx();
-      previewAudioContextRef.current = ctx;
-    } else {
-      if (!backgroundAudioContextRef.current) {
-        backgroundAudioContextRef.current = new AudioCtx();
-      }
-      ctx = backgroundAudioContextRef.current;
-    }
-
-    const start = ctx.currentTime + 0.02;
-    notes.forEach((frequency, index) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const t0 = start + index * 0.35;
-      const t1 = t0 + 0.3;
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(frequency, t0);
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(kind === 'preview' ? 0.22 : 0.09, t0 + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t1);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t1 + 0.02);
-    });
-  };
-
-  const startDefaultBackgroundMusic = () => {
+  const startRunningMusic = () => {
+    if (customSongPlaylist.length === 0) return;
     stopBackgroundPlayback();
+    const media = new Audio();
+    media.volume = 0.75;
+    const tracks = customSongPlaylist;
 
-    const patterns: Record<string, number[]> = {
-      'Instrumental Warmth': [392, 440, 494, 523, 494, 440],
-      'Piano Prayer': [349, 392, 440, 392, 349, 330],
-      'Ambient Strings': [262, 330, 392, 330, 392, 440],
-      'Lo-fi Study': [330, 392, 330, 294, 262, 294],
+    const playTrackAt = (index: number) => {
+      uploadedTrackIndexRef.current = index;
+      media.src = tracks[index].dataUrl;
+      media.loop = !shufflePlaylist && tracks.length === 1;
+      media.play().catch(() => {
+        // Silent fallback when autoplay is blocked.
+      });
     };
 
-    const notes = patterns[selectedMusic] || patterns['Instrumental Warmth'];
-    playSynthPattern(notes, 'background');
-    backgroundIntervalRef.current = window.setInterval(() => {
-      playSynthPattern(notes, 'background');
-    }, 2600);
-  };
-
-  const startRunningMusic = () => {
-    if (alarmSource === 'upload' && customSongPlaylist.length > 0) {
-      stopBackgroundPlayback();
-      const media = new Audio();
-      media.volume = 0.75;
-      const tracks = customSongPlaylist;
-
-      const playTrackAt = (index: number) => {
-        uploadedTrackIndexRef.current = index;
-        media.src = tracks[index].dataUrl;
-        media.loop = !shufflePlaylist && tracks.length === 1;
-        media.play().catch(() => {
-          startDefaultBackgroundMusic();
-        });
-      };
-
-      media.onended = () => {
-        if (tracks.length === 0) return;
-        if (shufflePlaylist && tracks.length > 1) {
-          const next = Math.floor(Math.random() * tracks.length);
-          playTrackAt(next);
-          return;
-        }
-        const next = (uploadedTrackIndexRef.current + 1) % tracks.length;
+    media.onended = () => {
+      if (tracks.length === 0) return;
+      if (shufflePlaylist && tracks.length > 1) {
+        const next = Math.floor(Math.random() * tracks.length);
         playTrackAt(next);
-      };
+        return;
+      }
+      const next = (uploadedTrackIndexRef.current + 1) % tracks.length;
+      playTrackAt(next);
+    };
 
-      playTrackAt(uploadedTrackIndexRef.current % tracks.length);
-      runningMediaRef.current = media;
-      return;
-    }
-
-    startDefaultBackgroundMusic();
+    playTrackAt(uploadedTrackIndexRef.current % tracks.length);
+    runningMediaRef.current = media;
   };
 
   const playCompletionTone = () => {
     stopBackgroundPlayback();
-    if (alarmSource === 'upload' && customSongPlaylist.length > 0) {
-      const media = new Audio(customSongPlaylist[uploadedTrackIndexRef.current % customSongPlaylist.length].dataUrl);
-      media.volume = 0.9;
-      media.play().catch(() => {
-        playDefaultCompletionTone(selectedAlarmSound);
-      });
-      runningMediaRef.current = media;
-      return;
-    }
-
-    playDefaultCompletionTone(selectedAlarmSound);
+    if (customSongPlaylist.length === 0) return;
+    const media = new Audio(customSongPlaylist[uploadedTrackIndexRef.current % customSongPlaylist.length].dataUrl);
+    media.volume = 0.9;
+    media.play().catch(() => {
+      // Silent fallback when autoplay is blocked.
+    });
+    runningMediaRef.current = media;
   };
 
   useEffect(() => {
@@ -258,16 +140,12 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
       window.clearInterval(id);
       stopBackgroundPlayback();
     };
-  }, [isRunning, alarmSource, customSongDataUrl, selectedMusic, selectedAlarmSound]);
+  }, [isRunning, customSongDataUrl, customSongPlaylist, shufflePlaylist]);
 
   useEffect(() => {
     return () => {
       stopBackgroundPlayback();
       stopPreviewPlayback();
-      if (completionAudioContextRef.current) {
-        completionAudioContextRef.current.close();
-        completionAudioContextRef.current = null;
-      }
     };
   }, []);
 
@@ -278,8 +156,8 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
       preferences: {
         ...user.preferences,
         focusDuration: minutes,
-        focusSound: selectedSound,
-        focusAlarmSound: selectedAlarmSound,
+        focusSound: customSongName || 'Uploaded Playlist',
+        focusAlarmSound: customSongName || 'Uploaded Alarm',
         customFocusSongName: customSongName,
         customFocusSongDataUrl: customSongDataUrl,
         customFocusPlaylistNames: customSongPlaylist.map((item) => item.name),
@@ -287,7 +165,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
         shuffleFocusPlaylist: shufflePlaylist,
       },
     });
-  }, [minutes, selectedSound, selectedAlarmSound, customSongName, customSongDataUrl, customSongPlaylist, shufflePlaylist]);
+  }, [minutes, customSongName, customSongDataUrl, customSongPlaylist, shufflePlaylist]);
 
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -335,48 +213,6 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     setCustomSongName(playlist[0]?.name || '');
     setCustomSongDataUrl(playlist[0]?.dataUrl || '');
     uploadedTrackIndexRef.current = 0;
-    setAlarmSource('upload');
-  };
-
-  const previewSound = () => {
-    if (previewMode === 'sound') {
-      stopPreviewPlayback();
-      return;
-    }
-
-    stopPreviewPlayback();
-    const notesBySound: Record<string, number[]> = {
-      'Rain Forest': [330, 392, 440, 392],
-      'Cathedral Air': [262, 330, 392, 330],
-      'Brown Noise': [196, 220, 196, 174],
-      'Light Wind': [294, 349, 392, 349],
-      'Stream Flow': [370, 415, 494, 415],
-    };
-    playSynthPattern(notesBySound[selectedSound] || notesBySound['Rain Forest'], 'preview');
-    setPreviewMode('sound');
-    previewTimeoutRef.current = window.setTimeout(() => {
-      stopPreviewPlayback();
-    }, 2000);
-  };
-
-  const previewMusic = () => {
-    if (previewMode === 'music') {
-      stopPreviewPlayback();
-      return;
-    }
-
-    stopPreviewPlayback();
-    const patterns: Record<string, number[]> = {
-      'Instrumental Warmth': [392, 440, 494, 523],
-      'Piano Prayer': [349, 392, 440, 392],
-      'Ambient Strings': [262, 330, 392, 440],
-      'Lo-fi Study': [330, 392, 330, 294],
-    };
-    playSynthPattern(patterns[selectedMusic] || patterns['Instrumental Warmth'], 'preview');
-    setPreviewMode('music');
-    previewTimeoutRef.current = window.setTimeout(() => {
-      stopPreviewPlayback();
-    }, 2000);
   };
 
   const previewAlarmSong = () => {
@@ -387,13 +223,11 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
 
     stopPreviewPlayback();
 
-    if (alarmSource === 'upload' && customSongPlaylist.length > 0) {
+    if (customSongPlaylist.length > 0) {
       const media = new Audio(customSongPlaylist[uploadedTrackIndexRef.current % customSongPlaylist.length].dataUrl);
       media.volume = 0.8;
       media.loop = true;
-      media.play().catch(() => {
-        playDefaultCompletionTone(selectedAlarmSound);
-      });
+      media.play().catch(() => {});
       media.onended = () => {
         setPreviewMode(null);
       };
@@ -401,12 +235,6 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
       setPreviewMode('alarm');
       return;
     }
-
-    playDefaultCompletionTone(selectedAlarmSound);
-    setPreviewMode('alarm');
-    previewTimeoutRef.current = window.setTimeout(() => {
-      stopPreviewPlayback();
-    }, 2000);
   };
 
   return (
@@ -449,140 +277,46 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30">
-            <div className="flex items-center justify-between mb-2">
-              <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Ambient Sound</p>
-              <button
-                type="button"
-                aria-label="Preview ambient sound"
-                title="Preview ambient sound"
-                onClick={previewSound}
-                className="h-8 w-8 rounded-full bg-surface-container-low text-primary flex items-center justify-center"
-              >
-                <Volume2 size={14} />
-              </button>
-            </div>
-            <select
-              aria-label="Ambient sound"
-              title="Ambient sound"
-              value={selectedSound}
-              onChange={(e) => setSelectedSound(e.target.value)}
-              className="w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-            >
-              {soundOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30">
-            <div className="flex items-center justify-between mb-2">
-              <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Music Track</p>
-              <button
-                type="button"
-                aria-label="Preview music track"
-                title="Preview music track"
-                onClick={previewMusic}
-                className="h-8 w-8 rounded-full bg-surface-container-low text-primary flex items-center justify-center"
-              >
-                <Volume2 size={14} />
-              </button>
-            </div>
-            <select
-              aria-label="Music track"
-              title="Music track"
-              value={selectedMusic}
-              onChange={(e) => setSelectedMusic(e.target.value)}
-              className="w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-            >
-              {musicOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-        </section>
-
         <section className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 space-y-3">
-          <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Focus Alarm Song</p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setAlarmSource('default');
-              }}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.14em]',
-                alarmSource === 'default' ? 'bg-primary text-white' : 'bg-surface-container-low text-primary'
-              )}
-            >
-              Use Default
-            </button>
-            <button
-              onClick={() => setAlarmSource('upload')}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.14em] flex items-center gap-1',
-                alarmSource === 'upload' ? 'bg-primary text-white' : 'bg-surface-container-low text-primary'
-              )}
-            >
-              <Upload size={12} />
-              Use Upload
-            </button>
-          </div>
-
-          {alarmSource === 'default' && (
-            <select
-              aria-label="Focus alarm sound"
-              title="Focus alarm sound"
-              value={selectedAlarmSound}
-              onChange={(e) => setSelectedAlarmSound(e.target.value)}
-              className="w-full rounded-xl border border-outline-variant/50 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-            >
-              {alarmOptions.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
+          <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Focus Audio Playlist (Upload Only)</p>
+          <input
+            type="file"
+            accept="audio/*"
+            multiple
+            title="Upload focus songs"
+            onChange={(e) => handleSongUpload(e.target.files)}
+            className="w-full text-sm"
+          />
+          <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 100MB each. Focus uses your uploaded playlist only.</p>
+          {customSongPlaylist.length > 0 ? (
+            <p className="text-xs text-on-surface-variant">Selected: {customSongPlaylist.length} file(s) • First: {customSongPlaylist[0].name}</p>
+          ) : (
+            <p className="text-xs text-secondary">No playlist uploaded yet. Timer will run silently until you upload songs.</p>
           )}
-
-          {alarmSource === 'upload' && (
-            <>
-              <input
-                type="file"
-                accept="audio/*"
-                multiple
-                title="Upload focus alarm song"
-                onChange={(e) => handleSongUpload(e.target.files)}
-                className="w-full text-sm"
-              />
-              <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 100MB each.</p>
-              {customSongPlaylist.length > 0 && (
-                <p className="text-xs text-on-surface-variant">Selected: {customSongPlaylist.length} file(s) • First: {customSongPlaylist[0].name}</p>
-              )}
-              {customSongPlaylist.length > 1 && (
-                <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">
-                  <span className="text-sm text-on-surface">Shuffle Uploaded Playlist</span>
-                  <button
-                    type="button"
-                    aria-label="Toggle shuffle uploaded playlist"
-                    onClick={() => setShufflePlaylist((prev) => !prev)}
-                    className={cn(
-                      'h-8 w-14 rounded-full relative transition-all duration-300 border',
-                      shufflePlaylist
-                        ? 'bg-gradient-to-r from-primary to-primary-container border-primary/40 shadow-[0_8px_20px_rgba(150,68,7,0.25)]'
-                        : 'bg-surface-container-low border-outline-variant/60'
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
-                        shufflePlaylist ? 'translate-x-7' : 'translate-x-1'
-                      )}
-                    >
-                      <span className={cn('h-2 w-2 rounded-full', shufflePlaylist ? 'bg-primary' : 'bg-outline')} />
-                    </span>
-                  </button>
-                </label>
-              )}
-            </>
+          {customSongPlaylist.length > 1 && (
+            <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">
+              <span className="text-sm text-on-surface">Shuffle Uploaded Playlist</span>
+              <button
+                type="button"
+                aria-label="Toggle shuffle uploaded playlist"
+                onClick={() => setShufflePlaylist((prev) => !prev)}
+                className={cn(
+                  'h-8 w-14 rounded-full relative transition-all duration-300 border',
+                  shufflePlaylist
+                    ? 'bg-gradient-to-r from-primary to-primary-container border-primary/40 shadow-[0_8px_20px_rgba(150,68,7,0.25)]'
+                    : 'bg-surface-container-low border-outline-variant/60'
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
+                    shufflePlaylist ? 'translate-x-7' : 'translate-x-1'
+                  )}
+                >
+                  <span className={cn('h-2 w-2 rounded-full', shufflePlaylist ? 'bg-primary' : 'bg-outline')} />
+                </span>
+              </button>
+            </label>
           )}
 
           <button
@@ -591,7 +325,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
             className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1"
           >
             <Volume2 size={12} />
-            {previewMode === 'alarm' ? 'Stop Preview' : 'Preview Song'}
+            {previewMode === 'alarm' ? 'Stop Preview' : 'Preview Upload'}
           </button>
         </section>
 
@@ -618,7 +352,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
             <p className="display-text text-6xl text-on-surface tracking-tight tabular-nums">{formatTimer(secondsLeft)}</p>
           </div>
 
-          <p className="mt-3 text-sm text-on-surface-variant">Sound: {selectedSound} • Music: {selectedMusic} • Alarm: {alarmSource === 'upload' && customSongName ? customSongName : selectedAlarmSound}</p>
+          <p className="mt-3 text-sm text-on-surface-variant">Audio: {customSongName ? customSongName : 'No upload selected'}</p>
 
           <div className="mt-6 flex items-center justify-center gap-3">
             <button onClick={() => setIsRunning((prev) => !prev)} className="px-6 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] flex items-center gap-2">

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
-import { Bell, Shield, LogOut, Award, Zap, Target, Sparkles } from 'lucide-react';
+import { Bell, Shield, LogOut, Award, Zap, Target, Sparkles, Download, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const Profile: React.FC = () => {
@@ -9,6 +9,9 @@ const Profile: React.FC = () => {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [bibleReminderDraft, setBibleReminderDraft] = useState('06:30');
   const [bibleReminderStatus, setBibleReminderStatus] = useState('');
+  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [pwaStatus, setPwaStatus] = useState('');
+  const [isStandalone, setIsStandalone] = useState<boolean>(() => window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
 
   const level = useMemo(() => Math.round(layers.reduce((acc, layer) => acc + layer.level, 0) / Math.max(1, layers.length)), [layers]);
   const xp = useMemo(() => layers.reduce((acc, layer) => acc + layer.xp, 0), [layers]);
@@ -35,6 +38,27 @@ const Profile: React.FC = () => {
       setBibleReminderDraft(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
     }
   }, [user?.preferences.bibleReminderTime]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event as any);
+    };
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const updateStandaloneMode = () => {
+      setIsStandalone(mediaQuery.matches || (window.navigator as any).standalone === true);
+    };
+
+    updateStandaloneMode();
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    mediaQuery.addEventListener('change', updateStandaloneMode);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      mediaQuery.removeEventListener('change', updateStandaloneMode);
+    };
+  }, []);
 
   if (!user) return null;
 
@@ -154,6 +178,38 @@ const Profile: React.FC = () => {
       setTelegramStatus('Network error while connecting Telegram.');
     } finally {
       setTestingTelegram(false);
+    }
+  };
+
+  const handleInstallApp = async () => {
+    if (!installPromptEvent) {
+      setPwaStatus('Install prompt is not available yet. Open Edenify in your browser and use Install App from the browser menu.');
+      return;
+    }
+
+    installPromptEvent.prompt();
+    const choice = await installPromptEvent.userChoice;
+    if (choice?.outcome === 'accepted') {
+      setPwaStatus('Install request accepted. Edenify should appear as an app shortly.');
+    } else {
+      setPwaStatus('Install was dismissed. You can try again anytime.');
+    }
+    setInstallPromptEvent(null);
+  };
+
+  const handleUninstallHint = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((reg) => reg.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+      setPwaStatus('Local app cache removed. To fully uninstall, remove Edenify from your OS/browser apps list.');
+    } catch {
+      setPwaStatus('Could not clear local app cache. You can still uninstall from your device app settings.');
     }
   };
 
@@ -353,19 +409,8 @@ const Profile: React.FC = () => {
             />
           </div>
           <div className="px-4 py-3 rounded-2xl flex items-center justify-between border-t border-outline-variant/25">
-            <span className="text-sm text-on-surface">Focus Sound</span>
-            <select
-              title="Focus sound"
-              value={user.preferences.focusSound}
-              onChange={(e) => updatePreference('focusSound', e.target.value)}
-              className="rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm"
-            >
-              <option>Rain Forest</option>
-              <option>Cathedral Air</option>
-              <option>Brown Noise</option>
-              <option>Light Wind</option>
-              <option>Stream Flow</option>
-            </select>
+            <span className="text-sm text-on-surface">Focus Audio</span>
+            <span className="text-xs text-secondary">Upload-only playlist in Focus page</span>
           </div>
         </div>
       </section>
@@ -425,6 +470,29 @@ const Profile: React.FC = () => {
       </section>
 
       <div className="pt-1">
+        <div className="mb-3 rounded-3xl border border-outline-variant/30 bg-surface-container-low p-4 space-y-3">
+          <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">App Install Controls</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleInstallApp}
+              className="px-3 py-2 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1"
+            >
+              <Download size={13} />
+              {isStandalone ? 'Installed' : 'Install App'}
+            </button>
+            <button
+              type="button"
+              onClick={handleUninstallHint}
+              className="px-3 py-2 rounded-full bg-surface-container-lowest text-secondary border border-outline-variant/45 text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1"
+            >
+              <Trash2 size={13} />
+              Uninstall Help
+            </button>
+          </div>
+          {pwaStatus && <p className="text-xs text-secondary">{pwaStatus}</p>}
+        </div>
+
         <button
           onClick={async () => {
             try {

@@ -57,18 +57,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
     };
   }, [theme, applyTheme]);
 
-  const toggleTheme = () => {
-    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
+  const setExplicitTheme = (next: 'light' | 'dark' | 'system') => {
     setTheme(next);
     applyTheme(next, true);
   };
-
-  const themeLabel =
-    theme === 'dark'
-      ? 'Theme: Dark (tap to System)'
-      : theme === 'system'
-        ? 'Theme: System (tap to Light)'
-        : 'Theme: Light (tap to Dark)';
 
   const tabs = [
     { id: 'home', icon: Home, label: 'Home' },
@@ -79,15 +71,44 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
 
   return (
     <div className="flex flex-col h-screen bg-background max-w-5xl mx-auto relative overflow-hidden">
-      <button
-        type="button"
-        onClick={toggleTheme}
-        aria-label={themeLabel}
-        title={themeLabel}
-        className="fixed top-3 right-3 z-[60] h-9 w-9 rounded-xl border border-outline-variant/50 bg-surface-container-low text-primary flex items-center justify-center shadow-md"
-      >
-        {theme === 'dark' ? <Sun size={16} /> : theme === 'system' ? <Laptop size={16} /> : <Moon size={16} />}
-      </button>
+      <div className="fixed top-3 right-3 z-[60] rounded-xl border border-outline-variant/50 bg-surface-container-low p-1 shadow-md flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setExplicitTheme('light')}
+          aria-label="Use light mode"
+          title="Light mode"
+          className={cn(
+            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
+            theme === 'light' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
+          )}
+        >
+          <Sun size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setExplicitTheme('dark')}
+          aria-label="Use dark mode"
+          title="Dark mode"
+          className={cn(
+            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
+            theme === 'dark' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
+          )}
+        >
+          <Moon size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setExplicitTheme('system')}
+          aria-label="Use system theme"
+          title="System theme"
+          className={cn(
+            'h-8 w-8 rounded-lg flex items-center justify-center transition-colors',
+            theme === 'system' ? 'bg-primary text-white' : 'text-primary hover:bg-surface-container-lowest'
+          )}
+        >
+          <Laptop size={14} />
+        </button>
+      </div>
 
       {/* Header with Logo (hidden on Home because Home has a custom fixed navbar) */}
       {activeTab !== 'home' && <Header />}

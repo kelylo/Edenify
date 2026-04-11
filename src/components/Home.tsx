@@ -137,8 +137,7 @@ const Home: React.FC = () => {
   const [newTaskPeriod, setNewTaskPeriod] = useState<'AM' | 'PM'>(() => parseTimeToEditor(getRoundedCurrentTime()).period);
   const [newTaskDate, setNewTaskDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newTaskAlarmEnabled, setNewTaskAlarmEnabled] = useState(true);
-  const [newTaskAlarmSource, setNewTaskAlarmSource] = useState<'default' | 'upload'>('default');
-  const [newTaskAlarmSound, setNewTaskAlarmSound] = useState(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+  const [newTaskAlarmSound, setNewTaskAlarmSound] = useState('Uploaded Alarm');
   const [newTaskPreferredMusic, setNewTaskPreferredMusic] = useState(() => {
     const playlist = user?.preferences.customFocusPlaylistNames || [];
     if (playlist.length > 0 && playlist[0]) return playlist[0];
@@ -173,8 +172,6 @@ const Home: React.FC = () => {
   const bibleReminderTimeoutRef = useRef<number | null>(null);
   const bibleReminderTriggeredDateRef = useRef('');
 
-  const alarmSoundOptions = ['Aggressive Bell', 'Emergency Pulse', 'Sharp Chime', 'Focus Siren'];
-  const musicOptions = ['Instrumental Warmth', 'Piano Prayer', 'Ambient Strings', 'Lo-fi Study'];
   const maxBibleDay = Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 2);
   const canNavigateBible = bibleReading.completed;
   const notificationsEnabled = Boolean(
@@ -202,19 +199,17 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     if (showQuickAdd) return;
-    setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+    setNewTaskAlarmSound('Uploaded Alarm');
     if (favoriteFocusTrack) {
       setNewTaskPreferredMusic(favoriteFocusTrack.name);
-      setNewTaskAlarmSource('upload');
       setNewTaskCustomAlarmName(favoriteFocusTrack.name);
       setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
     } else {
-      setNewTaskPreferredMusic('Instrumental Warmth');
-      setNewTaskAlarmSource('default');
+      setNewTaskPreferredMusic('');
       setNewTaskCustomAlarmName('');
       setNewTaskCustomAlarmDataUrl('');
     }
-  }, [favoriteFocusTrack, user?.preferences.focusAlarmSound, showQuickAdd]);
+  }, [favoriteFocusTrack, showQuickAdd]);
 
   const stopActiveAlarm = () => {
     if (alarmIntervalRef.current) {
@@ -379,43 +374,12 @@ const Home: React.FC = () => {
     }, totalDuration);
   };
 
-  const previewAlarmSound = () => {
-    if (newTaskAlarmSource === 'upload' && newTaskCustomAlarmDataUrl) {
-      previewCustomReminder();
+  const previewUploadedReminder = () => {
+    if (!newTaskCustomAlarmDataUrl) {
+      setQuickAddError('Upload a reminder song first.');
       return;
     }
-
-    const alarmPatterns: Record<string, number[]> = {
-      'Aggressive Bell': [980, 680, 980, 1180, 980],
-      'Emergency Pulse': [660, 980, 660, 980, 660, 980],
-      'Sharp Chime': [1320, 1760, 1560],
-      'Focus Siren': [520, 700, 900, 700, 520, 420],
-    };
-
-    const oscillatorBySound: Record<string, OscillatorType> = {
-      'Aggressive Bell': 'triangle',
-      'Emergency Pulse': 'square',
-      'Sharp Chime': 'sine',
-      'Focus Siren': 'sawtooth',
-    };
-
-    playSynthPreview(
-      alarmPatterns[newTaskAlarmSound] || alarmPatterns['Aggressive Bell'],
-      newTaskAlarmSound === 'Sharp Chime' ? 240 : 170,
-      oscillatorBySound[newTaskAlarmSound] || 'triangle',
-      newTaskAlarmSound === 'Sharp Chime' ? 0.16 : 0.24
-    );
-  };
-
-  const previewMusicTrack = () => {
-    const musicPatterns: Record<string, number[]> = {
-      'Instrumental Warmth': [392, 440, 494, 523, 494, 440],
-      'Piano Prayer': [349, 392, 440, 392, 349, 330],
-      'Ambient Strings': [262, 330, 392, 330, 392, 440],
-      'Lo-fi Study': [330, 392, 330, 294, 262, 294],
-    };
-
-    playSynthPreview(musicPatterns[newTaskPreferredMusic] || musicPatterns['Instrumental Warmth'], 240, 'sine', 0.12);
+    previewCustomReminder();
   };
 
   const previewCustomReminder = () => {
@@ -982,6 +946,11 @@ const Home: React.FC = () => {
       return;
     }
 
+    if (!newTaskCustomAlarmDataUrl) {
+      setQuickAddError('Upload a reminder song first. This app now uses upload-only audio for task alarms.');
+      return;
+    }
+
     const resolvedTime = buildTimeFromEditor(newTaskTimeFormat, newTaskHourInput, newTaskMinuteInput, newTaskPeriod);
     if (!resolvedTime) {
       setQuickAddError('Please enter a valid time (hour and minute).');
@@ -1001,10 +970,10 @@ const Home: React.FC = () => {
       completed: false,
       date: dueDate.toISOString(),
       alarmEnabled: newTaskAlarmEnabled,
-      alarmSound: newTaskAlarmSound,
-      preferredMusic: newTaskPreferredMusic,
-      customAlarmAudioName: newTaskAlarmSource === 'upload' ? newTaskCustomAlarmName : undefined,
-      customAlarmAudioDataUrl: newTaskAlarmSource === 'upload' ? newTaskCustomAlarmDataUrl : undefined,
+      alarmSound: newTaskAlarmSound || 'Uploaded Alarm',
+      preferredMusic: newTaskPreferredMusic || newTaskCustomAlarmName || 'Uploaded Song',
+      customAlarmAudioName: newTaskCustomAlarmName || 'Uploaded Song',
+      customAlarmAudioDataUrl: newTaskCustomAlarmDataUrl,
     };
 
     const due = parseTaskDueDate(draftTask);
@@ -1034,15 +1003,13 @@ const Home: React.FC = () => {
     setNewTaskDate(format(new Date(), 'yyyy-MM-dd'));
     setNewTaskAlarmEnabled(true);
     if (favoriteFocusTrack) {
-      setNewTaskAlarmSource('upload');
-      setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
+      setNewTaskAlarmSound('Uploaded Alarm');
       setNewTaskPreferredMusic(favoriteFocusTrack.name);
       setNewTaskCustomAlarmName(favoriteFocusTrack.name);
       setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
     } else {
-      setNewTaskAlarmSource('default');
-      setNewTaskAlarmSound(user?.preferences.focusAlarmSound || 'Aggressive Bell');
-      setNewTaskPreferredMusic('Instrumental Warmth');
+      setNewTaskAlarmSound('Uploaded Alarm');
+      setNewTaskPreferredMusic('');
       setNewTaskCustomAlarmName('');
       setNewTaskCustomAlarmDataUrl('');
     }
@@ -1076,7 +1043,6 @@ const Home: React.FC = () => {
       return;
     }
 
-    setNewTaskAlarmSource('upload');
     setNewTaskCustomAlarmName(file.name);
     setNewTaskCustomAlarmDataUrl(dataUrl);
     setQuickAddError('');
@@ -1117,10 +1083,8 @@ const Home: React.FC = () => {
       }
       setNewTaskMinuteInput(parts.minute);
     }
-    setNewTaskAlarmSound(suggestion.alarmSound || newTaskAlarmSound);
-    setNewTaskPreferredMusic(suggestion.preferredMusic || newTaskPreferredMusic);
+    setNewTaskPreferredMusic(favoriteFocusTrack?.name || suggestion.preferredMusic || newTaskPreferredMusic);
     if (favoriteFocusTrack && suggestion.preferredMusic === favoriteFocusTrack.name) {
-      setNewTaskAlarmSource('upload');
       setNewTaskCustomAlarmName(favoriteFocusTrack.name);
       setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
     }
@@ -1862,114 +1826,38 @@ const Home: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Alarm Sound</label>
-                      <select
-                        aria-label="Alarm sound"
-                        value={newTaskAlarmSound}
-                        onChange={(e) => setNewTaskAlarmSound(e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                      >
-                        {alarmSoundOptions.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Preferred Music</label>
-                      <select
-                        aria-label="Preferred music"
-                        value={newTaskPreferredMusic}
-                        onChange={(e) => setNewTaskPreferredMusic(e.target.value)}
-                        className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                      >
-                        {musicOptions.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={previewAlarmSound}
-                      className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
-                    >
-                      Preview Alarm
-                    </button>
-                    <button
-                      type="button"
-                      onClick={previewMusicTrack}
-                      className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
-                    >
-                      Preview Music
-                    </button>
-                    {newTaskAlarmSource === 'upload' && newTaskCustomAlarmDataUrl && (
+                  <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block">Reminder Song (Upload Only)</label>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      title="Upload reminder song"
+                      onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
+                      className="w-full text-sm"
+                    />
+                    {newTaskCustomAlarmName ? (
+                      <p className="text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
+                    ) : (
+                      <p className="text-xs text-secondary">No upload yet. Upload a song to enable task alarm audio.</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={previewCustomReminder}
+                        onClick={previewUploadedReminder}
                         className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
                       >
-                        Preview Custom
+                        Preview Upload
                       </button>
-                    )}
-                    {isTaskPreviewPlaying && (
-                      <button
-                        type="button"
-                        onClick={stopTaskPreview}
-                        className="px-3 py-1.5 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em]"
-                      >
-                        Stop Preview
-                      </button>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Reminder Alarm Song</label>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewTaskAlarmSource('default');
-                          setNewTaskCustomAlarmName('');
-                          setNewTaskCustomAlarmDataUrl('');
-                        }}
-                        className={cn(
-                          'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.14em]',
-                          newTaskAlarmSource === 'default' ? 'bg-primary text-white' : 'bg-surface-container-low text-primary'
-                        )}
-                      >
-                        Use Default
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewTaskAlarmSource('upload')}
-                        className={cn(
-                          'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.14em]',
-                          newTaskAlarmSource === 'upload' ? 'bg-primary text-white' : 'bg-surface-container-low text-primary'
-                        )}
-                      >
-                        Use Upload
-                      </button>
+                      {isTaskPreviewPlaying && (
+                        <button
+                          type="button"
+                          onClick={stopTaskPreview}
+                          className="px-3 py-1.5 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em]"
+                        >
+                          Stop Preview
+                        </button>
+                      )}
                     </div>
-
-                    {newTaskAlarmSource === 'upload' && (
-                      <>
-                        <input
-                          type="file"
-                          accept="audio/*"
-                          title="Upload reminder song"
-                          onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
-                          className="w-full text-sm"
-                        />
-                        {newTaskCustomAlarmName && (
-                          <p className="mt-2 text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
-                        )}
-                      </>
-                    )}
                   </div>
 
                   <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">

@@ -8,7 +8,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ showNotifications = true }) => {
   return (
-    <header className="fixed top-0 left-0 w-full z-40 flex justify-between items-center px-6 py-3 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 max-w-md mx-auto h-[52px]">
+    <header className="fixed top-0 left-0 w-full z-40 flex justify-between items-center px-6 py-3 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 h-[52px]">
       {/* Left: Logo and Edenify text */}
       <div className="flex items-center gap-2">
         <img

@@ -89,8 +89,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-background max-w-5xl mx-auto relative overflow-hidden">
-      <div className="fixed top-3 right-3 z-[60] rounded-xl border border-outline-variant/50 bg-surface-container-low p-1 shadow-md">
+    <div className="flex flex-col h-screen bg-background w-full relative overflow-hidden">
+      <div className="fixed top-3 right-16 z-[60] rounded-xl border border-outline-variant/50 bg-surface-container-low p-1 shadow-md">
         <button
           type="button"
           onClick={cycleTheme}
@@ -111,7 +111,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => 
       </main>
 
       {/* Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-outline-variant px-6 py-3 flex justify-between items-center z-50 max-w-5xl mx-auto">
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-outline-variant px-6 py-3 flex justify-between items-center z-50 w-full">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;

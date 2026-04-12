@@ -14,8 +14,6 @@ import Focus from './Focus';
 import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
-const VERSES_PER_PAGE = 44;
-
 const getRoundedCurrentTime = () => {
   const now = new Date();
   const roundedMinutes = Math.ceil(now.getMinutes() / 5) * 5;
@@ -141,7 +139,8 @@ const Home: React.FC = () => {
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
 
   const [readingSuggestion, setReadingSuggestion] = useState('');
-  const [scriptureVerses, setScriptureVerses] = useState<BibleVerse[]>([]);
+  const [scripturePages, setScripturePages] = useState<BibleVerse[][]>([]);
+  const [scripturePageLabels, setScripturePageLabels] = useState<string[]>([]);
   const [scripturePageIndex, setScripturePageIndex] = useState(0);
   const [loadingScriptureText, setLoadingScriptureText] = useState(false);
   const [isScriptureFullscreen, setIsScriptureFullscreen] = useState(false);
@@ -207,9 +206,12 @@ const Home: React.FC = () => {
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
-  const maxBibleDay = completedToday
-    ? bibleReading.highestCompletedDay
-    : Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 1);
+  const maxBibleDay = Math.max(
+    bibleReading.day,
+    completedToday
+      ? bibleReading.highestCompletedDay
+      : Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 1)
+  );
   const canNavigateBible = true;
   const notificationsEnabled = Boolean(
     user?.preferences.notifications.taskReminders &&
@@ -217,16 +219,8 @@ const Home: React.FC = () => {
     user?.preferences.notifications.streakProtection
   );
 
-  const scriptureVersePages = useMemo(() => {
-    if (scriptureVerses.length === 0) return [] as BibleVerse[][];
-    const pages: BibleVerse[][] = [];
-    for (let i = 0; i < scriptureVerses.length; i += VERSES_PER_PAGE) {
-      pages.push(scriptureVerses.slice(i, i + VERSES_PER_PAGE));
-    }
-    return pages;
-  }, [scriptureVerses]);
-
-  const activeScripturePage = scriptureVersePages[scripturePageIndex] || [];
+  const activeScripturePage = scripturePages[scripturePageIndex] || [];
+  const activeScriptureLabel = scripturePageLabels[scripturePageIndex] || bibleReading.passage;
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];
@@ -1006,10 +1000,11 @@ const Home: React.FC = () => {
           .map((part) => part.trim())
           .filter(Boolean);
 
-        const loaded: BibleVerse[] = [];
+        const parsedPages: BibleVerse[][] = [];
+        const labels: string[] = [];
 
         for (const segment of segments) {
-          const match = segment.match(/^([1-3]?\s?[A-Za-z]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?(?:-(\d+))?$/);
+          const match = segment.match(/^(.+?)\s+(\d+)(?::(\d+)(?:-(\d+))?)?(?:-(\d+))?$/);
           if (!match) continue;
 
           const book = match[1].trim();
@@ -1018,37 +1013,49 @@ const Home: React.FC = () => {
           const singleVerseEnd = match[4] ? Number(match[4]) : null;
           const chapterEnd = match[5] ? Number(match[5]) : chapterStart;
 
+          const passagePage: BibleVerse[] = [];
+
           if (singleVerseStart !== null) {
             const chapter = await getChapter(book, chapterStart);
             const filtered = chapter.filter((v) => {
               if (singleVerseEnd !== null) return v.verse >= singleVerseStart && v.verse <= singleVerseEnd;
               return v.verse === singleVerseStart;
             });
-            loaded.push(...filtered);
+            passagePage.push(...filtered);
+            if (passagePage.length > 0) {
+              parsedPages.push(passagePage);
+              labels.push(segment);
+            }
             continue;
           }
 
           for (let chapterNo = chapterStart; chapterNo <= chapterEnd; chapterNo += 1) {
             const chapter = await getChapter(book, chapterNo);
-            loaded.push(...chapter);
-            if (loaded.length >= 320) break;
+            passagePage.push(...chapter);
           }
-          if (loaded.length >= 320) break;
+
+          if (passagePage.length > 0) {
+            parsedPages.push(passagePage);
+            labels.push(segment);
+          }
         }
 
-        if (loaded.length > 0) {
+        if (parsedPages.length > 0) {
           setScripturePageIndex(0);
-          setScriptureVerses(loaded);
+          setScripturePages(parsedPages);
+          setScripturePageLabels(labels);
           return;
         }
 
         const fallback = await searchVerses(bibleReading.passage.split(' ')[0], 40);
         setScripturePageIndex(0);
-        setScriptureVerses(fallback);
+        setScripturePages(fallback.length > 0 ? [fallback] : []);
+        setScripturePageLabels([bibleReading.passage]);
       } catch (error) {
         console.error('Could not load ASV passage', error);
         setScripturePageIndex(0);
-        setScriptureVerses([]);
+        setScripturePages([]);
+        setScripturePageLabels([]);
       } finally {
         setLoadingScriptureText(false);
       }
@@ -1062,6 +1069,8 @@ const Home: React.FC = () => {
       setShowReflectionComposer(false);
       setIsScriptureFullscreen(false);
       setScripturePageIndex(0);
+      setScripturePages([]);
+      setScripturePageLabels([]);
       return;
     }
 
@@ -1453,7 +1462,7 @@ const Home: React.FC = () => {
     <div className="min-h-screen bg-surface pb-24">
       {!isSubPageOpen && (
       <header className="fixed top-0 left-0 right-0 z-50 h-[62px] bg-[#fef9f2]/92 dark:bg-background/92 backdrop-blur-xl border-b border-outline-variant/25">
-        <div className="max-w-5xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
+        <div className="w-full h-full px-4 sm:px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden bg-surface-container shadow-sm ring-1 ring-white/60">
               {user?.avatar ? (
@@ -1484,7 +1493,7 @@ const Home: React.FC = () => {
       )}
 
       {!isSubPageOpen && (
-      <main className="pt-[82px] px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-7">
+      <main className="pt-[82px] px-4 sm:px-6 lg:px-8 w-full space-y-7">
         <motion.section initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3 px-1">
           <p className="font-label text-[11px] uppercase tracking-[0.2em] text-on-surface-variant/60 font-bold">{formattedDate}</p>
           <h1 className="display-text text-[2.6rem] sm:text-5xl font-medium tracking-[-0.04em] leading-[0.98] text-on-surface max-w-[12ch]">Good day, {user?.name || 'there'}.</h1>
@@ -1791,9 +1800,9 @@ const Home: React.FC = () => {
               <section>
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-outline">Read More</p>
-                  <h2 className="text-2xl sm:text-3xl font-semibold text-on-surface tracking-tight">{bibleReading.passage}</h2>
-                  {scriptureVersePages.length > 1 && (
-                    <p className="text-xs text-secondary uppercase tracking-[0.14em] font-bold">Page {scripturePageIndex + 1} of {scriptureVersePages.length}</p>
+                  <h2 className="text-2xl sm:text-3xl font-semibold text-on-surface tracking-tight">{activeScriptureLabel}</h2>
+                  {scripturePages.length > 1 && (
+                    <p className="text-xs text-secondary uppercase tracking-[0.14em] font-bold">Passage {scripturePageIndex + 1} of {scripturePages.length}</p>
                   )}
                 </div>
               </section>
@@ -1801,15 +1810,16 @@ const Home: React.FC = () => {
               <section className="space-y-7 max-w-2xl">
                 {loadingScriptureText && <p className="text-sm text-on-surface-variant">Loading chapter text from ASV database...</p>}
 
-                {!loadingScriptureText && scriptureVerses.length === 0 && (
+                {!loadingScriptureText && scripturePages.length === 0 && (
                   <p className="text-base leading-7 text-on-surface-variant dark:text-on-surface">
                     <span className="text-primary font-semibold mr-2">1</span>
                     {bibleReading.text}
                   </p>
                 )}
 
-                {!loadingScriptureText && scriptureVerses.length > 0 && (
+                {!loadingScriptureText && scripturePages.length > 0 && (
                   <div className="space-y-6">
+                    <p className="text-xs uppercase tracking-[0.14em] font-bold text-primary">{activeScriptureLabel}</p>
                     {activeScripturePage.map((verse, index) => {
                       const prev = index > 0 ? activeScripturePage[index - 1] : null;
                       const showChapterTitle = !prev || prev.bookName !== verse.bookName || prev.chapter !== verse.chapter;
@@ -1829,7 +1839,7 @@ const Home: React.FC = () => {
                   </div>
                 )}
 
-                {scriptureVersePages.length > 1 && (
+                {scripturePages.length > 1 && (
                   <section className="max-w-2xl pt-8">
                     <div className="flex items-center justify-between gap-3 border-t border-outline-variant/25 pt-6">
                       <button
@@ -1840,11 +1850,11 @@ const Home: React.FC = () => {
                       >
                         Keep Reading Left
                       </button>
-                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-secondary">{scripturePageIndex + 1}/{scriptureVersePages.length}</p>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-secondary">{scripturePageIndex + 1}/{scripturePages.length}</p>
                       <button
                         type="button"
-                        onClick={() => setScripturePageIndex((prev) => Math.min(scriptureVersePages.length - 1, prev + 1))}
-                        disabled={scripturePageIndex >= scriptureVersePages.length - 1}
+                        onClick={() => setScripturePageIndex((prev) => Math.min(scripturePages.length - 1, prev + 1))}
+                        disabled={scripturePageIndex >= scripturePages.length - 1}
                         className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-40"
                       >
                         Keep Reading Right

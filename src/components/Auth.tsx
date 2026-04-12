@@ -24,24 +24,24 @@ const Auth: React.FC = () => {
   const buildUserFromAuth = (emailAddress: string, id = emailAddress.trim().toLowerCase(), nameOverride?: string) => {
     const normalizedEmail = emailAddress.trim().toLowerCase();
     return {
-    id: normalizedEmail || id,
-    email: normalizedEmail || emailAddress,
-    name: nameOverride || emailAddress.split('@')[0],
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBcC3JJ6pbiJ4huGdQErp1HqdYXv5QSjjUVdzI5yxMSvCafZOcDElC70vwyd1yvnWQJIkA3SA3qV0hrcU_2aR21a_vYyL4__c5Vk5BMJnULE5kBRr0MVHbedGwSryNzECh11wQ0Gi7A4JRh44ZzxgSYBaozjBW6k6SNLpmcSxQ7sgHqQD_F8t7emA54L4Bk0Efhy-NicS6SGD4bOAOYC_NXfIGeo24tsTpoM26uqQn9erV_qKz6719c8vYXXpA-hWjbbQBp-e6tPA',
-    preferences: {
-      focusDuration: 25,
-      shortBreakDuration: 5,
-      longBreakDuration: 15,
-      focusSound: 'Rain Forest',
-      telegramChatId: '',
-      customFocusSongName: '',
-      customFocusSongDataUrl: '',
-      notifications: {
-        taskReminders: true,
-        dailyScripture: true,
-        streakProtection: false,
+      id: normalizedEmail || id,
+      email: normalizedEmail || emailAddress,
+      name: nameOverride || emailAddress.split('@')[0],
+      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBcC3JJ6pbiJ4huGdQErp1HqdYXv5QSjjUVdzI5yxMSvCafZOcDElC70vwyd1yvnWQJIkA3SA3qV0hrcU_2aR21a_vYyL4__c5Vk5BMJnULE5kBRr0MVHbedGwSryNzECh11wQ0Gi7A4JRh44ZzxgSYBaozjBW6k6SNLpmcSxQ7sgHqQD_F8t7emA54L4Bk0Efhy-NicS6SGD4bOAOYC_NXfIGeo24tsTpoM26uqQn9erV_qKz6719c8vYXXpA-hWjbbQBp-e6tPA',
+      preferences: {
+        focusDuration: 25,
+        shortBreakDuration: 5,
+        longBreakDuration: 15,
+        focusSound: 'Rain Forest',
+        telegramChatId: '',
+        customFocusSongName: '',
+        customFocusSongDataUrl: '',
+        notifications: {
+          taskReminders: true,
+          dailyScripture: true,
+          streakProtection: false,
+        },
       },
-    },
     };
   };
 

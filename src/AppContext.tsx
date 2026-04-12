@@ -61,6 +61,13 @@ const getDayDiff = (fromKey: string, toKey: string) => {
   return Math.floor((toMs - fromMs) / (24 * 60 * 60 * 1000));
 };
 
+const shiftDateKey = (dateKey: string, days: number) => {
+  const base = new Date(`${dateKey}T00:00:00`);
+  if (!Number.isFinite(base.getTime())) return getLocalDateKey();
+  base.setDate(base.getDate() + days);
+  return getLocalDateKey(base);
+};
+
 const sanitizeTaskForPersistence = (task: Task): Task => {
   const audio = task.customAlarmAudioDataUrl || '';
   if (audio.length <= MAX_PERSISTED_DATA_URL_LENGTH) return task;
@@ -118,8 +125,7 @@ const normalizeUser = (user: User): User => ({
 const normalizeBibleReading = (reading?: Partial<BibleReading> | null): BibleReading => {
   const safeTotalDays = INITIAL_BIBLE_READING.totalDays;
   const safeCompleted = Math.min(safeTotalDays, Math.max(0, Number(reading?.highestCompletedDay || INITIAL_BIBLE_READING.highestCompletedDay || 0)));
-  const maxUnlocked = Math.min(safeTotalDays, safeCompleted + 1);
-  const safeDay = Math.min(maxUnlocked, Math.max(1, Number(reading?.day || INITIAL_BIBLE_READING.day)));
+  const safeDay = Math.min(safeTotalDays, Math.max(1, Number(reading?.day || INITIAL_BIBLE_READING.day)));
 
   return {
     ...INITIAL_BIBLE_READING,
@@ -313,21 +319,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [user?.id, user?.email]);
 
   useEffect(() => {
+    if (!user) return;
+    if (user.preferences?.readingPlanStartDate) return;
+
+    const today = getLocalDateKey();
+    const currentDay = Math.max(1, Number(bibleReading.day || 1));
+    const inferredStart = shiftDateKey(today, -(currentDay - 1));
+
+    setUser((prev) => {
+      if (!prev) return prev;
+      if (prev.preferences?.readingPlanStartDate) return prev;
+      return {
+        ...prev,
+        preferences: {
+          ...prev.preferences,
+          readingPlanStartDate: inferredStart,
+        },
+      };
+    });
+  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, bibleReading.day]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const hydrateBiblePlanState = async () => {
       const totalDays = await getTotalReadingDays();
       const highest = Math.min(totalDays, Math.max(0, bibleReading.highestCompletedDay || 0));
-      const unlockedDay = Math.min(totalDays, highest + 1);
       const todayKey = getLocalDateKey();
-      const shouldAdvanceOnNewDay = Boolean(
-        bibleReading.completed &&
-        bibleReading.lastCompletedDate &&
-        bibleReading.lastCompletedDate !== todayKey
-      );
-      const targetDay = shouldAdvanceOnNewDay
-        ? Math.min(totalDays, highest + 1)
-        : Math.min(unlockedDay, Math.max(1, bibleReading.day || 1));
+      const startKey = user?.preferences?.readingPlanStartDate || todayKey;
+      const elapsedDays = Math.max(0, getDayDiff(startKey, todayKey));
+      const timelineDay = Math.min(totalDays, elapsedDays + 1);
+      const targetDay = Math.max(1, timelineDay);
       const reading = await getDayReading(targetDay);
       if (cancelled) return;
 
@@ -358,7 +380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       cancelled = true;
     };
-  }, [bibleReading.day, bibleReading.highestCompletedDay]);
+  }, [bibleReading.day, bibleReading.highestCompletedDay, user?.preferences?.readingPlanStartDate]);
 
   // Load cloud state from Supabase when user is available, then keep it synced.
   useEffect(() => {
@@ -780,7 +802,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const maxUnlockedDay = completedToday
       ? bibleReading.highestCompletedDay
       : Math.min(totalDays, bibleReading.highestCompletedDay + 1);
-    const bounded = Math.min(maxUnlockedDay, Math.max(1, targetDay));
+    const bounded = Math.min(Math.max(maxUnlockedDay, bibleReading.day), Math.max(1, targetDay));
     await loadBibleDay(bounded, bibleReading.highestCompletedDay);
   };
 
@@ -792,14 +814,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (completed) {
         if (prev.completed && prev.lastCompletedDate === today) return prev;
         const nextHighest = Math.max(prev.highestCompletedDay, prev.day);
-        const daysSinceLast = prev.lastCompletedDate ? getDayDiff(prev.lastCompletedDate, today) : 0;
         const nextStreak = prev.lastCompletedDate === yesterday
           ? Math.max(1, Number(prev.currentStreak || 0) + 1)
           : 1;
-        const shouldJumpToNextAfterLateConfirm = daysSinceLast > 1;
-        const nextDay = shouldJumpToNextAfterLateConfirm
-          ? Math.min(prev.totalDays, nextHighest + 1)
-          : prev.day;
+        const nextDay = prev.day;
 
         return {
           ...prev,

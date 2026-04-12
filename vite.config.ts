@@ -13,6 +13,9 @@ export default defineConfig(({mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['edenify-logo.png'],
+        strategies: 'injectManifest',
+        srcDir: 'public',
+        filename: 'sw.ts',
         manifest: {
           name: 'Edenify',
           short_name: 'Edenify',

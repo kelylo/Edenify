@@ -186,3 +186,63 @@ export const areNotificationsEnabled = (): boolean => {
   }
   return Notification.permission === 'granted';
 };
+
+/**
+ * Register periodic background sync for Bible reminders
+ * Tells service worker to check every 15 minutes if it's time to send Bible reminder
+ * This enables reminders even when app is closed on mobile
+ */
+export const registerBibleReminderSync = async (): Promise<void> => {
+  try {
+    // Notify currently running service worker
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'REGISTER_BIBLE_SYNC',
+      });
+      console.log('[Notifications] Registered periodic Bible reminder sync');
+    }
+
+    // Register periodic background sync for future SW instances
+    if ('serviceWorker' in navigator && 'periodicSync' in navigator.serviceWorker.ready) {
+      const registration = await navigator.serviceWorker.ready;
+      if ('periodicSync' in registration) {
+        try {
+          await (registration as any).periodicSync.register('bible-reminder-sync', {
+            minInterval: 15 * 60 * 1000, // 15 minutes
+          });
+          console.log('[Notifications] Periodic background sync registered');
+        } catch (error) {
+          console.warn('[Notifications] Periodic sync registration failed:', error);
+          // Fallback: use Web Push API if available
+          if ('pushManager' in registration) {
+            console.log('[Notifications] Falling back to Web Push');
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[Notifications] Background sync registration failed:', error);
+  }
+};
+
+/**
+ * Unregister periodic background sync for Bible reminders
+ * Called when user disables Bible reminders
+ */
+export const unregisterBibleReminderSync = async (): Promise<void> => {
+  try {
+    if ('serviceWorker' in navigator && 'periodicSync' in navigator.serviceWorker.ready) {
+      const registration = await navigator.serviceWorker.ready;
+      if ('periodicSync' in registration) {
+        try {
+          await (registration as any).periodicSync.unregister('bible-reminder-sync');
+          console.log('[Notifications] Periodic background sync unregistered');
+        } catch (error) {
+          console.warn('[Notifications] Periodic sync unregistration failed:', error);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[Notifications] Background sync unregistration failed:', error);
+  }
+};

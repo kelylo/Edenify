@@ -1983,6 +1983,118 @@ async function startServer() {
     runTelegramReminderScheduler();
   }
 
+  /**
+   * Background sync endpoint for Service Worker Bible reminder checks
+   * Called by service worker to check if it's time to send Bible reminder
+   */
+  app.get('/api/user/bible-reminder-check', async (req, res) => {
+    try {
+      const sessionUserId = req.cookies?.edenify_session;
+      if (!sessionUserId) {
+        res.status(401).json({ shouldNotify: false, error: 'Not authenticated' });
+        return;
+      }
+
+      const db = readDb(DB_PATH);
+      const userData = db.data[sessionUserId];
+      if (!userData?.preferences?.bibleReminder || !userData.preferences.bibleReminderTime) {
+        res.json({ shouldNotify: false });
+        return;
+      }
+
+      const now = new Date();
+      const timeStr = userData.preferences.bibleReminderTime;
+      const timeParts = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+      if (!timeParts) {
+        res.json({ shouldNotify: false });
+        return;
+      }
+
+      let hours = parseInt(timeParts[1], 10);
+      const minutes = parseInt(timeParts[2], 10);
+      const meridiem = (timeParts[3] || '').toLowerCase();
+
+      // Convert to 24-hour format if needed
+      if (meridiem === 'pm' && hours !== 12) {
+        hours += 12;
+      } else if (meridiem === 'am' && hours === 12) {
+        hours = 0;
+      }
+
+      const scheduledHour = hours;
+      const scheduledMinute = minutes;
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+
+      // Check if within reminder window (±2 minutes)
+      const diffMinutes = (currentHour * 60 + currentMinute) - (scheduledHour * 60 + scheduledMinute);
+      const isTimeToRemind = Math.abs(diffMinutes) <= 2;
+
+      if (!isTimeToRemind) {
+        res.json({ shouldNotify: false });
+        return;
+      }
+
+      // Check if already sent today (deduplication)
+      const today = now.toISOString().split('T')[0];
+      const bibleRemindKey = `${sessionUserId}|bible-reminder|${today}`;
+      
+      if (db.telegram.reminders?.[bibleRemindKey]) {
+        res.json({ shouldNotify: false });
+        return;
+      }
+
+      // Get today's Bible reading
+      const bibleService = (await import('./src/services/bible.ts')).default;
+      const readingDays = await (bibleService.getTotalReadingDays as () => Promise<number>)();
+      const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
+      const currentDay = (dayOfYear % readingDays) + 1;
+
+      const reading = await (bibleService.getDayReading as (day: number) => Promise<any>)(currentDay);
+
+      res.json({
+        shouldNotify: true,
+        day: currentDay,
+        reminder: {
+          title: `📖 Daily Scripture (Day ${currentDay})`,
+          body: reading?.passage || 'Time to read your daily Scripture',
+        },
+      });
+    } catch (error) {
+      console.error('[API] Bible reminder check failed:', error);
+      res.status(500).json({ shouldNotify: false, error: 'Server error' });
+    }
+  });
+
+  /**
+   * Mark Bible reminder as sent (deduplication on backend)
+   * Called by service worker after showing notification
+   */
+  app.post('/api/user/bible-reminder-sent', async (req, res) => {
+    try {
+      const sessionUserId = req.cookies?.edenify_session;
+      if (!sessionUserId) {
+        res.status(401).json({ success: false });
+        return;
+      }
+
+      const { day, date } = req.body;
+      const db = readDb(DB_PATH);
+      const dateKey = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const bibleRemindKey = `${sessionUserId}|bible-reminder|${dateKey}`;
+
+      db.telegram.reminders = db.telegram.reminders || {};
+      db.telegram.reminders[bibleRemindKey] = new Date().toISOString();
+      writeDb(DB_PATH, db);
+
+      console.log(`[Bible Reminder] Marked as sent for day ${day}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[API] Bible reminder sent marker failed:', error);
+      res.status(500).json({ success: false });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

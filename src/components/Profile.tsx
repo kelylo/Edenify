@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
 import { Bell, Shield, LogOut, Award, Zap, Target, Sparkles, Download, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { registerBibleReminderSync, unregisterBibleReminderSync } from '../services/notifications';
 
 const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
@@ -119,6 +120,11 @@ const Profile: React.FC = () => {
     }
     updatePreference('bibleReminderTime', bibleReminderDraft);
     setBibleReminderStatus(`Bible reminder saved at ${bibleReminderDraft}.`);
+    
+    // Register periodic background sync for mobile notifications when app is closed
+    registerBibleReminderSync().catch((error) => {
+      console.warn('[Profile] Failed to register background sync:', error);
+    });
   };
 
   const testTelegramConnection = async () => {

@@ -24,6 +24,9 @@ import {
   Paperclip,
   Camera,
   Smile,
+  Menu,
+  Headphones,
+  ChevronDown,
 } from 'lucide-react';
 import {
   chatWithEden,
@@ -189,6 +192,8 @@ const Eden: React.FC = () => {
   const [showProactive, setShowProactive] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 1024 : true));
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [agentProfile, setAgentProfile] = useState<UserProfile | null>(null);
   const [conversationHistory, setConversationHistory] = useState<any[]>([]);
@@ -272,11 +277,22 @@ const Eden: React.FC = () => {
       if (w <= 430) setInputPlaceholder('Message Eden...');
       else if (w <= 768) setInputPlaceholder('Message Eden... (Enter to send)');
       else setInputPlaceholder('Reflect with Eden... (Enter to send, Shift+Enter for new line)');
+
+      const mobile = w < 1024;
+      setIsMobileView(mobile);
+      setSidebarOpen((prev) => (mobile ? prev : true));
     };
     updatePlaceholderResponsive();
     window.addEventListener('resize', updatePlaceholderResponsive);
     return () => window.removeEventListener('resize', updatePlaceholderResponsive);
   }, []);
+
+  useEffect(() => {
+    if (!toolsOpen) return;
+    const close = () => setToolsOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [toolsOpen]);
 
   useEffect(() => {
     proactiveTimerRef.current = setInterval(async () => {
@@ -726,26 +742,65 @@ const Eden: React.FC = () => {
       </AnimatePresence>
 
       <header className="p-4 border-b border-outline-variant/40 bg-white/90 backdrop-blur-md sticky top-0 z-20">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
-              <Sparkles size={20} />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold">Eden</h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            {isMobileView ? (
+              <button
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+                aria-label="Toggle chat history"
+                title="Toggle chat history"
+              >
+                <Menu size={18} />
+              </button>
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
+                <Sparkles size={20} />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold truncate">Eden</h1>
               <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
                 Online
               </p>
             </div>
           </div>
+
+          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/35 text-xs text-on-surface-variant">
+            <span>GPT-5.3-Codex</span>
+            <ChevronDown size={14} />
+          </div>
+
           <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen((prev) => !prev)} className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center">
-              {sidebarOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-            </button>
-            <button onClick={() => void startNewConversation()} className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center">
+            {!isMobileView && (
+              <button
+                onClick={toggleListening}
+                className={cn('h-10 w-10 rounded-2xl border border-outline-variant/35 flex items-center justify-center', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary')}
+                aria-label="Voice mode"
+                title="Voice mode"
+              >
+                {isListening ? <StopCircle size={18} /> : <Headphones size={18} />}
+              </button>
+            )}
+            <button
+              onClick={() => void startNewConversation()}
+              className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+              aria-label="New chat"
+              title="New chat"
+            >
               <Plus size={18} />
             </button>
+            {!isMobileView && (
+              <button
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+                aria-label="Toggle sidebar"
+                title="Toggle sidebar"
+              >
+                {sidebarOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+              </button>
+            )}
           </div>
         </div>
 
@@ -763,14 +818,28 @@ const Eden: React.FC = () => {
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              className="border-r border-outline-variant bg-surface-container-lowest overflow-y-auto p-4"
+              initial={isMobileView ? { x: -320, opacity: 0 } : { width: 0, opacity: 0 }}
+              animate={isMobileView ? { x: 0, opacity: 1 } : { width: 300, opacity: 1 }}
+              exit={isMobileView ? { x: -320, opacity: 0 } : { width: 0, opacity: 0 }}
+              className={cn(
+                'border-r border-outline-variant bg-surface-container-lowest overflow-y-auto p-4',
+                isMobileView ? 'fixed top-[74px] bottom-[88px] left-0 z-30 w-[280px] shadow-2xl' : 'relative w-[300px]'
+              )}
             >
-              <h3 className="font-medium mb-3 flex items-center gap-2">
-                <History size={16} /> Recent Conversations
-              </h3>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-medium flex items-center gap-2">
+                  <History size={16} /> History
+                </h3>
+                <button
+                  onClick={() => void startNewConversation()}
+                  className="h-8 w-8 rounded-lg bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+                  aria-label="New chat"
+                  title="New chat"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              <h4 className="text-xs uppercase tracking-[0.14em] text-secondary mb-2 font-bold">Recent Conversations</h4>
               <div className="space-y-2">
                 {conversationHistory.map((conv, index) => (
                   <div key={`${conv.id || index}`} className="text-xs p-2 rounded-lg bg-surface-container-low">
@@ -782,6 +851,15 @@ const Eden: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {isMobileView && sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 top-[74px] bottom-[88px] bg-black/20 z-20"
+            aria-label="Close sidebar overlay"
+            title="Close sidebar"
+          />
+        )}
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4" ref={scrollRef}>
           <AnimatePresence initial={false}>
@@ -896,21 +974,61 @@ const Eden: React.FC = () => {
           <input ref={attachmentInputRef} type="file" className="hidden" />
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" />
 
-          <button onClick={() => attachmentInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Attach file" aria-label="Attach file">
-            <Paperclip size={18} />
-          </button>
+          {isMobileView ? (
+            <div className="relative" onClick={(event) => event.stopPropagation()}>
+              <button
+                onClick={() => setToolsOpen((prev) => !prev)}
+                className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40"
+                title="Open tools"
+                aria-label="Open tools"
+              >
+                <Plus size={18} />
+              </button>
 
-          <button onClick={() => cameraInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Open camera" aria-label="Open camera">
-            <Camera size={18} />
-          </button>
-
-          <button onClick={() => setInput((prev) => `${prev}${prev ? ' ' : ''}🙂`)} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Add emoji" aria-label="Add emoji">
-            <Smile size={18} />
-          </button>
-
-          <button onClick={toggleListening} className={cn('p-3 rounded-xl transition-colors', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary border border-outline-variant')}>
-            {isListening ? <StopCircle size={20} /> : <Mic size={20} />}
-          </button>
+              <AnimatePresence>
+                {toolsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="absolute bottom-12 left-0 rounded-xl border border-outline-variant/35 bg-surface-container-lowest shadow-lg p-2 flex flex-col gap-1 min-w-[150px] z-20"
+                  >
+                    <button
+                      onClick={() => {
+                        setToolsOpen(false);
+                        attachmentInputRef.current?.click();
+                      }}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                    >
+                      <Paperclip size={14} /> File
+                    </button>
+                    <button
+                      onClick={() => {
+                        setToolsOpen(false);
+                        cameraInputRef.current?.click();
+                      }}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                    >
+                      <Camera size={14} /> Camera
+                    </button>
+                    <button
+                      onClick={() => {
+                        setToolsOpen(false);
+                        setInput((prev) => `${prev}${prev ? ' ' : ''}🙂`);
+                      }}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                    >
+                      <Smile size={14} /> Emoji
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <button onClick={() => attachmentInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Attach file" aria-label="Attach file">
+              <Paperclip size={18} />
+            </button>
+          )}
 
           <div className="relative flex-1">
             <textarea
@@ -928,9 +1046,20 @@ const Eden: React.FC = () => {
               placeholder={inputPlaceholder}
               className="w-full resize-none overflow-y-auto bg-white border border-outline-variant/50 rounded-2xl py-4 pl-5 pr-14 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             />
-            <button onClick={() => void handleSend()} disabled={!input.trim() || isTyping} className="absolute right-2 bottom-2 p-2.5 rounded-xl bg-primary text-white disabled:opacity-50 disabled:bg-secondary transition-all shadow-md active:scale-95">
-              <Send size={20} />
-            </button>
+            {input.trim() ? (
+              <button onClick={() => void handleSend()} disabled={isTyping} className="absolute right-2 bottom-2 p-2.5 rounded-xl bg-primary text-white disabled:opacity-50 disabled:bg-secondary transition-all shadow-md active:scale-95" title="Send" aria-label="Send">
+                <Send size={20} />
+              </button>
+            ) : isMobileView ? (
+              <button
+                onClick={toggleListening}
+                className={cn('absolute right-2 bottom-2 p-2.5 rounded-xl transition-colors', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary border border-outline-variant')}
+                title="Voice mode"
+                aria-label="Voice mode"
+              >
+                {isListening ? <StopCircle size={20} /> : <Mic size={20} />}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

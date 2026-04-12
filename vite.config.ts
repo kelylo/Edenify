@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['edenify-logo.png'],
+        includeAssets: ['icons/*'],
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'sw.ts',
@@ -28,17 +28,17 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait',
           icons: [
             {
-              src: '/edenify-logo.png',
+              src: '/icons/pwa-192.png',
               sizes: '192x192',
               type: 'image/png',
             },
             {
-              src: '/edenify-logo.png',
+              src: '/icons/pwa-512.png',
               sizes: '512x512',
               type: 'image/png',
             },
             {
-              src: '/edenify-logo.png',
+              src: '/icons/pwa-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any maskable',

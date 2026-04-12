@@ -45,7 +45,7 @@
           "bibleReminderTime": "06:30 AM",
           "bibleReminderAlarm": true,
           "bibleReminderTelegram": true,
-          "telegramChatId": "",
+          "telegramChatId": "7875504612",
           "customFocusSongName": "",
           "customFocusSongDataUrl": "",
           "customFocusPlaylistNames": [],
@@ -58,9 +58,21 @@
           },
           "mostRepeatedTasks": [
             {
+              "name": "Plan top priorities and clear workspace|general",
+              "layerId": "general",
+              "priority": "C",
+              "count": 2
+            },
+            {
               "name": "Read scripture day 1|spiritual",
               "layerId": "spiritual",
               "priority": "B",
+              "count": 1
+            },
+            {
+              "name": "Qwertyuikjhgfds|spiritual",
+              "layerId": "spiritual",
+              "priority": "A",
               "count": 1
             }
           ],
@@ -138,6 +150,46 @@
           "date": "2026-04-12T01:52:59.277Z",
           "alarmEnabled": true,
           "preferredMusic": "Scripture Reflection"
+        },
+        {
+          "id": "task-1775959321669",
+          "name": "Plan top priorities and clear workspace",
+          "layerId": "general",
+          "priority": "C",
+          "repeat": "once",
+          "time": "03:05",
+          "completed": true,
+          "date": "2026-04-12T02:02:01.669Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth",
+          "estimatedDuration": 25,
+          "durationStartedAt": "2026-04-12T02:02:01.669Z"
+        },
+        {
+          "id": "tg-1775960388569-585a4",
+          "name": "qwertyuikjhgfds",
+          "layerId": "spiritual",
+          "priority": "A",
+          "repeat": "once",
+          "time": "03:35",
+          "completed": false,
+          "date": "2026-04-12T02:19:48.569Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth"
+        },
+        {
+          "id": "task-1775960477325",
+          "name": "Plan top priorities and clear workspace",
+          "layerId": "general",
+          "priority": "C",
+          "repeat": "once",
+          "time": "03:25",
+          "completed": false,
+          "date": "2026-04-12T02:21:17.325Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth",
+          "estimatedDuration": 25,
+          "durationStartedAt": "2026-04-12T02:21:17.325Z"
         }
       ],
       "journal": [],
@@ -332,11 +384,12 @@
       "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|alarm": "2026-04-11T17:37:19.678Z",
       "7875504612|tg-1775941099310-9df21|2026-04-11T20:55": "2026-04-11T20:58:21.723Z",
       "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|reminder": "2026-04-11T20:58:25.424Z",
-      "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|alarm": "2026-04-11T21:00:00.568Z"
+      "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|alarm": "2026-04-11T21:00:00.568Z",
+      "7875504612|task-1775960477325|2026-04-12T02:20": "2026-04-12T02:21:49.772Z"
     },
     "poller": {
       "ownerId": "23192-10044a",
-      "updatedAt": "2026-04-12T02:21:29.993Z"
+      "updatedAt": "2026-04-12T02:22:01.556Z"
     }
   }
 }

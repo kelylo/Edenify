@@ -70,6 +70,8 @@ const AppContent: React.FC = () => {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [bootProgress, setBootProgress] = useState(20);
   const [bootScreenVisible, setBootScreenVisible] = useState(true);
+  const [backendReady, setBackendReady] = useState(false);
+  const [bootStatusText, setBootStatusText] = useState('Waking secure cloud services');
 
   const bootStageLabel = bootProgress < 35
     ? 'Verifying session token'
@@ -126,12 +128,52 @@ const AppContent: React.FC = () => {
   }, [authReady]);
 
   useEffect(() => {
+    let cancelled = false;
+    let retryId: number | null = null;
+
+    const pingBackend = async () => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 3200);
+      try {
+        const response = await fetch('/api/health', {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!cancelled && response.ok) {
+          setBackendReady(true);
+          setBootStatusText('Cloud connected. Finalizing your session');
+          return;
+        }
+      } catch {
+        // Retry until success.
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (cancelled) return;
+      setBackendReady(false);
+      setBootStatusText('Starting your cloud workspace');
+      retryId = window.setTimeout(() => {
+        void pingBackend();
+      }, 2400);
+    };
+
+    void pingBackend();
+
+    return () => {
+      cancelled = true;
+      if (retryId) window.clearTimeout(retryId);
+    };
+  }, []);
+
+  useEffect(() => {
     if (authReady) {
       setBootProgress((current) => Math.max(current, 98));
       const finishInterval = window.setInterval(() => {
         setBootProgress((current) => {
           const next = Math.min(100, current + 4);
-          if (next >= 100) {
+          if (next >= 100 && backendReady) {
             window.clearInterval(finishInterval);
             setBootScreenVisible(false);
           }
@@ -158,7 +200,7 @@ const AppContent: React.FC = () => {
     return () => {
       window.clearInterval(warmupInterval);
     };
-  }, [authReady]);
+  }, [authReady, backendReady]);
 
   if (bootScreenVisible) {
     return (
@@ -184,6 +226,7 @@ const AppContent: React.FC = () => {
             <span>{bootProgress}%</span>
           </div>
           <p className="text-sm text-on-surface-variant">Loading your session.</p>
+          <p className="text-xs text-on-surface-variant/80">{bootStatusText}</p>
         </div>
       </div>
     );

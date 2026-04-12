@@ -8,8 +8,87 @@
       <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #120f0a;
+      }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(217, 119, 6, 0.20), transparent 42%),
+          radial-gradient(circle at 80% 70%, rgba(251, 146, 60, 0.15), transparent 38%),
+          linear-gradient(165deg, #120f0a 0%, #1d150d 55%, #0f0c08 100%);
+        color: #fef3c7;
+        font-family: "Manrope", sans-serif;
+        z-index: 99999;
+        transition: opacity 220ms ease;
+      }
+
+      #boot-splash[data-hidden="true"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .boot-wrap {
+        width: min(86vw, 360px);
+        text-align: center;
+      }
+
+      .boot-title {
+        margin: 0;
+        font-family: "Newsreader", serif;
+        letter-spacing: 0.06em;
+        font-size: 1.9rem;
+        font-weight: 700;
+      }
+
+      .boot-sub {
+        margin: 10px 0 0;
+        color: #fcd9aa;
+        font-size: 0.86rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .boot-bar {
+        margin: 16px auto 0;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(255, 247, 237, 0.16);
+        overflow: hidden;
+      }
+
+      .boot-bar::after {
+        content: "";
+        display: block;
+        width: 32%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #f59e0b 0%, #fb923c 100%);
+        animation: boot-slide 1.15s ease-in-out infinite;
+      }
+
+      @keyframes boot-slide {
+        0% { transform: translateX(-120%); }
+        100% { transform: translateX(360%); }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="boot-wrap">
+        <h1 class="boot-title">Edenify</h1>
+        <p class="boot-sub">Starting your space</p>
+        <div class="boot-bar"></div>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

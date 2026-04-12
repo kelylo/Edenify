@@ -126,6 +126,18 @@ function normalizeUser(user: Partial<{ id: string; email: string; name: string; 
   };
 }
 
+function normalizeUserKey(value?: string) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function resolveSessionUserId(db: DbShape, cookieHeader?: string) {
+  const cookies = parseCookies(cookieHeader);
+  const sessionId = cookies.edenify_session;
+  if (!sessionId) return '';
+  const session = db.sessions?.[sessionId];
+  return normalizeUserKey(session?.userId || '');
+}
+
 function readDb(dbPath: string): DbShape {
   const raw = fs.readFileSync(dbPath, 'utf-8');
   const db = JSON.parse(raw) as DbShape;
@@ -518,27 +530,16 @@ function reopenTelegramTaskAfterWindow(task: TelegramTask, nowMs = Date.now()) {
 }
 
 function syncTelegramStoreToUserData(db: DbShape, store: TelegramStoreItem) {
-  const userId = store.userId;
+  const userId = normalizeUserKey(store.userId);
   if (!userId) return;
 
   db.data = db.data || {};
   const currentState = db.data[userId] || {};
-  const existingTasks = Array.isArray(currentState.tasks) ? currentState.tasks : [];
-  const merged = new Map<string, any>();
-
-  existingTasks.forEach((task: any) => {
-    const key = task.id || `${task.name}|${task.layerId}|${task.time}`;
-    merged.set(key, task);
-  });
-
-  store.tasks.forEach((task) => {
-    const key = task.id || `${task.name}|${task.layerId}|${task.time}`;
-    merged.set(key, task);
-  });
+  const normalizedTasks = (store.tasks || []).map((task) => normalizeTelegramTask(task, ensureTelegramDefaults(store)));
 
   db.data[userId] = {
     ...currentState,
-    tasks: Array.from(merged.values()),
+    tasks: normalizedTasks,
   };
 }
 
@@ -848,8 +849,18 @@ async function processBibleReminders(db: DbShape, token: string, now: Date) {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 6001);
+  const serverBootedAt = new Date().toISOString();
 
   app.use(express.json({ limit: '25mb' }));
+
+  app.get('/api/health', (_req, res) => {
+    res.json({
+      ok: true,
+      service: 'edenify-server',
+      bootedAt: serverBootedAt,
+      now: new Date().toISOString(),
+    });
+  });
 
   // Simple file-based DB
   const DB_PATH = path.join(process.cwd(), 'db.json');
@@ -1102,7 +1113,7 @@ async function startServer() {
   });
 
   app.get("/api/data/:userId", async (req, res) => {
-    const userId = String(req.params.userId || '').trim();
+    const userId = normalizeUserKey(req.params.userId);
     if (!userId) {
       res.status(400).json({ success: false, error: 'userId is required.' });
       return;
@@ -1119,7 +1130,7 @@ async function startServer() {
   });
 
   app.post("/api/data/:userId", async (req, res) => {
-    const userId = String(req.params.userId || '').trim();
+    const userId = normalizeUserKey(req.params.userId);
     if (!userId) {
       res.status(400).json({ success: false, error: 'userId is required.' });
       return;
@@ -1198,31 +1209,32 @@ async function startServer() {
   app.post('/api/telegram/link', (req, res) => {
     const { chatId, userId } = req.body as { chatId?: string; userId?: string };
     const normalizedChatId = normalizeChatId(chatId);
+    const normalizedUserId = normalizeUserKey(userId);
 
-    if (!normalizedChatId || !userId) {
+    if (!normalizedChatId || !normalizedUserId) {
       res.status(400).json({ success: false, error: 'chatId and userId are required.' });
       return;
     }
 
     const db = readDb(DB_PATH);
     const existingOwner = db.telegram!.byChatId![normalizedChatId]?.userId;
-    if (existingOwner && existingOwner !== userId) {
+    if (existingOwner && normalizeUserKey(existingOwner) !== normalizedUserId) {
       res.status(409).json({ success: false, error: 'This Telegram chat is already linked to another user.' });
       return;
     }
 
     const current = db.telegram!.byChatId![normalizedChatId] || { tasks: [] };
-    const previousUnifiedTasks = mergeAllLinkedTelegramTasks(db, userId);
+    const previousUnifiedTasks = mergeAllLinkedTelegramTasks(db, normalizedUserId);
 
     db.telegram!.byChatId![normalizedChatId] = {
       ...current,
-      userId,
+      userId: normalizedUserId,
     };
 
     db.telegram!.byChatId![normalizedChatId].defaults = {
       ...ensureTelegramDefaults(db.telegram!.byChatId![normalizedChatId]),
       ...(db.telegram!.byChatId![normalizedChatId].defaults || {}),
-      ...inferTelegramDefaultsFromUser(db, userId),
+      ...inferTelegramDefaultsFromUser(db, normalizedUserId),
     };
 
     const linkedTasks = mergeTelegramTasksByIdentity(
@@ -1230,10 +1242,10 @@ async function startServer() {
       db.telegram!.byChatId![normalizedChatId].tasks || []
     );
 
-    propagateUserTasksToLinkedChats(db, userId, linkedTasks);
+    propagateUserTasksToLinkedChats(db, normalizedUserId, linkedTasks);
     
     // Update user preferences in db.users to include telegramChatId
-    const user = db.users?.find((u) => u.id === userId);
+    const user = db.users?.find((u) => normalizeUserKey(u.id) === normalizedUserId);
     if (user) {
       user.preferences = user.preferences || {};
       user.preferences.telegramChatId = normalizedChatId;
@@ -1241,8 +1253,8 @@ async function startServer() {
     
     // Also update in db.data for consistency
     db.data = db.data || {};
-    const userData = db.data[userId] || {};
-    db.data[userId] = {
+    const userData = db.data[normalizedUserId] || {};
+    db.data[normalizedUserId] = {
       ...userData,
       tasks: mergeTelegramTasksByIdentity((userData.tasks || []) as TelegramTask[], linkedTasks),
       preferences: {
@@ -1277,7 +1289,7 @@ async function startServer() {
   app.post('/api/telegram/tasks/:chatId', (req, res) => {
     const normalizedChatId = normalizeChatId(req.params.chatId);
     const tasks = (req.body?.tasks || []) as TelegramTask[];
-    const userId = req.body?.userId as string | undefined;
+    const userId = normalizeUserKey(req.body?.userId as string | undefined);
 
     if (!normalizedChatId) {
       res.status(400).json({ success: false, error: 'chatId is invalid.' });
@@ -1821,11 +1833,7 @@ async function startServer() {
             await sendTelegramMessage(token, chatId, `Task created: ${task.name} at ${task.time} (${task.repeat})`);
           }
         } else {
-          await sendTelegramMessage(
-            token,
-            chatId,
-            'Become that person you have been dreaming about with Edenify.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show your chat id\n/defaults - configure default repeat/time\n/cancel - cancel current wizard'
-          );
+          // Ignore random non-command messages unless a wizard is active.
         }
 
         syncTelegramStoreToUserData(db, store);
@@ -1992,116 +2000,138 @@ async function startServer() {
     runTelegramReminderScheduler();
   }
 
-  /**
-   * Background sync endpoint for Service Worker Bible reminder checks
-   * Called by service worker to check if it's time to send Bible reminder
-   */
-  app.get('/api/user/bible-reminder-check', async (req, res) => {
+  app.get('/api/user/reminder-check', async (req, res) => {
     try {
-      const sessionUserId = req.cookies?.edenify_session;
+      const db = readDb(DB_PATH);
+      const sessionUserId = resolveSessionUserId(db, req.headers.cookie);
       if (!sessionUserId) {
         res.status(401).json({ shouldNotify: false, error: 'Not authenticated' });
         return;
       }
 
-      const db = readDb(DB_PATH);
-      const userData = db.data[sessionUserId];
-      if (!userData?.preferences?.bibleReminder || !userData.preferences.bibleReminderTime) {
-        res.json({ shouldNotify: false });
-        return;
-      }
+      const userData = db.data?.[sessionUserId] || {};
+      const prefs = {
+        ...defaultUserPreferences,
+        ...(userData?.preferences || {}),
+        ...(userData?.user?.preferences || {}),
+        notifications: {
+          ...defaultUserPreferences.notifications,
+          ...(userData?.preferences?.notifications || {}),
+          ...(userData?.user?.preferences?.notifications || {}),
+        },
+      };
+
+      db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
+      db.telegram.reminders = db.telegram.reminders || {};
 
       const now = new Date();
-      const timeStr = userData.preferences.bibleReminderTime;
-      const timeParts = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
-      if (!timeParts) {
-        res.json({ shouldNotify: false });
-        return;
+      const nowMs = now.getTime();
+      const tasks = Array.isArray(userData.tasks) ? userData.tasks.map((task: any) => normalizeTelegramTask(task)) : [];
+
+      for (const task of tasks) {
+        if (task.completed || task.alarmEnabled === false) continue;
+        const due = parseTelegramTaskDueDate(task);
+        if (!due) continue;
+
+        const dueStamp = due.toISOString().slice(0, 16);
+        const reminderAt = due.getTime() - 5 * 60 * 1000;
+        const reminderKey = `${sessionUserId}|sw|${task.id}|${dueStamp}|reminder`;
+        const alarmKey = `${sessionUserId}|sw|${task.id}|${dueStamp}|alarm`;
+
+        if (!db.telegram.reminders[alarmKey] && nowMs >= due.getTime() - 60_000 && nowMs <= due.getTime() + 75_000) {
+          res.json({
+            shouldNotify: true,
+            reminder: {
+              key: alarmKey,
+              title: 'Task due now',
+              body: `${task.name} is due now (${task.time}).`,
+              tag: `task-alarm-${task.id}`,
+              taskId: task.id,
+            },
+          });
+          return;
+        }
+
+        if (!db.telegram.reminders[reminderKey] && nowMs >= reminderAt - 60_000 && nowMs <= reminderAt + 75_000) {
+          res.json({
+            shouldNotify: true,
+            reminder: {
+              key: reminderKey,
+              title: 'Task reminder',
+              body: `${task.name} starts in 5 minutes (${task.time}).`,
+              tag: `task-reminder-${task.id}`,
+              taskId: task.id,
+            },
+          });
+          return;
+        }
       }
 
-      let hours = parseInt(timeParts[1], 10);
-      const minutes = parseInt(timeParts[2], 10);
-      const meridiem = (timeParts[3] || '').toLowerCase();
+      if (prefs.notifications?.dailyScripture && prefs.bibleReminderTime) {
+        const parsedTime = parseBibleReminderTime(String(prefs.bibleReminderTime));
+        if (parsedTime) {
+          const scheduled = new Date(now);
+          scheduled.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+          const deltaMs = scheduled.getTime() - nowMs;
+          const dateKey = now.toISOString().slice(0, 10);
+          const bibleReminderKey = `${sessionUserId}|sw|bible-reminder|${dateKey}`;
 
-      // Convert to 24-hour format if needed
-      if (meridiem === 'pm' && hours !== 12) {
-        hours += 12;
-      } else if (meridiem === 'am' && hours === 12) {
-        hours = 0;
+          if (!db.telegram.reminders[bibleReminderKey] && deltaMs <= 120_000 && deltaMs >= -120_000) {
+            const reading = userData.bibleReading || {};
+            res.json({
+              shouldNotify: true,
+              reminder: {
+                key: bibleReminderKey,
+                title: `Daily Scripture${reading?.day ? ` (Day ${reading.day})` : ''}`,
+                body: reading?.passage || 'Time to read your daily Scripture passage.',
+                tag: 'bible-reminder',
+              },
+            });
+            return;
+          }
+        }
       }
 
-      const scheduledHour = hours;
-      const scheduledMinute = minutes;
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-
-      // Check if within reminder window (±2 minutes)
-      const diffMinutes = (currentHour * 60 + currentMinute) - (scheduledHour * 60 + scheduledMinute);
-      const isTimeToRemind = Math.abs(diffMinutes) <= 2;
-
-      if (!isTimeToRemind) {
-        res.json({ shouldNotify: false });
-        return;
-      }
-
-      // Check if already sent today (deduplication)
-      const today = now.toISOString().split('T')[0];
-      const bibleRemindKey = `${sessionUserId}|bible-reminder|${today}`;
-      
-      if (db.telegram.reminders?.[bibleRemindKey]) {
-        res.json({ shouldNotify: false });
-        return;
-      }
-
-      // Get today's Bible reading
-      const bibleService = (await import('./src/services/bible.ts')).default;
-      const readingDays = await (bibleService.getTotalReadingDays as () => Promise<number>)();
-      const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
-      const currentDay = (dayOfYear % readingDays) + 1;
-
-      const reading = await (bibleService.getDayReading as (day: number) => Promise<any>)(currentDay);
-
-      res.json({
-        shouldNotify: true,
-        day: currentDay,
-        reminder: {
-          title: `📖 Daily Scripture (Day ${currentDay})`,
-          body: reading?.passage || 'Time to read your daily Scripture',
-        },
-      });
+      res.json({ shouldNotify: false });
     } catch (error) {
-      console.error('[API] Bible reminder check failed:', error);
+      console.error('[API] Reminder check failed:', error);
       res.status(500).json({ shouldNotify: false, error: 'Server error' });
     }
   });
 
-  /**
-   * Mark Bible reminder as sent (deduplication on backend)
-   * Called by service worker after showing notification
-   */
-  app.post('/api/user/bible-reminder-sent', async (req, res) => {
+  app.post('/api/user/reminder-sent', (req, res) => {
     try {
-      const sessionUserId = req.cookies?.edenify_session;
+      const db = readDb(DB_PATH);
+      const sessionUserId = resolveSessionUserId(db, req.headers.cookie);
       if (!sessionUserId) {
         res.status(401).json({ success: false });
         return;
       }
 
-      const { day, date } = req.body;
-      const db = readDb(DB_PATH);
-      const dateKey = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-      const bibleRemindKey = `${sessionUserId}|bible-reminder|${dateKey}`;
+      const key = String(req.body?.key || '').trim();
+      if (!key.startsWith(`${sessionUserId}|sw|`)) {
+        res.status(400).json({ success: false, error: 'Invalid reminder key.' });
+        return;
+      }
 
+      db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
       db.telegram.reminders = db.telegram.reminders || {};
-      db.telegram.reminders[bibleRemindKey] = new Date().toISOString();
+      db.telegram.reminders[key] = new Date().toISOString();
       writeDb(DB_PATH, db);
 
-      console.log(`[Bible Reminder] Marked as sent for day ${day}`);
       res.json({ success: true });
     } catch (error) {
-      console.error('[API] Bible reminder sent marker failed:', error);
+      console.error('[API] Reminder sent marker failed:', error);
       res.status(500).json({ success: false });
     }
+  });
+
+  app.get('/api/user/bible-reminder-check', async (req, res) => {
+    res.redirect(307, '/api/user/reminder-check');
+  });
+
+  app.post('/api/user/bible-reminder-sent', (req, res) => {
+    res.redirect(307, '/api/user/reminder-sent');
   });
 
   // Vite middleware for development

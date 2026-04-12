@@ -84,73 +84,66 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Listen for periodic background sync (for Bible reminders)
-self.addEventListener('sync', (event) => {
+// One-shot sync fallback.
+self.addEventListener('sync', (event: any) => {
   if (event.tag === 'bible-reminder-sync') {
-    event.waitUntil(checkBibleReminder());
+    event.waitUntil(checkBackgroundReminder());
+  }
+});
+
+// Periodic sync for background reminders.
+self.addEventListener('periodicsync', (event: any) => {
+  if (event.tag === 'bible-reminder-sync') {
+    event.waitUntil(checkBackgroundReminder());
   }
 });
 
 /**
- * Check if it's time to send Bible reminder
+ * Check if it's time to send a background reminder
  * Runs in background every 15 minutes (or when triggered)
  */
-async function checkBibleReminder(): Promise<void> {
+async function checkBackgroundReminder(): Promise<void> {
   try {
-    // Get user preferences and Bible reminder settings from IndexedDB
-    const dbRequest = indexedDB.open('edenify');
-    
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('edenify');
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = () => {
-        resolve(request.result);
-      };
-    });
-
-    // Try to fetch current state from backend API
-    const response = await fetch('/api/user/bible-reminder-check', {
+    const response = await fetch('/api/user/reminder-check', {
       method: 'GET',
     }).catch(() => null);
 
     if (!response || !response.ok) {
-      console.debug('[SW] Bible reminder check skipped - offline or no auth');
+      console.debug('[SW] Background reminder check skipped - offline or no auth');
       return;
     }
 
     const data = await response.json();
     
     if (data.shouldNotify && data.reminder) {
-      const title = data.reminder.title || '📖 Daily Scripture';
+      const title = data.reminder.title || 'Edenify Reminder';
       const options = {
-        body: data.reminder.body || 'Time for your Bible reading',
+        body: data.reminder.body || 'Time for your reminder',
         icon: '/edenify-logo.png',
         badge: '/edenify-logo.png',
-        tag: 'bible-reminder',
+        tag: data.reminder.tag || 'edenify-reminder',
         renotify: true,
         vibrate: [240, 120, 240, 120, 240],
         requireInteraction: true,
         data: { 
-          url: '/?tab=home', 
+          url: data.reminder.taskId ? `/?tab=home&taskId=${encodeURIComponent(String(data.reminder.taskId))}` : '/?tab=home', 
           isReminder: true, 
-          isBibleReminder: true,
+          reminderKey: data.reminder.key,
           shouldPlayAlarm: true 
         },
       };
 
-      console.log('[SW] Showing Bible reminder:', title);
+      console.log('[SW] Showing background reminder:', title);
       await self.registration.showNotification(title, options);
 
-      // Notify backend that reminder was sent
-      await fetch('/api/user/bible-reminder-sent', {
+      await fetch('/api/user/reminder-sent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day: data.day, date: new Date().toISOString() }),
+        body: JSON.stringify({ key: data.reminder.key }),
       }).catch(() => null);
     }
   } catch (error) {
-    console.error('[SW] Error checking Bible reminder:', error);
+    console.error('[SW] Error checking background reminder:', error);
   }
 }
 

@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Edenify',
   webDir: 'dist',
   server: {
+    hostname: 'localhost',
     androidScheme: 'https',
   },
   plugins: {

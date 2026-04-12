@@ -54,16 +54,6 @@ if (import.meta.env.PROD) {
   }).catch((error) => {
     console.warn('Service worker cleanup failed:', error);
   });
-
-  if ('caches' in window) {
-    caches.keys().then((cacheNames) => {
-      cacheNames.forEach((cacheName) => {
-        caches.delete(cacheName);
-      });
-    }).catch((error) => {
-      console.warn('Cache cleanup failed:', error);
-    });
-  }
 }
 
 createRoot(document.getElementById('root')!).render(
@@ -71,3 +61,18 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+const hideBootSplash = () => {
+  const splash = document.getElementById('boot-splash');
+  if (!splash) return;
+  splash.setAttribute('data-hidden', 'true');
+  window.setTimeout(() => {
+    splash.remove();
+  }, 260);
+};
+
+if (document.readyState === 'complete') {
+  hideBootSplash();
+} else {
+  window.addEventListener('load', hideBootSplash, { once: true });
+}

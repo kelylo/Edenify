@@ -200,6 +200,31 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | nul
   }
 };
 
+const loadTaskDeletionTombstones = (accountKey: string): Record<string, number> => {
+  if (!accountKey) return {};
+  try {
+    const raw = localStorage.getItem(`edenify_deleted_tasks_${accountKey}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    const now = Date.now();
+    const maxAgeMs = 14 * 24 * 60 * 60 * 1000;
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([id, ts]) => Boolean(id) && Number.isFinite(ts) && now - Number(ts) <= maxAgeMs)
+    );
+  } catch {
+    return {};
+  }
+};
+
+const saveTaskDeletionTombstones = (accountKey: string, tombstones: Record<string, number>) => {
+  if (!accountKey) return;
+  try {
+    localStorage.setItem(`edenify_deleted_tasks_${accountKey}`, JSON.stringify(tombstones));
+  } catch {
+    // Ignore local cache write failures.
+  }
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
 
@@ -241,6 +266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyingCloudStateRef = useRef(false);
   const lastCloudStateHashRef = useRef('');
   const recentlyDeletedTaskIdsRef = useRef<Set<string>>(new Set());
+  const deletedTaskTombstonesRef = useRef<Record<string, number>>({});
   const deletionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
@@ -335,6 +361,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to restore account-scoped local state:', error);
     }
   }, [user?.id, user?.email, hasCompletedInitialCloudSyncRef.current]);
+
+  useEffect(() => {
+    const accountKey = getAccountKey(user);
+    deletedTaskTombstonesRef.current = loadTaskDeletionTombstones(accountKey);
+    recentlyDeletedTaskIdsRef.current = new Set(Object.keys(deletedTaskTombstonesRef.current));
+  }, [user?.id, user?.email]);
 
   useEffect(() => {
     if (!user) return;
@@ -496,7 +528,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteState.layers) setLayers(remoteState.layers);
       if (remoteState.habits) setHabits(remoteState.habits);
       if (remoteState.tasks) {
-        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, recentlyDeletedTaskIdsRef.current, true));
+        const blockedTaskIds = new Set([
+          ...Array.from(recentlyDeletedTaskIdsRef.current),
+          ...Object.keys(deletedTaskTombstonesRef.current),
+        ]);
+        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, blockedTaskIds, true));
       }
       if (remoteState.journal) setJournal(remoteState.journal);
       if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
@@ -531,21 +567,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     bootstrap();
-    const intervalId = window.setInterval(() => {
-      void pullFromCloud();
-    }, 3000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
     };
   }, [user?.email, user?.id]);
 
   // Save to localStorage on change
   useEffect(() => {
     const accountKey = getAccountKey(user);
-    const localCacheUser = sanitizeUserForPersistence(user);
-    const localCacheTasks = tasks.map(sanitizeTaskForPersistence);
+    const localCacheUser = user;
+    const localCacheTasks = tasks;
     const localCacheStatePayload = {
       user: localCacheUser,
       layers,
@@ -607,7 +639,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (nextHash === lastTelegramTasksHashRef.current) return;
 
         applyingTelegramSyncRef.current = true;
-        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, recentlyDeletedTaskIdsRef.current, true));
+        const blockedTaskIds = new Set([
+          ...Array.from(recentlyDeletedTaskIdsRef.current),
+          ...Object.keys(deletedTaskTombstonesRef.current),
+        ]);
+        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, blockedTaskIds, true));
         lastTelegramTasksHashRef.current = nextHash;
       } catch (error) {
         console.warn('Telegram task pull failed:', error);
@@ -615,8 +651,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     pullTasks();
-    const id = window.setInterval(pullTasks, 10000);
-    return () => window.clearInterval(id);
   }, [user?.preferences.telegramChatId]);
 
   useEffect(() => {
@@ -854,9 +888,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Track this deletion to prevent re-adding during merge for next 60 seconds
     recentlyDeletedTaskIdsRef.current.add(taskId);
+    const accountKey = getAccountKey(user);
+    deletedTaskTombstonesRef.current = {
+      ...deletedTaskTombstonesRef.current,
+      [taskId]: Date.now(),
+    };
+    saveTaskDeletionTombstones(accountKey, deletedTaskTombstonesRef.current);
     if (deletionTimeoutRef.current) clearTimeout(deletionTimeoutRef.current);
     deletionTimeoutRef.current = setTimeout(() => {
-      recentlyDeletedTaskIdsRef.current.clear();
+      const now = Date.now();
+      const maxAgeMs = 14 * 24 * 60 * 60 * 1000;
+      deletedTaskTombstonesRef.current = Object.fromEntries(
+        Object.entries(deletedTaskTombstonesRef.current).filter(([, ts]) => now - Number(ts) <= maxAgeMs)
+      );
+      recentlyDeletedTaskIdsRef.current = new Set(Object.keys(deletedTaskTombstonesRef.current));
+      saveTaskDeletionTombstones(getAccountKey(user), deletedTaskTombstonesRef.current);
     }, 60000);
   };
 

@@ -31,7 +31,6 @@ import {
 import {
   chatWithEden,
   initializeEdenAgent,
-  maybeProactiveMessage,
   remember,
   recall,
   updateProfile,
@@ -189,7 +188,6 @@ const Eden: React.FC = () => {
   const [taskFlow, setTaskFlow] = useState<TaskFlowState | null>(null);
   const [inputPlaceholder, setInputPlaceholder] = useState('Reflect with Eden... (Enter to send, Shift+Enter for new line)');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [showProactive, setShowProactive] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 1024 : true));
@@ -202,7 +200,7 @@ const Eden: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
-  const proactiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -237,9 +235,6 @@ const Eden: React.FC = () => {
       setAgentProfile(prof);
       const recent = await getRecentConversations(10);
       setConversationHistory(recent);
-
-      const msg = await maybeProactiveMessage();
-      if (msg) setShowProactive(msg);
 
       const savedName = await recall<string>('preferredName');
       if (savedName && !prof.preferredName) {
@@ -294,16 +289,7 @@ const Eden: React.FC = () => {
     return () => window.removeEventListener('click', close);
   }, [toolsOpen]);
 
-  useEffect(() => {
-    proactiveTimerRef.current = setInterval(async () => {
-      const msg = await maybeProactiveMessage();
-      if (msg && !showProactive) setShowProactive(msg);
-    }, 30 * 60 * 1000);
 
-    return () => {
-      if (proactiveTimerRef.current) clearInterval(proactiveTimerRef.current);
-    };
-  }, [showProactive]);
 
   useEffect(() => {
     const SpeechRecognitionApi = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -724,23 +710,6 @@ const Eden: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-background relative">
-      <AnimatePresence>
-        {showProactive && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-surface-container-high shadow-lg rounded-2xl px-4 py-3 border border-primary/20 flex items-center gap-3"
-          >
-            <Sparkles className="text-primary" size={18} />
-            <span className="text-sm">{showProactive}</span>
-            <button onClick={() => setShowProactive(null)} className="ml-2" title="Dismiss" aria-label="Dismiss message">
-              <X size={16} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <header className="px-4 py-3 border-b border-outline-variant/30 bg-white/95 backdrop-blur-sm sticky top-0 z-20 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">

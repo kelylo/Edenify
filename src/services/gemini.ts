@@ -286,24 +286,6 @@ function personalizeReply(base: string, profile: UserProfile): string {
   if (Math.random() > 0.65) return `${base} ${profile.preferredName}, keep going.`;
   return base;
 }
-
-function getProactiveNudge(profile: UserProfile): string {
-  const hour = new Date().getHours();
-  const part = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-  const base = [
-    `How can I support your ${part}?`,
-,
-    'Would a 25-minute focus block help right now?',
-    'What small win can you complete in the next hour?',
-  ];
-
-  if (profile.lastActiveLayer === 'spiritual') base.push('Have you taken one quiet minute to pray today?');
-  if (profile.lastActiveLayer === 'physical') base.push('Quick check: water, movement, posture.');
-  if (profile.lastActiveLayer === 'financial') base.push('Have you tracked today spending yet?');
-
-  return base[Math.floor(Math.random() * base.length)];
-}
-
 function getLocalChatReply(message: string, profile?: UserProfile): string | null {
   const lower = message.toLowerCase();
   const trimmed = message.trim();
@@ -2421,16 +2403,6 @@ export async function initializeEdenAgent() {
   if (!current.responseStyle) {
     updateProfile({ responseStyle: 'practical' });
   }
-}
-
-export async function maybeProactiveMessage(): Promise<string | null> {
-  const profile = getProfile();
-  const last = profile.lastInteractionAt ? Date.parse(profile.lastInteractionAt) : NaN;
-  if (Number.isFinite(last)) {
-    const elapsed = Date.now() - last;
-    if (elapsed < 60 * 60 * 1000) return null;
-  }
-  return getProactiveNudge(profile);
 }
 
 export async function getAgentProfile() {

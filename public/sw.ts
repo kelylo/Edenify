@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 /**
- * Service Worker for background Bible reminder handling
+ * Service Worker for background Bible reminder handling & alarm playback
  * Runs even when app is closed/backgrounded on mobile
  */
 
@@ -16,6 +16,13 @@ MANIFEST.forEach((entry: any) => {
   // Manifest is auto-injected by Workbox
 });
 
+// Built-in alarm tones (sine wave)
+const playAlarmTone = (frequency: number = 800, duration: number = 500): void => {
+  // This runs in Service Worker context - audio playback limited
+  // Real playback happens when notification is clicked/app opens
+  console.log('[SW] Alarm notification - real playback when user interacts');
+};
+
 // Listen for push notifications
 self.addEventListener('push', (event) => {
   const data = event.data?.json() || {};
@@ -28,7 +35,7 @@ self.addEventListener('push', (event) => {
     renotify: true,
     vibrate: [240, 120, 240],
     requireInteraction: false,
-    data: data.data || { url: '/' },
+    data: data.data || { url: '/', isReminder: true, shouldPlayAlarm: true },
   };
 
   event.waitUntil(
@@ -36,14 +43,30 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Listen for notification clicks
+// Listen for notification clicks (play alarm when user interacts)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
   const url = event.notification.data?.url || '/';
+  const shouldPlayAlarm = event.notification.data?.shouldPlayAlarm || false;
+
+  // Send message to client to play alarm
+  if (shouldPlayAlarm) {
+    event.waitUntil(
+      clients.matchAll({ type: 'window' }).then((clientList) => {
+        for (const client of clientList) {
+          client.postMessage({
+            type: 'PLAY_ALARM',
+            data: event.notification.data,
+          });
+        }
+      })
+    );
+  }
+
+  // Navigate to task
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
-      // Reuse existing app window and navigate it to the deep-link target.
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
         if ('focus' in client) {
@@ -54,7 +77,6 @@ self.addEventListener('notificationclick', (event) => {
           return windowClient.focus();
         }
       }
-      // Open new window if not open
       if (clients.openWindow) {
         return clients.openWindow(url);
       }
@@ -107,9 +129,14 @@ async function checkBibleReminder(): Promise<void> {
         badge: '/edenify-logo.png',
         tag: 'bible-reminder',
         renotify: true,
-        vibrate: [240, 120, 240],
-        requireInteraction: true, // Keep until user dismisses
-        data: { url: '/', isReminder: true },
+        vibrate: [240, 120, 240, 120, 240],
+        requireInteraction: true,
+        data: { 
+          url: '/?tab=home', 
+          isReminder: true, 
+          isBibleReminder: true,
+          shouldPlayAlarm: true 
+        },
       };
 
       console.log('[SW] Showing Bible reminder:', title);

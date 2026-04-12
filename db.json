@@ -113,6 +113,12 @@
               "layerId": "physical",
               "priority": "A",
               "count": 1
+            },
+            {
+              "name": "Eating at the restaurant|physical",
+              "layerId": "physical",
+              "priority": "A",
+              "count": 1
             }
           ],
           "readingPlanStartDate": "2026-04-12"
@@ -284,6 +290,18 @@
           "date": "2026-04-12T07:12:03.892Z",
           "alarmEnabled": true,
           "preferredMusic": "Instrumental Warmth"
+        },
+        {
+          "id": "tg-1775991083352-ca0ee",
+          "name": "Eating at the restaurant",
+          "layerId": "physical",
+          "priority": "A",
+          "repeat": "once",
+          "time": "12:00",
+          "completed": false,
+          "date": "2026-04-12T10:51:23.352Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth"
         }
       ],
       "journal": [],
@@ -417,10 +435,6 @@
     }
   },
   "sessions": {
-    "sess-1775956393202-daff82eb": {
-      "userId": "kelylo.ing@gmail.com",
-      "createdAt": "2026-04-12T01:13:13.202Z"
-    },
     "sess-1775958778085-7eb75a69": {
       "userId": "kelylo.ing@gmail.com",
       "createdAt": "2026-04-12T01:52:58.085Z"
@@ -431,7 +445,7 @@
     }
   },
   "telegram": {
-    "offset": 146642194,
+    "offset": 146642203,
     "byChatId": {
       "7875504612": {
         "tasks": [
@@ -506,6 +520,18 @@
             "date": "2026-04-12T07:12:03.892Z",
             "alarmEnabled": true,
             "preferredMusic": "Instrumental Warmth"
+          },
+          {
+            "id": "tg-1775991083352-ca0ee",
+            "name": "Eating at the restaurant",
+            "layerId": "physical",
+            "priority": "A",
+            "repeat": "once",
+            "time": "12:00",
+            "completed": false,
+            "date": "2026-04-12T10:51:23.352Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
           }
         ],
         "userId": "kelylo.ing@gmail.com",
@@ -551,11 +577,13 @@
       "7875504612|tg-1775960388569-585a4|2026-04-12T02:30": "2026-04-12T02:29:19.879Z",
       "7875504612|tg-1775960388569-585a4|2026-04-12T02:30|due": "2026-04-12T02:34:14.474Z",
       "7875504612|tg-1775977923891-d23bb|2026-04-12T07:12": "2026-04-12T07:12:04.910Z",
-      "7875504612|tg-1775977923891-d23bb|2026-04-12T07:12|due": "2026-04-12T07:16:05.960Z"
+      "7875504612|tg-1775977923891-d23bb|2026-04-12T07:12|due": "2026-04-12T07:16:05.960Z",
+      "7875504612|tg-1775991083352-ca0ee|2026-04-12T10:55": "2026-04-12T10:54:11.747Z",
+      "7875504612|tg-1775991083352-ca0ee|2026-04-12T10:55|due": "2026-04-12T10:59:11.801Z"
     },
     "poller": {
-      "ownerId": "23192-10044a",
-      "updatedAt": "2026-04-12T07:39:46.534Z"
+      "ownerId": "26640-492dcb",
+      "updatedAt": "2026-04-12T11:39:15.138Z"
     }
   }
 }

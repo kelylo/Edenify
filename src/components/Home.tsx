@@ -3,9 +3,10 @@ import { useApp } from '../AppContext';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Plus, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
-import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
+import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
 import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync } from '../services/notifications';
+import { playTaskAlarm, playBibleReminderAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
 import { LayerId, Task } from '../types';
@@ -14,6 +15,16 @@ import Focus from './Focus';
 import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
+const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
+const ACADEMIC_TIMETABLE: Record<number, string[]> = {
+  0: [],
+  1: ['Resistance des materiaux', 'Hydraulique appliquee', 'Beton arme'],
+  2: ['Geotechnique', 'Topographie', 'Mecanique des sols'],
+  3: ['Construction metallique', 'DAO', 'Organisation des chantiers'],
+  4: ['Routes et ouvrages', 'Assainissement', 'Securite industrielle'],
+  5: ['Anglais technique', 'Methodologie de projet', 'Projet tutorat'],
+  6: [],
+};
 const getRoundedCurrentTime = () => {
   const now = new Date();
   const roundedMinutes = Math.ceil(now.getMinutes() / 5) * 5;
@@ -111,6 +122,13 @@ const useDebouncedValue = <T,>(value: T, delayMs: number) => {
   return debouncedValue;
 };
 
+const getTomorrowSubjects = (baseDate = new Date()) => {
+  const tomorrow = new Date(baseDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dayIndex = tomorrow.getDay();
+  return ACADEMIC_TIMETABLE[dayIndex] || [];
+};
+
 const Home: React.FC = () => {
   const {
     user,
@@ -204,6 +222,8 @@ const Home: React.FC = () => {
   const taskPreviewEndRef = useRef<number | null>(null);
   const bibleReminderTimeoutRef = useRef<number | null>(null);
   const bibleReminderTriggeredDateRef = useRef('');
+  const academicReminderTimeoutRef = useRef<number | null>(null);
+  const academicReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
@@ -397,12 +417,29 @@ const Home: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    console.log('[Reminder] Event triggered:', { title, detail, hasTelegram: !!user?.preferences.telegramChatId });
+    console.log('[Reminder] Event triggered:', { title, detail, isBibleReminder: title.includes('📖') });
 
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
 
-    // Send cross-channel notifications (system + Telegram)
+    // Play alarm sound
+    try {
+      if (title.includes('📖') || title.includes('Bible')) {
+        // Bible reminder
+        await playBibleReminderAlarm();
+      } else if (taskId) {
+        // Task reminder - get custom audio if available
+        const task = tasks.find(t => t.id === taskId);
+        await playTaskAlarm(task?.name || title, task?.customAlarmAudioDataUrl);
+      } else {
+        // Generic reminder
+        await playTaskAlarm(title);
+      }
+    } catch (error) {
+      console.warn('[Reminder] Alarm playback failed:', error);
+    }
+
+    // Send cross-channel notifications (system only - Telegram handled by backend)
     if (areNotificationsEnabled() || user?.preferences.telegramChatId) {
       try {
         const results = await sendCrossChannelNotification(
@@ -442,7 +479,22 @@ const Home: React.FC = () => {
       focusTaskFromNotification(taskId);
     };
 
+    // Listen for Service Worker messages (including alarm playback signals)
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PLAY_ALARM') {
+        const customUrl = event.data?.data?.customAudioDataUrl;
+        if (event.data?.data?.isBibleReminder) {
+          playBibleReminderAlarm().catch(err => console.warn('[Alarm] SW Bible reminder failed:', err));
+        } else {
+          playTaskAlarm(event.data?.data?.taskName || 'Task', customUrl).catch(err => console.warn('[Alarm] SW task alarm failed:', err));
+        }
+      }
+    };
+
     window.addEventListener('edenify:focus-task', handleFocusTask as EventListener);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.controller?.addEventListener('message', handleSwMessage);
+    }
 
     const params = new URLSearchParams(window.location.search);
     const taskId = params.get('taskId');
@@ -452,6 +504,9 @@ const Home: React.FC = () => {
 
     return () => {
       window.removeEventListener('edenify:focus-task', handleFocusTask as EventListener);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.controller?.removeEventListener('message', handleSwMessage);
+      }
     };
   }, [focusTaskFromNotification]);
 
@@ -936,6 +991,88 @@ const Home: React.FC = () => {
 
     askOnce();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const revisionTask = tasks.find((task) => task.id === DEFAULT_REVISION_TASK_ID)
+      || tasks.find((task) => task.layerId === 'academic' && task.name.trim().toLowerCase() === 'revision');
+    if (!revisionTask) return;
+
+    const normalizedTime = parseAnyTimeTo24(revisionTask.time || '');
+    if (!normalizedTime) return;
+
+    const [hours, minutes] = normalizedTime.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return;
+
+    const scheduleNextReminder = () => {
+      const now = new Date();
+      const nextReminder = new Date(now);
+      nextReminder.setHours(hours, minutes, 0, 0);
+      if (nextReminder.getTime() <= now.getTime()) {
+        nextReminder.setDate(nextReminder.getDate() + 1);
+      }
+
+      if (academicReminderTimeoutRef.current) {
+        window.clearTimeout(academicReminderTimeoutRef.current);
+      }
+
+      const delay = Math.max(500, nextReminder.getTime() - now.getTime());
+      academicReminderTimeoutRef.current = window.setTimeout(() => {
+        const todayKey = format(new Date(), 'yyyy-MM-dd');
+        if (academicReminderTriggeredDateRef.current !== todayKey) {
+          academicReminderTriggeredDateRef.current = todayKey;
+
+          const subjects = getTomorrowSubjects();
+          const detail = subjects.length
+            ? `Tomorrow's subjects: ${subjects.join(', ')}. Start your revision now.`
+            : 'No scheduled classes tomorrow. Use this revision block for consolidation and weak-topic review.';
+
+          void pushReminderEvent('Academic revision reminder', detail, revisionTask.id);
+          setNotificationStatus(subjects.length ? `Tomorrow: ${subjects.join(', ')}` : 'Revision block: no classes tomorrow.');
+          setAlarmTask(revisionTask);
+          setAlarmOpen(true);
+
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            const audio = new AudioCtx();
+            const nowT = audio.currentTime;
+
+            [880, 1100, 1320].forEach((frequency, index) => {
+              const osc = audio.createOscillator();
+              const gain = audio.createGain();
+              const start = nowT + index * 0.15;
+              const end = start + 0.12;
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(frequency, start);
+              gain.gain.setValueAtTime(0.0001, start);
+              gain.gain.exponentialRampToValueAtTime(0.12, start + 0.02);
+              gain.gain.exponentialRampToValueAtTime(0.0001, end);
+              osc.connect(gain);
+              gain.connect(audio.destination);
+              osc.start(start);
+              osc.stop(end);
+            });
+
+            window.setTimeout(() => {
+              void audio.close().catch(() => {});
+            }, 900);
+          }
+        }
+
+        scheduleNextReminder();
+      }, delay);
+    };
+
+    scheduleNextReminder();
+
+    return () => {
+      if (academicReminderTimeoutRef.current) {
+        window.clearTimeout(academicReminderTimeoutRef.current);
+        academicReminderTimeoutRef.current = null;
+      }
+    };
+  }, [tasks, user?.id]);
 
   useEffect(() => {
     void refreshOperationalStatus(false);

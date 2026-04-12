@@ -14,6 +14,7 @@ export const INITIAL_USER: User = {
     bibleReminderTime: '06:30 AM',
     bibleReminderAlarm: true,
     bibleReminderTelegram: true,
+    revisionDefaultsApplied: false,
     telegramChatId: '',
     customFocusSongName: '',
     customFocusSongDataUrl: '',

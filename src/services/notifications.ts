@@ -152,7 +152,7 @@ export const sendCrossChannelNotification = async (
     telegram: false,
   };
 
-  console.log('[Notifications] sendCrossChannelNotification:', { title: payload.title, hasTelegram: !!telegramChatId });
+  console.log('[Notifications] sendCrossChannelNotification (system only):', { title: payload.title });
 
   // Send system notification
   if('Notification' in window && Notification.permission === 'granted') {
@@ -166,20 +166,11 @@ export const sendCrossChannelNotification = async (
     console.debug('[Notifications] System notifications not available or not granted');
   }
 
-  // Send Telegram notification
+  // IMPORTANT: Telegram sends are now backend-only (handled by scheduler)
+  // This prevents frontend + backend duplication of reminder messages
+  // The backend will send scheduled reminders via bot
   if (telegramChatId) {
-    try {
-      const success = await sendTelegramNotification(
-        telegramChatId,
-        payload.title,
-        payload.body
-      );
-      results.telegram = success;
-    } catch (error) {
-      console.warn('[Notifications] Telegram notification failed:', error);
-    }
-  } else {
-    console.debug('[Notifications] No Telegram chat ID provided');
+    console.debug('[Notifications] Telegram sending delegated to backend scheduler (no frontend sends)');
   }
 
   return results;

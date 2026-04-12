@@ -75,6 +75,7 @@ export interface User {
     bibleReminderAlarm?: boolean;
     bibleReminderTelegram?: boolean;
     readingPlanStartDate?: string;
+    revisionDefaultsApplied?: boolean;
     telegramChatId?: string;
     customFocusSongName?: string;
     customFocusSongDataUrl?: string;

@@ -440,7 +440,28 @@ const Eden: React.FC = () => {
         const priority = parsePriority(raw);
         if (!priority) return 'Choose priority: 1.A 2.B 3.C 4.D 5.E';
         draft.priority = priority;
-        nextStep = 'confirm';
+        // If this is first task or user has no songs, ask for song  
+        const userHasSongs = Boolean(favoriteFocusTrack?.name || user?.preferences?.customFocusSongName);
+        nextStep = !userHasSongs || tasks.length === 0 ? 'song' : 'confirm';
+      } else if (taskFlow.step === 'song') {
+        // Song selection for first task
+        if (raw.toLowerCase() === 'skip') {
+          // Allow skipping if not first task
+          if (tasks.length > 0) {
+            draft.preferredMusic = '';
+            nextStep = 'confirm';
+          } else {
+            return 'First task requires a song to set your default. Please choose or upload one.';
+          }
+        } else if (raw && raw.length > 2) {
+          // They typed a song name
+          draft.preferredMusic = raw;
+          nextStep = 'confirm';
+        } else {
+          return tasks.length === 0 
+            ? `First task requires a song (your default). Available songs:\n${favoriteFocusTrack?.name || 'Rain Forest (default)'}\n\nType song name or use current default.`
+            : `Choose preferred song for this task, or type "skip": ${favoriteFocusTrack?.name || 'None'}`;
+        }
       } else if (taskFlow.step === 'confirm') {
         if (!raw.toLowerCase().startsWith('y')) {
           setTaskFlow(null);
@@ -457,7 +478,7 @@ const Eden: React.FC = () => {
           completed: false,
           date: draft.date || new Date().toISOString(),
           alarmEnabled: true,
-          preferredMusic: preferredTaskMusic,
+          preferredMusic: (draft.preferredMusic || preferredTaskMusic || favoriteFocusTrack?.name || ''),
           customAlarmAudioName: favoriteFocusTrack?.name,
           customAlarmAudioDataUrl: favoriteFocusTrack?.dataUrl,
         };
@@ -478,6 +499,12 @@ const Eden: React.FC = () => {
       if (nextStep === 'repeat') return 'How often? 1.Once  2.Daily  3.Weekly';
       if (nextStep === 'layer') return 'Which layer? 1.Spiritual 2.Academic 3.Financial 4.Physical 5.General';
       if (nextStep === 'priority') return 'Priority? 1.A (highest) to 5.E (lowest)';
+      if (nextStep === 'song') {
+        const defaultSong = favoriteFocusTrack?.name || user?.preferences?.customFocusSongName || 'Rain Forest (default)';
+        return tasks.length === 0 
+          ? `📀 First task! Set your default alarm song:\n${defaultSong}\n\nType a song name or press Enter to accept default.`
+          : `📀 Alarm song for this task? Available: ${defaultSong}\n\nType song name or "skip".`;
+      }
       return `Confirm task:\n\"${draft.name}\" at ${draft.time} | ${draft.repeat} | ${draft.layerId} | priority ${draft.priority}. Reply \"yes\" or \"cancel\".`;
     }
 

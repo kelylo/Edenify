@@ -94,6 +94,7 @@ const defaultUserPreferences = {
   bibleReminderTime: '06:30 AM',
   bibleReminderAlarm: true,
   bibleReminderTelegram: true,
+  revisionDefaultsApplied: false,
   telegramChatId: '',
   customFocusSongName: '',
   customFocusSongDataUrl: '',
@@ -653,7 +654,15 @@ function resolveTelegramBotToken() {
     .map((value) => (value || '').trim())
     .filter(Boolean);
 
-  return candidates[0] || '';
+  const token = candidates[0] || '';
+  
+  if (!token) {
+    console.warn('[Telegram] WARNING: No bot token found in env. Checked: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY');
+  } else {
+    console.log('[Telegram] Bot token loaded (length: ' + token.length + ' chars)');
+  }
+  
+  return token;
 }
 
 async function processBackgroundTaskReminders(dbPath: string) {

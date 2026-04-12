@@ -38,6 +38,9 @@ const AppContext = createContext<AppState | undefined>(undefined);
 const RESET_VERSION = 'edenify-reset-2026-04-12-b1'; // Cache bust: Psalms fix
 const MAX_PERSISTED_DATA_URL_LENGTH = 450_000;
 const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
+const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
+const DEFAULT_REVISION_HABIT_ID = 'default-academic-revision-habit';
+const DEFAULT_REVISION_TIME = '19:00';
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -351,6 +354,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
   }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, bibleReading.day]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (user.preferences?.revisionDefaultsApplied) return;
+
+    setTasks((prev) => {
+      const hasRevisionTask = prev.some((task) => task.id === DEFAULT_REVISION_TASK_ID);
+      if (hasRevisionTask) return prev;
+
+      const revisionTask: Task = {
+        id: DEFAULT_REVISION_TASK_ID,
+        name: 'Revision',
+        layerId: 'academic',
+        priority: 'A',
+        repeat: 'daily',
+        time: DEFAULT_REVISION_TIME,
+        completed: false,
+        date: new Date().toISOString(),
+        alarmEnabled: true,
+      };
+
+      return [...prev, revisionTask];
+    });
+
+    setHabits((prev) => {
+      const hasRevisionHabit = prev.some((habit) => habit.id === DEFAULT_REVISION_HABIT_ID);
+      if (hasRevisionHabit) return prev;
+
+      const revisionHabit: Habit = {
+        id: DEFAULT_REVISION_HABIT_ID,
+        name: 'Revision',
+        layerId: 'academic',
+        frequency: 'daily',
+        durationMinutes: 60,
+        streak: 0,
+        history: [],
+        completedToday: false,
+        timeOfDay: 'evening',
+        time: DEFAULT_REVISION_TIME,
+        linkedTaskId: DEFAULT_REVISION_TASK_ID,
+      };
+
+      return [...prev, revisionHabit];
+    });
+
+    setUser((prev) => {
+      if (!prev) return prev;
+      if (prev.preferences?.revisionDefaultsApplied) return prev;
+
+      return {
+        ...prev,
+        preferences: {
+          ...prev.preferences,
+          revisionDefaultsApplied: true,
+        },
+      };
+    });
+  }, [user?.id, user?.preferences?.revisionDefaultsApplied]);
 
   useEffect(() => {
     let cancelled = false;

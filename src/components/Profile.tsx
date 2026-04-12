@@ -123,7 +123,7 @@ const Profile: React.FC = () => {
 
   const testTelegramConnection = async () => {
     const chatId = (user.preferences.telegramChatId || '').trim();
-    const accountKey = (user.id || user.email || '').trim().toLowerCase();
+    const accountKey = (user.email || user.id || '').trim().toLowerCase();
     const normalizedChatId = chatId.replace(/[^0-9-]/g, '');
 
     if (normalizedChatId !== chatId) {
@@ -143,9 +143,28 @@ const Profile: React.FC = () => {
     }
 
     setTestingTelegram(true);
-    setTelegramStatus('Sending test message...');
+    setTelegramStatus('Checking bot status...');
 
     try {
+      const statusResponse = await fetch('/api/telegram/status');
+      const statusData = await statusResponse.json();
+      if (!statusResponse.ok || !statusData?.success) {
+        setTelegramStatus(statusData?.error || 'Could not reach Telegram service status.');
+        return;
+      }
+
+      if (!statusData?.configured) {
+        setTelegramStatus('Telegram bot token is missing on server. Please set TELEGRAM_BOT_TOKEN on Render/local server.');
+        return;
+      }
+
+      if (!statusData?.tokenValid) {
+        setTelegramStatus(statusData?.tokenError || 'Telegram token is invalid (Unauthorized). Check bot token in server environment.');
+        return;
+      }
+
+      setTelegramStatus('Sending test message...');
+
       const response = await fetch('/api/telegram/notify', {
         method: 'POST',
         headers: {
@@ -163,7 +182,7 @@ const Profile: React.FC = () => {
         return;
       }
 
-      await fetch('/api/telegram/link', {
+      const linkResponse = await fetch('/api/telegram/link', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +193,14 @@ const Profile: React.FC = () => {
         }),
       });
 
-      setTelegramStatus('Telegram connected successfully.');
+      const linkData = await linkResponse.json().catch(() => ({}));
+      if (!linkResponse.ok || !linkData?.success) {
+        setTelegramStatus(linkData?.error || 'Test message sent, but chat linking failed.');
+        return;
+      }
+
+      const botName = statusData?.botUsername ? `@${statusData.botUsername}` : 'your bot';
+      setTelegramStatus(`Telegram connected successfully with ${botName}. Commands should now work.`);
     } catch (error) {
       setTelegramStatus('Network error while connecting Telegram.');
     } finally {

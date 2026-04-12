@@ -2212,7 +2212,7 @@ const linkedBibleThemeBridge: Record<string, string[]> = {
 };
 
 function localBibleFallback(day: number) {
-  const safeDay = Math.max(1, Math.min(400, Math.floor(day || 1)));
+  const safeDay = Math.max(1, Math.min(365, Math.floor(day || 1)));
   const segmentLength = 10;
   const segment = Math.floor((safeDay - 1) / segmentLength);
   const offset = (safeDay - 1) % segmentLength;
@@ -2223,8 +2223,8 @@ function localBibleFallback(day: number) {
   const bridges = linkedBibleThemeBridge[core.theme] || [];
   const bridge = bridges.length > 0 ? bridges[(segment + offset) % bridges.length] : core.passage;
 
-  // Deterministic linking note creates non-linear but coherent 400-day traversal.
-  const context = `Day ${safeDay}/400 links ${core.theme} across Scripture: core reading in ${core.passage}, then trace the same motif in ${bridge}. ${core.context}`;
+  // Deterministic linking note creates non-linear but coherent 365-day traversal.
+  const context = `Day ${safeDay}/365 links ${core.theme} across Scripture: core reading in ${core.passage}, then trace the same motif in ${bridge}. ${core.context}`;
 
   return {
     passage: `${core.passage} + linked: ${bridge}`,
@@ -2314,32 +2314,6 @@ export async function chatWithEden(history: ChatHistory, message: string) {
     ...(layer ? { lastActiveLayer: layer } : {}),
   });
 
-  const localReply = getLocalChatReply(message);
-
-  if (localReply) {
-    const personal = personalizeReply(localReply, profile);
-    logConversation({
-      timestamp: new Date().toISOString(),
-      userMessage: message,
-      edenResponse: personal,
-      intent: classifyIntent(message),
-      layerContext: layer,
-    });
-    return personal;
-  }
-
-  if (!shouldCallGemini(message)) {
-    const fallback = `${personalizeReply('I understand. Tell me more and I will guide you step by step.', profile)} ${getProactiveNudge(profile)}`;
-    logConversation({
-      timestamp: new Date().toISOString(),
-      userMessage: message,
-      edenResponse: fallback,
-      intent: classifyIntent(message),
-      layerContext: layer,
-    });
-    return fallback;
-  }
-
   const recent = getConversationHistory().slice(-5);
   const systemPrompt = buildSystemPrompt(profile, recent);
 
@@ -2360,6 +2334,19 @@ export async function chatWithEden(history: ChatHistory, message: string) {
       layerContext: layer,
     });
     return aiReply;
+  }
+
+  const localReply = getLocalChatReply(message);
+  if (localReply) {
+    const personal = personalizeReply(localReply, profile);
+    logConversation({
+      timestamp: new Date().toISOString(),
+      userMessage: message,
+      edenResponse: personal,
+      intent: classifyIntent(message),
+      layerContext: layer,
+    });
+    return personal;
   }
 
   const lower = message.toLowerCase();

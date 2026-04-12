@@ -24,6 +24,8 @@ interface TelegramTask {
   date: string;
   alarmEnabled?: boolean;
   preferredMusic?: string;
+  estimatedDuration?: number;
+  durationStartedAt?: string;
 }
 
 interface WizardState {
@@ -67,15 +69,12 @@ const layerOptions: LayerId[] = ['spiritual', 'academic', 'financial', 'physical
 const repeatOptions: RepeatMode[] = ['once', 'daily', 'weekly'];
 const priorityOptions: Priority[] = ['A', 'B', 'C', 'D', 'E'];
 const defaultTelegramDefaults: TelegramDefaults = {
-  preferredMusic: 'Instrumental Warmth',
+  preferredMusic: '',
   repeat: 'once',
   layerId: 'general',
   priority: 'C',
   time: '08:00',
 };
-
-const songOptions = ['Instrumental Warmth', 'Piano Prayer', 'Ambient Strings', 'Lo-fi Study'];
-const alarmOptions = ['Aggressive Bell', 'Emergency Pulse', 'Sharp Chime', 'Focus Siren'];
 
 type UserPreferencesShape = Partial<{
   focusAlarmSound: string;
@@ -90,7 +89,7 @@ const defaultUserPreferences = {
   shortBreakDuration: 5,
   longBreakDuration: 15,
   focusSound: 'Rain Forest',
-  focusAlarmSound: 'Aggressive Bell',
+  focusAlarmSound: '',
   bibleReminderTime: '06:30 AM',
   bibleReminderAlarm: true,
   bibleReminderTelegram: true,
@@ -306,7 +305,7 @@ function resolveUserSongChoices(db: DbShape, userId?: string): string[] {
     dynamicNames.push(String(prefs.customFocusSongName || '').trim());
   }
 
-  return Array.from(new Set([...songOptions, ...dynamicNames]));
+  return Array.from(new Set(dynamicNames));
 }
 
 function inferTelegramDefaultsFromUser(db: DbShape, userId?: string): Partial<TelegramDefaults> {
@@ -314,12 +313,17 @@ function inferTelegramDefaultsFromUser(db: DbShape, userId?: string): Partial<Te
   const inferred: Partial<TelegramDefaults> = {};
 
   const choices = resolveUserSongChoices(db, userId);
-  const customOnly = choices.filter((name) => !songOptions.includes(name));
-  if (customOnly.length > 0) {
-    inferred.preferredMusic = customOnly[0];
+  if (choices.length > 0) {
+    inferred.preferredMusic = choices[0];
   }
 
   return inferred;
+}
+
+function getTaskDurationMinutes(task: Partial<TelegramTask>) {
+  const value = Number(task.estimatedDuration);
+  if (!Number.isFinite(value)) return 25;
+  return Math.max(5, Math.min(300, Math.floor(value)));
 }
 
 const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
@@ -329,7 +333,7 @@ function getGeminiKeyOrder() {
   const key2 = (process.env.GEMINI_API_KEY_2 || '').trim();
   const keys = [key1, key2].filter((key): key is string => Boolean(key));
   if (keys.length <= 1) return keys;
-  return Math.random() < 0.7 ? keys : [keys[1], keys[0]];
+  return Math.random() < 0.7 ? [key2, key1] : [key1, key2];
 }
 
 async function generateWithServerGemini(prompt: {
@@ -505,10 +509,10 @@ function isTelegramTaskFailed(task: TelegramTask, nowMs = Date.now()) {
 
 function reopenTelegramTaskAfterWindow(task: TelegramTask, nowMs = Date.now()) {
   if (!task.completed) return task;
-  const completedAt = new Date(task.date || nowMs).getTime();
+  const completedAt = new Date(task.durationStartedAt || task.date || nowMs).getTime();
   if (!Number.isFinite(completedAt)) return task;
-  if (nowMs - completedAt < 20 * 60 * 1000) return task;
-  return { ...task, completed: false };
+  if (nowMs - completedAt < getTaskDurationMinutes(task) * 60 * 1000) return task;
+  return { ...task, completed: false, durationStartedAt: new Date(nowMs).toISOString() };
 }
 
 function syncTelegramStoreToUserData(db: DbShape, store: TelegramStoreItem) {
@@ -600,6 +604,43 @@ async function sendTelegramMessage(token: string, chatId: string, text: string) 
     chat_id: chatId,
     text,
   });
+}
+
+async function getTelegramBotStatus(token: string) {
+  if (!token) {
+    return {
+      configured: false,
+      tokenValid: false,
+      botUsername: '',
+      error: 'Telegram bot token is not configured.',
+    };
+  }
+
+  try {
+    const result = await telegramRequest(token, 'getMe', {});
+    if (!result?.ok) {
+      return {
+        configured: true,
+        tokenValid: false,
+        botUsername: '',
+        error: result?.description || 'Telegram token check failed.',
+      };
+    }
+
+    return {
+      configured: true,
+      tokenValid: true,
+      botUsername: String(result?.result?.username || ''),
+      error: '',
+    };
+  } catch (error: any) {
+    return {
+      configured: true,
+      tokenValid: false,
+      botUsername: '',
+      error: error?.message || 'Telegram bot check failed.',
+    };
+  }
 }
 
 function resolveTelegramBotToken() {
@@ -717,11 +758,6 @@ async function startServer() {
     fs.writeFileSync(DB_PATH, JSON.stringify({ users: [], data: {}, sessions: {}, telegram: { offset: 0, byChatId: {} } }));
   }
 
-  setInterval(() => {
-    void processBackgroundTaskReminders(DB_PATH);
-  }, 60_000);
-  void processBackgroundTaskReminders(DB_PATH);
-
   // API routes
   app.post('/api/eden/insight', async (req, res) => {
     try {
@@ -766,17 +802,15 @@ async function startServer() {
       const preferredTime = String(req.body?.preferredTime || '08:00');
       const intent = String(req.body?.intent || 'create one practical task');
       const preferredMusicHint = String(req.body?.userPreferences?.favoriteMusicName || '').trim();
-      const preferredAlarmHint = String(req.body?.userPreferences?.focusAlarmSound || '').trim();
       const layerKnowledge = req.body?.layerKnowledge || {};
       const appKnowledge = Array.isArray(req.body?.appKnowledge) ? req.body.appKnowledge : [];
 
       const raw = await generateWithServerGemini({
-        contents: `Create one practical task for Edenify.\nReturn strict JSON only:\n{\n  "name": "task title",\n  "time": "08:00 AM",\n  "alarmSound": "Aggressive Bell",\n  "preferredMusic": "Instrumental Warmth"\n}\nContext:\n- User: ${userName}\n- Layer: ${layer}\n- Priority: ${priority}\n- Preferred Time: ${preferredTime}\n- Intent: ${intent}\n- Preferred user song: ${preferredMusicHint || 'none'}\n- Preferred user alarm: ${preferredAlarmHint || 'none'}\n- Layer knowledge: ${Array.isArray(layerKnowledge[layer?.toLowerCase?.() || '']) ? layerKnowledge[layer.toLowerCase()].join(' ') : ''}\n- App knowledge: ${appKnowledge.join(' ')}`,
+        contents: `Create one practical task for Edenify.\nReturn strict JSON only:\n{\n  "name": "task title",\n  "time": "08:00 AM",\n  "preferredMusic": "User uploaded song name if known"\n}\nContext:\n- User: ${userName}\n- Layer: ${layer}\n- Priority: ${priority}\n- Preferred Time: ${preferredTime}\n- Intent: ${intent}\n- Preferred user song: ${preferredMusicHint || 'none'}\n- Layer knowledge: ${Array.isArray(layerKnowledge[layer?.toLowerCase?.() || '']) ? layerKnowledge[layer.toLowerCase()].join(' ') : ''}\n- App knowledge: ${appKnowledge.join(' ')}`,
         responseMimeType: 'application/json',
       });
 
-      const suggestion = parseJsonSafely<{ name: string; time: string; alarmSound: string; preferredMusic: string }>(raw);
-      if (!suggestion.alarmSound && preferredAlarmHint) suggestion.alarmSound = preferredAlarmHint;
+      const suggestion = parseJsonSafely<{ name: string; time: string; preferredMusic: string }>(raw);
       if (!suggestion.preferredMusic && preferredMusicHint) suggestion.preferredMusic = preferredMusicHint;
       res.json({ success: true, suggestion });
     } catch (error: any) {
@@ -1046,13 +1080,17 @@ async function startServer() {
     }
   });
 
-  app.get('/api/telegram/status', (req, res) => {
+  app.get('/api/telegram/status', async (req, res) => {
     const token = resolveTelegramBotToken();
     const db = readDb(DB_PATH);
     const linkedChats = Object.keys(db.telegram?.byChatId || {}).length;
+    const botStatus = await getTelegramBotStatus(token);
     res.json({
       success: true,
-      configured: Boolean(token),
+      configured: botStatus.configured,
+      tokenValid: botStatus.tokenValid,
+      botUsername: botStatus.botUsername,
+      tokenError: botStatus.error,
       linkedChats,
       hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
     });
@@ -1179,7 +1217,7 @@ async function startServer() {
     });
   });
 
-  const token = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+  const token = resolveTelegramBotToken();
   let isPollingTelegram = false;
   let isRunningReminderScheduler = false;
   const pollerOwnerId = `${process.pid}-${Math.random().toString(16).slice(2, 8)}`;
@@ -1237,8 +1275,6 @@ async function startServer() {
         const activePendingTasks = activeTasks.filter((task) => task.repeat !== 'daily');
         const command = text.toLowerCase();
         const defaults = ensureTelegramDefaults(store);
-        const dynamicSongOptions = resolveUserSongChoices(db, store.userId);
-
         const clearWizard = () => {
           store.wizard = undefined;
         };
@@ -1253,7 +1289,6 @@ async function startServer() {
               repeat: defaults.repeat,
               time: defaults.time,
               alarmEnabled: true,
-              alarmSound: defaults.alarmSound,
               preferredMusic: defaults.preferredMusic,
             },
           };
@@ -1348,15 +1383,15 @@ async function startServer() {
             } else {
               const target = activeTasks[index];
               store.wizard = { mode: 'edit', step: 'field', targetTaskId: target.id };
-              await sendTelegramMessage(token, chatId, 'What to edit? Choose number:\n1. name\n2. time\n3. repeat\n4. layer\n5. priority\n6. song\n7. alarm');
+              await sendTelegramMessage(token, chatId, 'What to edit? Choose number:\n1. name\n2. time\n3. repeat\n4. layer\n5. priority');
             }
           } else if (store.wizard.step === 'field') {
-            const editFields = ['name', 'time', 'repeat', 'layer', 'priority', 'song', 'alarm'];
+            const editFields = ['name', 'time', 'repeat', 'layer', 'priority'];
             const fieldByNumber = parseChoiceIndex(text, editFields.length);
             const field = fieldByNumber >= 0 ? editFields[fieldByNumber] : text.toLowerCase();
             const valid = editFields;
             if (!valid.includes(field)) {
-              await sendTelegramMessage(token, chatId, 'Invalid field. Choose: 1.name 2.time 3.repeat 4.layer 5.priority 6.song 7.alarm');
+              await sendTelegramMessage(token, chatId, 'Invalid field. Choose: 1.name 2.time 3.repeat 4.layer 5.priority');
             } else {
               store.wizard.step = `value:${field}`;
               if (field === 'repeat') {
@@ -1365,10 +1400,6 @@ async function startServer() {
                 await sendTelegramMessage(token, chatId, `Choose new layer by number:\n${formatNumberedOptions(layerOptions)}`);
               } else if (field === 'priority') {
                 await sendTelegramMessage(token, chatId, `Choose new priority by number:\n${formatNumberedOptions(priorityOptions)}`);
-              } else if (field === 'song') {
-                await sendTelegramMessage(token, chatId, `Choose new song by number:\n${formatNumberedOptions(dynamicSongOptions)}`);
-              } else if (field === 'alarm') {
-                await sendTelegramMessage(token, chatId, `Choose new alarm by number:\n${formatNumberedOptions(alarmOptions)}`);
               } else {
                 await sendTelegramMessage(token, chatId, `Send new value for ${field}.`);
               }
@@ -1428,26 +1459,6 @@ async function startServer() {
                   continue;
                 }
                 next.priority = value;
-              }
-              if (field === 'song') {
-                const value = resolveNumberedChoice(text, dynamicSongOptions);
-                if (!value) {
-                  await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(dynamicSongOptions)}`);
-                  db.telegram!.byChatId![chatId] = store;
-                  db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
-                  continue;
-                }
-                next.preferredMusic = value;
-              }
-              if (field === 'alarm') {
-                const value = resolveNumberedChoice(text, alarmOptions);
-                if (!value) {
-                  await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(alarmOptions)}`);
-                  db.telegram!.byChatId![chatId] = store;
-                  db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
-                  continue;
-                }
-                next.alarmSound = value;
               }
               store.tasks[idx] = next;
               clearWizard();
@@ -1581,6 +1592,8 @@ async function startServer() {
               date: new Date().toISOString(),
               alarmEnabled: true,
               preferredMusic: draft.preferredMusic || defaults.preferredMusic || '',
+              estimatedDuration: getTaskDurationMinutes(draft),
+              durationStartedAt: new Date().toISOString(),
             };
             store.tasks.push(normalizeTelegramTask(task, defaults));
             clearWizard();
@@ -1649,19 +1662,28 @@ async function startServer() {
 
             const minutesKey = reminderMoment.toISOString().slice(0, 16);
             const reminderKey = `${chatId}|${task.id}|${minutesKey}`;
-            if (db.telegram.reminders[reminderKey]) continue;
-
+            const dueDate = parseTelegramTaskDueDate(task);
+            const dueKey = `${chatId}|${task.id}|${minutesKey}|due`;
             const delta = reminderMoment.getTime() - now.getTime();
-            if (delta > 60 * 1000 || delta < -4 * 60 * 1000) continue;
+            if (!db.telegram.reminders[reminderKey] && delta <= 60 * 1000 && delta >= -4 * 60 * 1000) {
+              await sendTelegramMessage(
+                token,
+                chatId,
+                `Reminder: ${task.name} from ${task.layerId} starts in 5 minutes, be ready! (${task.time}).`
+              );
 
-            await sendTelegramMessage(
-              token,
-              chatId,
-              `Reminder: ${task.name} from ${task.layerId} starts in 5 minutes (${task.time}).`
-            );
+              db.telegram.reminders[reminderKey] = now.toISOString();
+              didChange = true;
+            }
 
-            db.telegram.reminders[reminderKey] = now.toISOString();
-            didChange = true;
+            if (dueDate) {
+              const dueDelta = dueDate.getTime() - now.getTime();
+              if (!db.telegram.reminders[dueKey] && dueDelta <= 60 * 1000 && dueDelta >= -75 * 1000) {
+                await sendTelegramMessage(token, chatId, `Alarm now: ${task.name} is due (${task.time}).`);
+                db.telegram.reminders[dueKey] = now.toISOString();
+                didChange = true;
+              }
+            }
           }
         }
 
@@ -1676,10 +1698,11 @@ async function startServer() {
           const appTasks = userData.tasks || [];
           const normalizedAppTasks = appTasks.map((task: any) => {
             if (!task?.completed) return task;
-            const completedAt = new Date(task.date || now.toISOString()).getTime();
+            const completedAt = new Date(task.durationStartedAt || task.date || now.toISOString()).getTime();
             if (!Number.isFinite(completedAt)) return task;
-            if (now.getTime() - completedAt < 20 * 60 * 1000) return task;
-            return { ...task, completed: false };
+            const durationMinutes = getTaskDurationMinutes(task);
+            if (now.getTime() - completedAt < durationMinutes * 60 * 1000) return task;
+            return { ...task, completed: false, durationStartedAt: now.toISOString() };
           });
           userData.tasks = normalizedAppTasks;
 
@@ -1695,19 +1718,28 @@ async function startServer() {
 
             const minutesKey = reminderMoment.toISOString().slice(0, 16);
             const reminderKey = `${chatId}|${task.id}|${minutesKey}`;
-            if (db.telegram.reminders[reminderKey]) continue;
-
+            const dueDate = parseTelegramTaskDueDate(task);
+            const dueKey = `${chatId}|${task.id}|${minutesKey}|due`;
             const delta = reminderMoment.getTime() - now.getTime();
-            if (delta > 60 * 1000 || delta < -4 * 60 * 1000) continue;
+            if (!db.telegram.reminders[reminderKey] && delta <= 60 * 1000 && delta >= -4 * 60 * 1000) {
+              await sendTelegramMessage(
+                token,
+                chatId,
+                `Reminder: ${task.name} from ${task.layerId} starts in 5 minutes (${task.time}).`
+              );
 
-            await sendTelegramMessage(
-              token,
-              chatId,
-              `Reminder: ${task.name} from ${task.layerId} starts in 5 minutes (${task.time}).`
-            );
+              db.telegram.reminders[reminderKey] = now.toISOString();
+              didChange = true;
+            }
 
-            db.telegram.reminders[reminderKey] = now.toISOString();
-            didChange = true;
+            if (dueDate) {
+              const dueDelta = dueDate.getTime() - now.getTime();
+              if (!db.telegram.reminders[dueKey] && dueDelta <= 60 * 1000 && dueDelta >= -75 * 1000) {
+                await sendTelegramMessage(token, chatId, `Alarm now: ${task.name} is due (${task.time}).`);
+                db.telegram.reminders[dueKey] = now.toISOString();
+                didChange = true;
+              }
+            }
           }
         }
 

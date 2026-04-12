@@ -14,6 +14,7 @@ import Focus from './Focus';
 import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
+const VERSES_PER_PAGE = 44;
 
 const getRoundedCurrentTime = () => {
   const now = new Date();
@@ -141,6 +142,7 @@ const Home: React.FC = () => {
 
   const [readingSuggestion, setReadingSuggestion] = useState('');
   const [scriptureVerses, setScriptureVerses] = useState<BibleVerse[]>([]);
+  const [scripturePageIndex, setScripturePageIndex] = useState(0);
   const [loadingScriptureText, setLoadingScriptureText] = useState(false);
   const [isScriptureFullscreen, setIsScriptureFullscreen] = useState(false);
   const [showReflectionComposer, setShowReflectionComposer] = useState(false);
@@ -157,7 +159,6 @@ const Home: React.FC = () => {
   const [newTaskPeriod, setNewTaskPeriod] = useState<'AM' | 'PM'>(() => parseTimeToEditor(getRoundedCurrentTime()).period);
   const [newTaskDate, setNewTaskDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newTaskAlarmEnabled, setNewTaskAlarmEnabled] = useState(true);
-  const [newTaskAlarmSound, setNewTaskAlarmSound] = useState('Uploaded Alarm');
   const [newTaskPreferredMusic, setNewTaskPreferredMusic] = useState(() => {
     const playlist = user?.preferences.customFocusPlaylistNames || [];
     if (playlist.length > 0 && playlist[0]) return playlist[0];
@@ -170,7 +171,6 @@ const Home: React.FC = () => {
   const [isGeneratingTask, setIsGeneratingTask] = useState(false);
   const [isTaskPreviewPlaying, setIsTaskPreviewPlaying] = useState(false);
   const [quickAddError, setQuickAddError] = useState('');
-  const [showFullVerses, setShowFullVerses] = useState(false);
   const [alarmTask, setAlarmTask] = useState<Task | null>(null);
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
@@ -183,6 +183,11 @@ const Home: React.FC = () => {
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
   const isSubPageOpen = showScripturePage || showFocusPage;
+
+  const todayDateKey = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
 
   const reminderTimeoutsRef = useRef<Record<string, number>>({});
   const alarmTimeoutsRef = useRef<Record<string, number>>({});
@@ -201,13 +206,27 @@ const Home: React.FC = () => {
   const bibleReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const maxBibleDay = Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 2);
-  const canNavigateBible = bibleReading.completed;
+  const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
+  const maxBibleDay = completedToday
+    ? bibleReading.highestCompletedDay
+    : Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 1);
+  const canNavigateBible = true;
   const notificationsEnabled = Boolean(
     user?.preferences.notifications.taskReminders &&
     user?.preferences.notifications.dailyScripture &&
     user?.preferences.notifications.streakProtection
   );
+
+  const scriptureVersePages = useMemo(() => {
+    if (scriptureVerses.length === 0) return [] as BibleVerse[][];
+    const pages: BibleVerse[][] = [];
+    for (let i = 0; i < scriptureVerses.length; i += VERSES_PER_PAGE) {
+      pages.push(scriptureVerses.slice(i, i + VERSES_PER_PAGE));
+    }
+    return pages;
+  }, [scriptureVerses]);
+
+  const activeScripturePage = scriptureVersePages[scripturePageIndex] || [];
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];
@@ -263,7 +282,6 @@ const Home: React.FC = () => {
     if (showQuickAdd) return;
     setShowTemplatePicker(false);
     setEdenTemplatePool([]);
-    setNewTaskAlarmSound('Uploaded Alarm');
     const defaultAlarm = getDefaultAlarmFromPreferences();
     if (defaultAlarm) {
       setNewTaskPreferredMusic(defaultAlarm.name);
@@ -705,13 +723,46 @@ const Home: React.FC = () => {
     };
 
     const playAggressivePulse = (task: Task) => {
+      const startSynthAlarm = () => {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioCtx) return;
+
+        if (!alarmAudioRef.current) {
+          alarmAudioRef.current = new AudioCtx();
+        }
+
+        const ctx = alarmAudioRef.current;
+        void ctx.resume().catch(() => {});
+
+        const burst = () => {
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.value = 920;
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.36);
+        };
+
+        burst();
+        alarmIntervalRef.current = window.setInterval(burst, 700);
+        alarmAutoOffRef.current = window.setTimeout(() => {
+          stopAlarm();
+        }, 60000);
+      };
+
       const uploaded = resolveTaskUploadedAlarm(task);
       if (uploaded?.dataUrl) {
         const media = new Audio(uploaded.dataUrl);
         media.loop = true;
         media.volume = 1;
         media.play().catch(() => {
-          // Browser may block autoplay; fallback oscillator remains available.
+          startSynthAlarm();
         });
         alarmMediaRef.current = media;
         alarmAutoOffRef.current = window.setTimeout(() => {
@@ -719,55 +770,7 @@ const Home: React.FC = () => {
         }, 60000);
         return;
       }
-
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!alarmAudioRef.current) {
-        alarmAudioRef.current = new AudioCtx();
-      }
-
-      const ctx = alarmAudioRef.current;
-      const burst = () => {
-        const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = 920;
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.36);
-      };
-
-      burst();
-      alarmIntervalRef.current = window.setInterval(burst, 700);
-      alarmAutoOffRef.current = window.setTimeout(() => {
-        stopAlarm();
-      }, 60000);
-    };
-
-    const sendTelegramReminder = async (task: Task, layerName: string) => {
-      const chatId = user?.preferences.telegramChatId?.trim();
-      if (!chatId) return;
-
-      try {
-        await fetch('/api/telegram/notify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId,
-            message: `Reminder: ${task.name} from ${layerName} starts in 5 minutes (${task.time}).`,
-          }),
-        });
-      } catch (error) {
-        console.warn('Telegram notification failed', error);
-      }
+      startSynthAlarm();
     };
 
     const triggerReminder = async (task: Task, reminderKey: string) => {
@@ -781,16 +784,14 @@ const Home: React.FC = () => {
         await tryBrowserNotification('Edenify Task Reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
       }
       setNotificationStatus(`${task.name} from ${layerName} is coming in 5 minutes.`);
-
-      if (user?.preferences.notifications.taskReminders) {
-        await sendTelegramReminder(task, layerName);
-      }
     };
 
     const triggerAlarm = (task: Task, alarmKey: string) => {
       if (alarmTriggeredRef.current.has(alarmKey)) return;
       alarmTriggeredRef.current.add(alarmKey);
 
+      void pushReminderEvent('Task due now', `${task.name} is due now (${task.time}).`);
+      setNotificationStatus(`${task.name} is due now.`);
       setAlarmTask(task);
       setAlarmOpen(true);
       playAggressivePulse(task);
@@ -885,7 +886,7 @@ const Home: React.FC = () => {
         alarmMediaRef.current = null;
       }
     };
-  }, [tasks, layers, user?.preferences.notifications.taskReminders, user?.preferences.telegramChatId]);
+  }, [tasks, layers, user?.preferences.notifications.taskReminders]);
 
   useEffect(() => {
     const askOnce = async () => {
@@ -973,27 +974,11 @@ const Home: React.FC = () => {
           completed: false,
           date: new Date().toISOString(),
           alarmEnabled: true,
-          alarmSound: 'Aggressive Bell',
           preferredMusic: 'Instrumental Warmth',
         });
         setAlarmOpen(true);
       }
 
-      if (user.preferences.bibleReminderTelegram) {
-        const chatId = user.preferences.telegramChatId?.trim();
-        if (chatId) {
-          await fetch('/api/telegram/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chatId,
-              message: `Bible reminder: Day ${bibleReading.day} - ${bibleReading.passage}`,
-            }),
-          }).catch(() => {
-            // Silent fail for reminder channel.
-          });
-        }
-      }
     }, delay);
 
     return () => {
@@ -1006,52 +991,63 @@ const Home: React.FC = () => {
     user?.preferences.notifications.dailyScripture,
     user?.preferences.bibleReminderTime,
     user?.preferences.bibleReminderAlarm,
-    user?.preferences.bibleReminderTelegram,
-    user?.preferences.telegramChatId,
     bibleReading.day,
     bibleReading.passage,
   ]);
 
   useEffect(() => {
-    if (!showScripturePage && !showFullVerses) return;
+    if (!showScripturePage) return;
 
     const loadFullPassage = async () => {
       setLoadingScriptureText(true);
       try {
-        const segment = bibleReading.passage.split('&')[0].trim();
-        const match = segment.match(/^([1-3]?\s?[A-Za-z]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?(?:-(\d+))?$/);
+        const segments = bibleReading.passage
+          .split(';')
+          .map((part) => part.trim())
+          .filter(Boolean);
 
-        if (!match) {
-          const fallback = await searchVerses(bibleReading.text.split(' ').slice(0, 3).join(' '), 30);
-          setScriptureVerses(fallback);
+        const loaded: BibleVerse[] = [];
+
+        for (const segment of segments) {
+          const match = segment.match(/^([1-3]?\s?[A-Za-z]+)\s+(\d+)(?::(\d+)(?:-(\d+))?)?(?:-(\d+))?$/);
+          if (!match) continue;
+
+          const book = match[1].trim();
+          const chapterStart = Number(match[2]);
+          const singleVerseStart = match[3] ? Number(match[3]) : null;
+          const singleVerseEnd = match[4] ? Number(match[4]) : null;
+          const chapterEnd = match[5] ? Number(match[5]) : chapterStart;
+
+          if (singleVerseStart !== null) {
+            const chapter = await getChapter(book, chapterStart);
+            const filtered = chapter.filter((v) => {
+              if (singleVerseEnd !== null) return v.verse >= singleVerseStart && v.verse <= singleVerseEnd;
+              return v.verse === singleVerseStart;
+            });
+            loaded.push(...filtered);
+            continue;
+          }
+
+          for (let chapterNo = chapterStart; chapterNo <= chapterEnd; chapterNo += 1) {
+            const chapter = await getChapter(book, chapterNo);
+            loaded.push(...chapter);
+            if (loaded.length >= 320) break;
+          }
+          if (loaded.length >= 320) break;
+        }
+
+        if (loaded.length > 0) {
+          setScripturePageIndex(0);
+          setScriptureVerses(loaded);
           return;
         }
 
-        const book = match[1].trim();
-        const chapterStart = Number(match[2]);
-        const singleVerseStart = match[3] ? Number(match[3]) : null;
-        const singleVerseEnd = match[4] ? Number(match[4]) : null;
-        const chapterEnd = match[5] ? Number(match[5]) : chapterStart;
-
-        if (singleVerseStart !== null) {
-          const chapter = await getChapter(book, chapterStart);
-          const filtered = chapter.filter((v) => {
-            if (singleVerseEnd !== null) return v.verse >= singleVerseStart && v.verse <= singleVerseEnd;
-            return v.verse === singleVerseStart;
-          });
-          setScriptureVerses(filtered);
-          return;
-        }
-
-        const all: BibleVerse[] = [];
-        for (let chapterNo = chapterStart; chapterNo <= chapterEnd; chapterNo += 1) {
-          const chapter = await getChapter(book, chapterNo);
-          all.push(...chapter);
-          if (all.length >= 220) break;
-        }
-        setScriptureVerses(all);
+        const fallback = await searchVerses(bibleReading.passage.split(' ')[0], 40);
+        setScripturePageIndex(0);
+        setScriptureVerses(fallback);
       } catch (error) {
         console.error('Could not load ASV passage', error);
+        setScripturePageIndex(0);
         setScriptureVerses([]);
       } finally {
         setLoadingScriptureText(false);
@@ -1059,12 +1055,13 @@ const Home: React.FC = () => {
     };
 
     loadFullPassage();
-  }, [showScripturePage, showFullVerses, bibleReading.passage, bibleReading.text]);
+  }, [showScripturePage, bibleReading.passage, bibleReading.text]);
 
   useEffect(() => {
-    if (!showScripturePage && !showFullVerses) {
+    if (!showScripturePage) {
       setShowReflectionComposer(false);
       setIsScriptureFullscreen(false);
+      setScripturePageIndex(0);
       return;
     }
 
@@ -1079,7 +1076,7 @@ const Home: React.FC = () => {
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [showScripturePage, showFullVerses, bibleReading.reflection]);
+  }, [showScripturePage, bibleReading.reflection]);
 
   const toggleScriptureFullscreen = async () => {
     try {
@@ -1115,7 +1112,6 @@ const Home: React.FC = () => {
       }
     }
     setShowScripturePage(false);
-    setShowFullVerses(false);
   };
 
   const openReflectionComposer = () => {
@@ -1169,16 +1165,7 @@ const Home: React.FC = () => {
   };
 
   const handleCompleteReading = async () => {
-    if (bibleReading.completed) {
-      return;
-    }
-
-    setLoadingBible(true);
-    try {
-      await completeBibleDay();
-    } finally {
-      setLoadingBible(false);
-    }
+    await completeBibleDay(!bibleReading.completed);
   };
 
   const handleQuickAddTask = () => {
@@ -1264,12 +1251,10 @@ const Home: React.FC = () => {
     setNewTaskAlarmEnabled(true);
     const defaultAlarm = getDefaultAlarmFromPreferences();
     if (defaultAlarm) {
-      setNewTaskAlarmSound('Uploaded Alarm');
       setNewTaskPreferredMusic(defaultAlarm.name);
       setNewTaskCustomAlarmName(defaultAlarm.name);
       setNewTaskCustomAlarmDataUrl(defaultAlarm.dataUrl);
     } else {
-      setNewTaskAlarmSound('Uploaded Alarm');
       setNewTaskPreferredMusic('');
       setNewTaskCustomAlarmName('');
       setNewTaskCustomAlarmDataUrl('');
@@ -1360,7 +1345,6 @@ const Home: React.FC = () => {
       intent: newTaskName || 'help me create one meaningful task for today',
       userPreferences: {
         favoriteMusicName: favoriteFocusTrack?.name,
-        focusAlarmSound: user?.preferences.focusAlarmSound,
       },
     });
 
@@ -1468,7 +1452,7 @@ const Home: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface pb-24">
       {!isSubPageOpen && (
-      <header className="fixed top-0 left-0 right-0 z-50 h-[62px] bg-[#fef9f2]/92 backdrop-blur-xl border-b border-outline-variant/25">
+      <header className="fixed top-0 left-0 right-0 z-50 h-[62px] bg-[#fef9f2]/92 dark:bg-background/92 backdrop-blur-xl border-b border-outline-variant/25">
         <div className="max-w-5xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden bg-surface-container shadow-sm ring-1 ring-white/60">
@@ -1566,10 +1550,11 @@ const Home: React.FC = () => {
                 currentDay={bibleReading.day || 1}
                 completedToday={bibleReading.completed || false}
                 onToggleComplete={(completed) => {
-                  const newReading = { ...bibleReading, completed };
                   completeBibleDay(completed);
                 }}
-                onReadMore={() => setShowFullVerses(true)}
+                onReadMore={() => {
+                  setShowScripturePage(true);
+                }}
                 isProgressionEnforced={true}
               />
             </div>
@@ -1693,7 +1678,7 @@ const Home: React.FC = () => {
                     <div className="min-w-0 flex-1">
                       <p className={cn('text-sm font-medium text-on-surface truncate', completed && 'line-through text-secondary')}>{task.name}</p>
                       <p className={cn('font-label text-[10px] uppercase tracking-[0.14em] font-bold mt-1', failed && !completed ? 'text-red-600' : 'text-outline')}>
-                        {layer?.name || 'General'} • {task.time}{failed && !completed ? ' • Failed +5m' : ''}
+                        {layer?.name || 'General'} • {task.time}{failed && !completed ? ' • Failed (duration passed)' : ''}
                       </p>
                     </div>
 
@@ -1765,7 +1750,6 @@ const Home: React.FC = () => {
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary bg-primary/10 rounded-full px-2 py-1">Current: {bibleReading.day}</span>
                       <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-secondary bg-surface-container-low rounded-full px-2 py-1">Highest: {bibleReading.highestCompletedDay}</span>
-                      <span className="text-[10px] uppercase tracking-[0.14em] font-bold text-secondary bg-surface-container-low rounded-full px-2 py-1">Unlocked: {maxBibleDay}</span>
                     </div>
                   </div>
                 </div>
@@ -1805,119 +1789,80 @@ const Home: React.FC = () => {
 
             <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 pb-28 space-y-10">
               <section>
-                <div className="mb-5">
-                  <div className="flex justify-between items-end mb-2">
-                    <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-outline">Journey Progress</span>
-                    <span className="text-xs font-medium text-primary">{Math.min(100, Math.round((bibleReading.highestCompletedDay / bibleReading.totalDays) * 1000) / 10)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-gradient-to-r from-primary to-primary-container"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(100, Math.round((bibleReading.highestCompletedDay / bibleReading.totalDays) * 100))}%` }}
-                      transition={{ duration: 0.7, ease: 'easeOut' }}
-                    />
-                  </div>
-                </div>
-
                 <div className="space-y-2">
-                  <p className="text-primary text-sm font-medium flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[15px]">auto_stories</span>
-                    Daily Bread
-                  </p>
-                  <h2 className="text-5xl sm:text-6xl font-serif italic text-on-surface tracking-tight">{bibleReading.passage}</h2>
+                  <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-outline">Read More</p>
+                  <h2 className="text-2xl sm:text-3xl font-semibold text-on-surface tracking-tight">{bibleReading.passage}</h2>
+                  {scriptureVersePages.length > 1 && (
+                    <p className="text-xs text-secondary uppercase tracking-[0.14em] font-bold">Page {scripturePageIndex + 1} of {scriptureVersePages.length}</p>
+                  )}
                 </div>
               </section>
 
-              <section className="space-y-7">
+              <section className="space-y-7 max-w-2xl">
                 {loadingScriptureText && <p className="text-sm text-on-surface-variant">Loading chapter text from ASV database...</p>}
 
                 {!loadingScriptureText && scriptureVerses.length === 0 && (
-                  <p className="text-[30px] leading-[1.7] text-on-surface-variant font-serif">
-                    <span className="text-primary font-bold mr-2 text-4xl">1</span>
+                  <p className="text-base leading-7 text-on-surface-variant dark:text-on-surface">
+                    <span className="text-primary font-semibold mr-2">1</span>
                     {bibleReading.text}
                   </p>
                 )}
 
                 {!loadingScriptureText && scriptureVerses.length > 0 && (
                   <div className="space-y-6">
-                    {scriptureVerses.map((verse) => (
-                      <p key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="text-[32px] leading-[1.65] text-on-surface-variant font-serif">
-                        <span className="text-primary font-bold mr-2 text-5xl align-middle">{verse.verse}</span>
-                        {verse.text}
-                      </p>
-                    ))}
+                    {activeScripturePage.map((verse, index) => {
+                      const prev = index > 0 ? activeScripturePage[index - 1] : null;
+                      const showChapterTitle = !prev || prev.bookName !== verse.bookName || prev.chapter !== verse.chapter;
+
+                      return (
+                        <div key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="space-y-2">
+                          {showChapterTitle && (
+                            <p className="text-xs uppercase tracking-[0.14em] font-bold text-primary">{verse.bookName} {verse.chapter}</p>
+                          )}
+                          <p className="text-base leading-7 text-on-surface-variant dark:text-on-surface">
+                            <span className="text-primary font-semibold mr-2">{verse.verse}</span>
+                            {verse.text}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
+                )}
+
+                {scriptureVersePages.length > 1 && (
+                  <section className="max-w-2xl pt-8">
+                    <div className="flex items-center justify-between gap-3 border-t border-outline-variant/25 pt-6">
+                      <button
+                        type="button"
+                        onClick={() => setScripturePageIndex((prev) => Math.max(0, prev - 1))}
+                        disabled={scripturePageIndex <= 0}
+                        className="px-4 py-2 rounded-full bg-surface-container-low text-primary text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-40"
+                      >
+                        Keep Reading Left
+                      </button>
+                      <p className="text-xs font-bold uppercase tracking-[0.14em] text-secondary">{scripturePageIndex + 1}/{scriptureVersePages.length}</p>
+                      <button
+                        type="button"
+                        onClick={() => setScripturePageIndex((prev) => Math.min(scriptureVersePages.length - 1, prev + 1))}
+                        disabled={scripturePageIndex >= scriptureVersePages.length - 1}
+                        className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-40"
+                      >
+                        Keep Reading Right
+                      </button>
+                    </div>
+                  </section>
                 )}
               </section>
 
-              <section className="relative overflow-hidden rounded-3xl bg-surface-container-low p-6 sm:p-8 border border-outline-variant/20">
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[var(--color-spiritual)]" />
-                <div className="flex flex-col gap-5">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-[var(--color-spiritual)]">
-                      <span className="material-symbols-outlined text-[17px]">self_improvement</span>
-                      <h3 className="font-serif italic text-3xl text-on-surface">Eden Insight</h3>
-                    </div>
-                    <p className="text-lg text-on-surface-variant italic leading-relaxed">
-                      {readingSuggestion || 'Reflect on one practical action you will take today from this reading.'}
-                    </p>
-                  </div>
-
-                  <div className="overflow-hidden rounded-2xl border border-outline-variant/20">
-                    <img
-                      src="https://images.unsplash.com/photo-1508022713622-df2d8fb7b4cd?auto=format&fit=crop&w=900&q=70"
-                      alt="Scripture reflection visual"
-                      className="w-full h-36 object-cover grayscale"
-                    />
-                  </div>
-
-                  <div className="pt-4 border-t border-outline-variant/20 flex justify-end">
-                    <button onClick={openReflectionComposer} className="text-primary font-label text-xs font-bold uppercase tracking-[0.18em] flex items-center gap-2">
-                      Write Reflection
-                      <ArrowRight size={14} />
-                    </button>
-                  </div>
-
-                  {showReflectionComposer && (
-                    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4">
-                      <label className="block text-[10px] uppercase tracking-[0.16em] font-bold text-outline mb-2">Your Reflection</label>
-                      <textarea
-                        ref={reflectionComposerRef}
-                        value={reflectionDraft}
-                        onChange={(event) => setReflectionDraft(event.target.value)}
-                        placeholder="What did this passage reveal, and what action will you take today?"
-                        className="w-full min-h-28 rounded-xl border border-outline-variant/35 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
-                      />
-                      <div className="mt-3 flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowReflectionComposer(false)}
-                          className="px-3 py-2 rounded-lg border border-outline-variant/40 text-xs font-bold uppercase tracking-[0.14em] text-secondary"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={saveReflection}
-                          className="px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold uppercase tracking-[0.14em]"
-                        >
-                          Save Reflection
-                        </button>
-                      </div>
-                    </div>
-                  )}
+              <section className="rounded-3xl border border-outline-variant/20 bg-surface-container-low p-6 sm:p-8 max-w-2xl">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-primary">Eden Insight</p>
+                  <p className="text-base sm:text-lg text-on-surface-variant leading-relaxed">
+                    {readingSuggestion || 'Reflect on one practical action you will take today from this reading.'}
+                  </p>
                 </div>
               </section>
 
-              <div className="pt-2">
-                <button onClick={handleCompleteReading} disabled={loadingBible || bibleReading.completed} className={cn('w-full py-4 rounded-full text-sm font-bold uppercase tracking-[0.14em] transition-transform active:scale-[0.99] disabled:opacity-70', bibleReading.completed ? 'bg-surface-container-low text-primary border border-primary/30' : 'bg-gradient-to-br from-primary to-primary-container text-white shadow-[0_12px_24px_rgba(150,68,7,0.25)]')}>
-                  {loadingBible ? 'Saving Progress...' : bibleReading.completed ? 'Completed Reading' : 'Complete Reading & Next Day'}
-                </button>
-                {!bibleReading.completed && (
-                  <p className="mt-2 text-xs text-secondary">Complete this day to unlock previous/next navigation. You can only move up to 2 days ahead.</p>
-                )}
-              </div>
             </main>
           </motion.div>
         )}
@@ -2163,7 +2108,7 @@ const Home: React.FC = () => {
                           title="Upload reminder song"
                           onChange={(e) => handleReminderSongUpload(e.target.files?.[0])}
                           className="hidden"
-                          disabled={mediaPermissionGranted === false}
+                          disabled={mediaPermissionGranted !== true}
                         />
                         {newTaskCustomAlarmName ? (
                           <p className="text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
@@ -2270,59 +2215,6 @@ const Home: React.FC = () => {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showFullVerses && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] bg-surface overflow-y-auto"
-          >
-            <div className="sticky top-0 left-0 right-0 z-40 bg-surface-container-low border-b border-outline-variant/15 px-4 sm:px-6 py-4 flex items-center gap-3">
-              <button
-                aria-label="Back"
-                onClick={() => setShowFullVerses(false)}
-                className="p-2 hover:bg-surface-container rounded-lg transition-colors text-primary"
-              >
-                <ArrowLeft size={20} />
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Day {bibleReading.day}</p>
-                <h1 className="text-lg font-serif text-on-surface truncate">{bibleReading.passage}</h1>
-              </div>
-            </div>
-
-            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-20">
-              {loadingScriptureText && (
-                <div className="flex items-center gap-2 text-on-surface-variant">
-                  <Loader2 size={18} className="animate-spin" />
-                  <span>Loading full verses...</span>
-                </div>
-              )}
-
-              {!loadingScriptureText && scriptureVerses.length === 0 && (
-                <p className="text-base leading-relaxed text-on-surface-variant font-serif">
-                  {bibleReading.text}
-                </p>
-              )}
-
-              {!loadingScriptureText && scriptureVerses.length > 0 && (
-                <div className="space-y-6">
-                  {scriptureVerses.map((verse) => (
-                    <div key={`${verse.bookName}-${verse.chapter}-${verse.verse}`} className="space-y-1">
-                      <p className="text-sm font-serif">
-                        <span className="text-primary font-bold text-base">{verse.verse}</span>
-                        <span className="text-on-surface-variant ml-2 leading-relaxed">{verse.text}</span>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
         {showInstallSuggestion && !isSubPageOpen && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -2388,7 +2280,7 @@ const Home: React.FC = () => {
               </div>
               <p className="font-label text-[10px] uppercase tracking-[0.16em] text-primary font-bold">Alarm Active</p>
               <h3 className="display-text text-3xl text-on-surface mt-2">{alarmTask.name}</h3>
-              <p className="mt-3 text-sm text-on-surface-variant">{alarmTask.time} • {alarmTask.alarmSound || 'Aggressive Bell'} • {alarmTask.preferredMusic || 'Instrumental Warmth'}</p>
+              <p className="mt-3 text-sm text-on-surface-variant">{alarmTask.time} • {alarmTask.preferredMusic || 'Uploaded Song'}</p>
               <p className="mt-2 text-xs text-secondary">Reminder is sent 5 minutes early. Alarm rings at exact task time and auto-stops after 1 minute if not dismissed.</p>
 
               <button

@@ -43,6 +43,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
   const previewAudioContextRef = useRef<AudioContext | null>(null);
   const previewTimeoutRef = useRef<number | null>(null);
   const uploadedTrackIndexRef = useRef(0);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const maxSeconds = useMemo(() => Math.max(1, minutes * 60), [minutes]);
   const progress = useMemo(() => 1 - secondsLeft / maxSeconds, [secondsLeft, maxSeconds]);
@@ -180,7 +181,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
         ...user.preferences,
         focusDuration: minutes,
         focusSound: customSongName || 'Uploaded Playlist',
-        focusAlarmSound: customSongName || 'Uploaded Alarm',
+        focusAlarmSound: customSongName || '',
         customFocusSongName: customSongName,
         customFocusSongDataUrl: customSongDataUrl,
         customFocusPlaylistNames: customSongPlaylist.map((item) => item.name),
@@ -223,7 +224,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
 
     const selected = Array.from(files).slice(0, 10);
     const validAudio = selected.filter((file) => file.type.startsWith('audio/'));
-    const validBySize = validAudio.filter((file) => file.size <= 100 * 1024 * 1024);
+    const validBySize = validAudio.filter((file) => file.size <= 20 * 1024 * 1024);
     if (validBySize.length === 0) return;
 
     const playlist: Array<{ name: string; dataUrl: string }> = [];
@@ -380,16 +381,24 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
             </div>
           ) : (
             <>
+              <button
+                type="button"
+                onClick={() => uploadInputRef.current?.click()}
+                className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
+              >
+                Upload songs
+              </button>
               <input
+                ref={uploadInputRef}
                 type="file"
                 accept="audio/*"
                 multiple
                 title="Upload focus songs"
                 onChange={(e) => handleSongUpload(e.target.files)}
-                className="w-full text-sm disabled:opacity-50"
-                disabled={mediaPermissionGranted === false}
+                className="hidden"
+                disabled={mediaPermissionGranted !== true}
               />
-              <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 100MB each. Focus uses your uploaded playlist only.</p>
+              <p className="text-xs text-on-surface-variant">Upload up to 10 songs, 20MB each. Focus uses your uploaded playlist only.</p>
               {customSongPlaylist.length > 0 ? (
                 <p className="text-xs text-on-surface-variant">Selected: {customSongPlaylist.length} file(s) • First: {customSongPlaylist[0].name}</p>
               ) : (

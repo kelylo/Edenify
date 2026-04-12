@@ -10,7 +10,7 @@ export const INITIAL_USER: User = {
     shortBreakDuration: 5,
     longBreakDuration: 15,
     focusSound: 'Rain Forest',
-    focusAlarmSound: 'Aggressive Bell',
+    focusAlarmSound: '',
     bibleReminderTime: '06:30 AM',
     bibleReminderAlarm: true,
     bibleReminderTelegram: true,
@@ -30,11 +30,13 @@ export const INITIAL_USER: User = {
 
 export const INITIAL_BIBLE_READING: BibleReading = {
   day: 1,
-  totalDays: 400,
+  totalDays: 365,
   highestCompletedDay: 0,
-  passage: 'Genesis 1:1-5',
-  text: 'In the beginning God created the heavens and the earth.',
+  passage: 'Loading reading plan...',
+  text: 'Loading verses from bible-data.json',
   completed: false,
+  currentStreak: 0,
+  lastCompletedDate: '',
 };
 
 export const INITIAL_LAYERS: Layer[] = [

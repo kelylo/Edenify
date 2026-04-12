@@ -98,6 +98,8 @@ export interface BibleReading {
   passage: string;
   text: string;
   completed: boolean;
+  lastCompletedDate?: string;
+  currentStreak?: number;
   reflection?: string;
 }
 

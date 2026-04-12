@@ -21,6 +21,9 @@ import {
   PanelRightOpen,
   History,
   BookOpen,
+  Paperclip,
+  Camera,
+  Smile,
 } from 'lucide-react';
 import {
   chatWithEden,
@@ -39,6 +42,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, parseTaskDueDate } from '../lib/utils';
 import { LayerId, Task, Habit } from '../types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type TaskFlowMode = 'create' | 'delete';
 interface TaskFlowState {
@@ -64,8 +69,8 @@ interface UndoAction {
 const INTRO_MESSAGE =
   'Greetings, Kevin. I am Eden, your companion in this journey of growth. How can I help today? I can guide your Spiritual, Academic, Financial, Physical, and General layers, and I can create, edit, complete, or delete tasks for you right here.';
 
-const defaultAlarmSound = 'Aggressive Bell';
 const defaultPreferredMusic = 'Instrumental Warmth';
+const DRAFT_INPUT_STORAGE_KEY = 'eden.chat.draft.v1';
 
 const formatTimeDisplay = (time: string) => {
   const m = time.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
@@ -171,7 +176,6 @@ const Eden: React.FC = () => {
     user?.preferences.customFocusSongDataUrl,
   ]);
 
-  const preferredAlarmSound = user?.preferences.focusAlarmSound || defaultAlarmSound;
   const preferredTaskMusic = favoriteFocusTrack?.name || defaultPreferredMusic;
 
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'model'; text: string; id: string; timestamp: Date; feedback?: 'helpful' | 'unhelpful' }>>([
@@ -188,14 +192,30 @@ const Eden: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [agentProfile, setAgentProfile] = useState<UserProfile | null>(null);
   const [conversationHistory, setConversationHistory] = useState<any[]>([]);
+  const [agenticStatus, setAgenticStatus] = useState<'thinking' | 'searching' | 'composing' | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const proactiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const addModelMessage = useCallback((text: string) => {
     setMessages((prev) => [...prev, { role: 'model', text, id: `msg-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, timestamp: new Date() }]);
+  }, []);
+
+  const streamModelMessage = useCallback(async (text: string) => {
+    const id = `msg-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`;
+    setMessages((prev) => [...prev, { role: 'model', text: '', id, timestamp: new Date() }]);
+
+    const chunks = text.split(/(\s+)/).filter(Boolean);
+    let current = '';
+    for (const chunk of chunks) {
+      current += chunk;
+      setMessages((prev) => prev.map((message) => (message.id === id ? { ...message, text: current } : message)));
+      await new Promise((resolve) => window.setTimeout(resolve, 16));
+    }
   }, []);
 
   const addUserMessage = useCallback((text: string) => {
@@ -203,6 +223,9 @@ const Eden: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const savedDraft = window.localStorage.getItem(DRAFT_INPUT_STORAGE_KEY);
+    if (savedDraft) setInput(savedDraft);
+
     const init = async () => {
       await initializeEdenAgent();
       const prof = await getProfile();
@@ -222,6 +245,10 @@ const Eden: React.FC = () => {
 
     void init();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(DRAFT_INPUT_STORAGE_KEY, input);
+  }, [input]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -576,9 +603,9 @@ const Eden: React.FC = () => {
 
     if (/\b(bible|scripture|reading|verse)\b/.test(lower) && /\b(today|day|plan|suggest)\b/.test(lower)) {
       void (async () => {
-        const day = Math.max(1, Math.min(400, Math.floor((Date.now() / (1000 * 60 * 60 * 24)) % 400) + 1));
+        const day = Math.max(1, Math.min(365, Math.floor((Date.now() / (1000 * 60 * 60 * 24)) % 365) + 1));
         const reading = await getDailyBibleReading(day);
-        addModelMessage(`Day ${day}/400 reading:\n${reading.passage}\n\"${reading.text}\"\n${reading.context}`);
+        addModelMessage(`Day ${day}/365 reading:\n${reading.passage}\n"${reading.text}"\n${reading.context}`);
       })();
       return { handled: true, reply: 'I will prepare today spiritual reading now.' };
     }
@@ -598,9 +625,9 @@ const Eden: React.FC = () => {
 
     if (cmd === 'bible') {
       void (async () => {
-        const day = Math.max(1, Math.min(400, Math.floor((Date.now() / (1000 * 60 * 60 * 24)) % 400) + 1));
+        const day = Math.max(1, Math.min(365, Math.floor((Date.now() / (1000 * 60 * 60 * 24)) % 365) + 1));
         const reading = await getDailyBibleReading(day);
-        addModelMessage(`Day ${day}/400 reading:\n${reading.passage}\n\"${reading.text}\"\n${reading.context}`);
+        addModelMessage(`Day ${day}/365 reading:\n${reading.passage}\n"${reading.text}"\n${reading.context}`);
       })();
     }
 
@@ -629,7 +656,6 @@ const Eden: React.FC = () => {
 
   const startNewConversation = async () => {
     setMessages([{ role: 'model', text: INTRO_MESSAGE, id: `intro-${Date.now()}`, timestamp: new Date() }]);
-    setInput('');
     setTaskFlow(null);
     await remember('lastConversationResetAt', new Date().toISOString());
   };
@@ -641,6 +667,7 @@ const Eden: React.FC = () => {
     setInput('');
     addUserMessage(userMsg);
     setIsTyping(true);
+    setAgenticStatus('thinking');
 
     const historyForApi = messages.map((message) => ({ role: message.role, parts: [{ text: message.text }] }));
 
@@ -657,23 +684,27 @@ const Eden: React.FC = () => {
     if (operation.handled) {
       addModelMessage(operation.reply || 'Done.');
       setIsTyping(false);
+      setAgenticStatus(null);
       return;
     }
 
     try {
+      setAgenticStatus('searching');
       const response = await chatWithEden(historyForApi, userMsg);
-      addModelMessage(response);
+      setAgenticStatus('composing');
+      await streamModelMessage(response);
       await logConversation({ userMessage: userMsg, edenResponse: response, wasHelpful: undefined, userEngaged: true });
       const prof = await getProfile();
       setAgentProfile(prof);
       const recent = await getRecentConversations(10);
       setConversationHistory(recent);
     } catch {
-      addModelMessage('I am having trouble connecting. Please try again in a moment.');
+      addModelMessage('I did not understand that clearly. Try rephrasing in one short line, for example: "Create a physical task for 19:00".');
     } finally {
       setIsTyping(false);
+      setAgenticStatus(null);
     }
-  }, [input, isTyping, taskFlow, messages, addUserMessage, addModelMessage]);
+  }, [input, isTyping, taskFlow, messages, addUserMessage, addModelMessage, streamModelMessage]);
 
   return (
     <div className="flex flex-col h-full bg-background relative">
@@ -694,15 +725,18 @@ const Eden: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <header className="p-6 border-b border-outline-variant bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-20">
+      <header className="p-4 border-b border-outline-variant/40 bg-white/90 backdrop-blur-md sticky top-0 z-20">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center text-white shadow-lg">
+            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
               <Sparkles size={20} />
             </div>
             <div>
-              <h1 className="text-xl font-serif font-medium">Eden</h1>
-              <p className="text-[10px] uppercase tracking-widest font-bold text-primary">AI Companion</p>
+              <h1 className="text-base font-semibold">Eden</h1>
+              <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                Online
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -725,7 +759,7 @@ const Eden: React.FC = () => {
         )}
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden bg-[#faf8f5]">
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
@@ -749,26 +783,40 @@ const Eden: React.FC = () => {
           )}
         </AnimatePresence>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4" ref={scrollRef}>
           <AnimatePresence initial={false}>
             {messages.map((message) => (
               <motion.div key={message.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn('flex gap-3 max-w-[85%]', message.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto')}>
-                <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0', message.role === 'user' ? 'bg-secondary text-white' : 'bg-primary/10 text-primary')}>
+                <div className={cn('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0', message.role === 'user' ? 'bg-gradient-to-br from-secondary to-primary-container text-white' : 'bg-primary/10 text-primary')}>
                   {message.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
                 </div>
                 <div className="group relative">
-                  <div className={cn('p-4 rounded-2xl text-sm leading-relaxed', message.role === 'user' ? 'bg-secondary text-white rounded-tr-none' : 'bg-surface-container-low border border-outline-variant rounded-tl-none font-serif italic text-on-surface-variant')}>
-                    {message.text}
+                  <div className={cn('p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm', message.role === 'user' ? 'bg-primary text-white rounded-br-md' : 'bg-white border border-outline-variant/40 rounded-bl-md text-on-surface')}>
+                    {message.role === 'user' ? (
+                      <p className="whitespace-pre-wrap">{message.text}</p>
+                    ) : (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+                          code: ({ children }) => <code className="bg-surface-container px-1.5 py-0.5 rounded text-xs">{children}</code>,
+                        }}
+                      >
+                        {message.text}
+                      </ReactMarkdown>
+                    )}
                   </div>
                   {message.role === 'model' && (
                     <div className="absolute -bottom-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-background p-1 rounded-lg shadow">
                       <button onClick={() => copyToClipboard(message.text)} className="p-1 hover:bg-surface-container rounded">
                         <Copy size={12} />
                       </button>
-                      <button onClick={() => void handleFeedback(message.id, 'helpful')} className="p-1 hover:bg-surface-container rounded">
+                      <button onClick={() => void handleFeedback(message.id, 'helpful')} className={cn('p-1 rounded transition-transform hover:scale-110', message.feedback === 'helpful' ? 'text-emerald-600 bg-emerald-50' : 'hover:bg-surface-container')}>
                         <ThumbsUp size={12} />
                       </button>
-                      <button onClick={() => void handleFeedback(message.id, 'unhelpful')} className="p-1 hover:bg-surface-container rounded">
+                      <button onClick={() => void handleFeedback(message.id, 'unhelpful')} className={cn('p-1 rounded transition-transform hover:scale-110', message.feedback === 'unhelpful' ? 'text-rose-600 bg-rose-50' : 'hover:bg-surface-container')}>
                         <ThumbsDown size={12} />
                       </button>
                     </div>
@@ -776,6 +824,15 @@ const Eden: React.FC = () => {
                 </div>
               </motion.div>
             ))}
+
+            {agenticStatus && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mr-auto">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-outline-variant/40 text-xs text-secondary">
+                  <Loader2 size={12} className="animate-spin" />
+                  {agenticStatus === 'thinking' ? 'Thinking...' : agenticStatus === 'searching' ? 'Searching...' : 'Composing...'}
+                </div>
+              </motion.div>
+            )}
 
             {isTyping && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3 mr-auto">
@@ -820,7 +877,7 @@ const Eden: React.FC = () => {
         </div>
       )}
 
-      <div className="p-6 bg-background/80 backdrop-blur-md border-t border-outline-variant">
+      <div className="p-4 sm:p-5 bg-white/95 backdrop-blur-md border-t border-outline-variant/40">
         {taskFlow && (
           <div className="mb-3 p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
@@ -836,6 +893,21 @@ const Eden: React.FC = () => {
         )}
 
         <div className="relative flex items-end gap-2">
+          <input ref={attachmentInputRef} type="file" className="hidden" />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" />
+
+          <button onClick={() => attachmentInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Attach file" aria-label="Attach file">
+            <Paperclip size={18} />
+          </button>
+
+          <button onClick={() => cameraInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Open camera" aria-label="Open camera">
+            <Camera size={18} />
+          </button>
+
+          <button onClick={() => setInput((prev) => `${prev}${prev ? ' ' : ''}🙂`)} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Add emoji" aria-label="Add emoji">
+            <Smile size={18} />
+          </button>
+
           <button onClick={toggleListening} className={cn('p-3 rounded-xl transition-colors', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary border border-outline-variant')}>
             {isListening ? <StopCircle size={20} /> : <Mic size={20} />}
           </button>
@@ -852,8 +924,9 @@ const Eden: React.FC = () => {
                 }
               }}
               rows={1}
+              autoFocus
               placeholder={inputPlaceholder}
-              className="w-full resize-none overflow-y-auto bg-surface-container-lowest border border-outline-variant rounded-2xl py-4 pl-5 pr-14 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-serif italic"
+              className="w-full resize-none overflow-y-auto bg-white border border-outline-variant/50 rounded-2xl py-4 pl-5 pr-14 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
             />
             <button onClick={() => void handleSend()} disabled={!input.trim() || isTyping} className="absolute right-2 bottom-2 p-2.5 rounded-xl bg-primary text-white disabled:opacity-50 disabled:bg-secondary transition-all shadow-md active:scale-95">
               <Send size={20} />

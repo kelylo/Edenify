@@ -16,30 +16,39 @@ export interface BibleDayReading {
   context: string;
 }
 
-// Cache for Bible data
 let bibleData: BibleVerse[] = [];
 let isLoaded = false;
+let readingPlan: Record<number, string> | null = null;
+let planLoaded = false;
 
-// Parse the Bible JSON file
+async function loadBibleDataFromJson(): Promise<BibleVerse[]> {
+  const response = await fetch('/bible-data.json');
+  if (!response.ok) throw new Error('bible-data.json not found');
+
+  const data = await response.json();
+
+  const parsed = Array.isArray(data)
+    ? data
+        .filter((item: any) => item['__EMPTY_1'] && typeof item['__EMPTY_1'] === 'string' && !isNaN(Number(item['__EMPTY_1'])))
+        .map((item: any, index: number) => ({
+          verseId: index,
+          bookName: item['__EMPTY'] || '',
+          bookNumber: Number(item['__EMPTY_1']) || 0,
+          chapter: Number(item['__EMPTY_2']) || 0,
+          verse: Number(item['__EMPTY_3']) || 0,
+          text: item['__EMPTY_4'] || '',
+        }))
+    : [];
+
+  if (parsed.length > 0) return parsed;
+  throw new Error('Unable to parse bible-data.json');
+}
+
 async function loadBibleData(): Promise<BibleVerse[]> {
   if (isLoaded && bibleData.length > 0) return bibleData;
 
   try {
-    const response = await fetch('/bible-data.json');
-    const data = await response.json();
-
-    // Filter out header rows and parse verses
-    bibleData = data
-      .filter((item: any) => item['__EMPTY_1'] && typeof item['__EMPTY_1'] === 'string' && !isNaN(Number(item['__EMPTY_1'])))
-      .map((item: any, index: number) => ({
-        verseId: index,
-        bookName: item['__EMPTY'] || '',
-        bookNumber: Number(item['__EMPTY_1']) || 0,
-        chapter: Number(item['__EMPTY_2']) || 0,
-        verse: Number(item['__EMPTY_3']) || 0,
-        text: item['__EMPTY_4'] || ''
-      }));
-
+    bibleData = await loadBibleDataFromJson();
     isLoaded = true;
     return bibleData;
   } catch (error) {
@@ -48,14 +57,12 @@ async function loadBibleData(): Promise<BibleVerse[]> {
   }
 }
 
-// Get a random verse
 export async function getRandomVerse(): Promise<BibleVerse | null> {
   const verses = await loadBibleData();
   if (verses.length === 0) return null;
   return verses[Math.floor(Math.random() * verses.length)];
 }
 
-// Get verse by book, chapter, verse
 export async function getVerse(book: string, chapter: number, verse: number): Promise<BibleVerse | null> {
   const verses = await loadBibleData();
   if (verses.length === 0) return null;
@@ -67,13 +74,11 @@ export async function getVerse(book: string, chapter: number, verse: number): Pr
   ) || null;
 }
 
-// Get all chapters for a book
 export async function getBook(bookName: string): Promise<BibleVerse[]> {
   const verses = await loadBibleData();
   return verses.filter(v => v.bookName.toLowerCase() === bookName.toLowerCase());
 }
 
-// Get all verses for a chapter
 export async function getChapter(bookName: string, chapter: number): Promise<BibleVerse[]> {
   const verses = await loadBibleData();
   return verses.filter(
@@ -81,7 +86,6 @@ export async function getChapter(bookName: string, chapter: number): Promise<Bib
   );
 }
 
-// Get suggested verse using Gemini API
 export async function getSuggestedVerse(): Promise<{ verse: BibleVerse; suggestion: string } | null> {
   const randomVerse = await getRandomVerse();
   if (!randomVerse) return null;
@@ -96,7 +100,6 @@ export async function getSuggestedVerse(): Promise<{ verse: BibleVerse; suggesti
   };
 }
 
-// Search verses by keyword
 export async function searchVerses(keyword: string, limit: number = 10): Promise<BibleVerse[]> {
   const verses = await loadBibleData();
   const results = verses.filter(v => v.text.toLowerCase().includes(keyword.toLowerCase()));
@@ -119,13 +122,13 @@ export async function getBibleReadingForDay(day: number): Promise<BibleDayReadin
   const verses = await loadBibleData();
   if (verses.length === 0) {
     return {
-      passage: 'Genesis 1:1-5',
-      text: 'In the beginning God created the heavens and the earth.',
-      context: 'Fallback reading because local Bible dataset is unavailable.',
+      passage: 'Reading unavailable',
+      text: 'Bible data is unavailable. Please ensure bible-data.json is present.',
+      context: 'Could not load /bible-data.json.',
     };
   }
 
-  const totalDays = 400;
+  const totalDays = 365;
   const safeDay = Math.min(totalDays, Math.max(1, day));
   const totalVerses = verses.length;
   const baseChunk = Math.floor(totalVerses / totalDays);
@@ -145,23 +148,42 @@ export async function getBibleReadingForDay(day: number): Promise<BibleDayReadin
   };
 }
 
-// Cache for reading plan
-let readingPlan: Record<number, string> | null = null;
-let planLoaded = false;
+function parsePlanTextToMap(text: string): Record<number, string> {
+  const lines = text
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const parsed: Record<number, string> = {};
+
+  lines.forEach((line) => {
+    const match = line.match(/^(?:day\s*)?(\d{1,3})\s*[:\-.)]?\s*(.+)$/i);
+    if (!match) return;
+    const day = Number(match[1]);
+    if (!Number.isFinite(day) || day < 1 || day > 366) return;
+
+    const passage = match[2].trim();
+    if (!passage || /^day\b/i.test(passage)) return;
+    parsed[day] = passage;
+  });
+
+  return parsed;
+}
 
 /**
- * Load the preset 365-day reading plan from bible-plan.json
+ * Load the preset day reading plan, preferring bible-plan.json.
  */
 async function loadReadingPlan(): Promise<Record<number, string>> {
   if (planLoaded && readingPlan) return readingPlan;
 
   try {
     const response = await fetch('/data/bible-plan.json');
+    if (!response.ok) throw new Error('bible-plan.json not found');
     const data = await response.json() as { readings: Record<string, { passages: string }> };
 
     readingPlan = {};
 
-    // Convert string keys to numbers for easy access
     Object.entries(data.readings).forEach(([day, reading]) => {
       readingPlan![Number(day)] = reading.passages;
     });
@@ -169,36 +191,40 @@ async function loadReadingPlan(): Promise<Record<number, string>> {
     planLoaded = true;
     return readingPlan || {};
   } catch (error) {
-    console.warn('Could not load preset reading plan from JSON, using default distribution:', error);
+    console.warn('Could not load reading plan from /data/bible-plan.json:', error);
     planLoaded = true;
     return {};
   }
 }
 
 /**
- * Get reading for a specific day, preferring the preset plan if available
+ * Get reading for a specific day, preferring the preset plan if available.
  */
 export async function getDayReading(day: number): Promise<BibleDayReading> {
   const plan = await loadReadingPlan();
+  const totalDays = Math.max(1, Object.keys(plan).length || 365);
+  const safeDay = Math.min(totalDays, Math.max(1, day));
 
-  if (plan[day]) {
-    // Use preset plan
+  if (plan[safeDay]) {
     return {
-      passage: plan[day],
-      text: `Today's reading: ${plan[day]}`,
-      context: `Day ${day} of the 365-day reading plan.`
+      passage: plan[safeDay],
+      text: `Today's reading: ${plan[safeDay]}`,
+      context: `Day ${safeDay} of the reading plan.`
     };
   }
 
-  // Fallback to default distribution
-  return getBibleReadingForDay(day);
+  return {
+    passage: `Day ${safeDay} unavailable`,
+    text: 'Reading plan entry is missing for this day.',
+    context: `No reading found in /data/bible-plan.json for day ${safeDay}.`,
+  };
 }
 
 /**
- * Get the total number of days in the reading plan
+ * Get the total number of days in the reading plan.
  */
 export async function getTotalReadingDays(): Promise<number> {
   const plan = await loadReadingPlan();
   const dayCount = Object.keys(plan).length;
-  return dayCount > 0 ? dayCount : 365; // Default to 365 if plan not loaded
+  return dayCount > 0 ? dayCount : 365;
 }

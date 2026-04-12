@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User, Layer, Habit, Task, JournalEntry, LayerId, BibleReading } from './types';
 import { INITIAL_USER, INITIAL_LAYERS, INITIAL_HABITS, INITIAL_TASKS, INITIAL_BIBLE_READING } from './constants';
-import { getBibleReadingForDay } from './services/bible';
+import { getDayReading, getTotalReadingDays } from './services/bible';
 import { loadBackendUserState, loadUserState, saveBackendUserState, saveUserState } from './services/supabase';
+import { syncNativeTaskAlarms } from './services/native-alarms';
 
 interface AppState {
   user: User | null;
@@ -27,15 +28,38 @@ interface AppState {
   updateTask: (taskId: string, updates: Partial<Task>) => void;
   deleteTask: (taskId: string) => void;
   addJournalEntry: (entry: JournalEntry) => void;
-  completeBibleDay: () => Promise<void>;
+  completeBibleDay: (completed?: boolean) => Promise<void>;
   refreshBibleReading: () => Promise<void>;
   goToBibleDay: (day: number) => Promise<void>;
   setDailyTaskGoal: (goal: number) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
-const RESET_VERSION = 'edenify-reset-2026-04-10';
+const RESET_VERSION = 'edenify-reset-2026-04-11';
 const MAX_PERSISTED_DATA_URL_LENGTH = 450_000;
+const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
+
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getYesterdayDateKey = (date = new Date()) => {
+  const yesterday = new Date(date);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return getLocalDateKey(yesterday);
+};
+
+const getDayDiff = (fromKey: string, toKey: string) => {
+  const from = new Date(`${fromKey}T00:00:00`);
+  const to = new Date(`${toKey}T00:00:00`);
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return 0;
+  return Math.floor((toMs - fromMs) / (24 * 60 * 60 * 1000));
+};
 
 const sanitizeTaskForPersistence = (task: Task): Task => {
   const audio = task.customAlarmAudioDataUrl || '';
@@ -92,15 +116,20 @@ const normalizeUser = (user: User): User => ({
 });
 
 const normalizeBibleReading = (reading?: Partial<BibleReading> | null): BibleReading => {
-  const safeDay = Math.min(400, Math.max(1, Number(reading?.day || INITIAL_BIBLE_READING.day)));
-  const safeCompleted = Math.min(400, Math.max(0, Number(reading?.highestCompletedDay || INITIAL_BIBLE_READING.highestCompletedDay || 0)));
+  const safeTotalDays = INITIAL_BIBLE_READING.totalDays;
+  const safeCompleted = Math.min(safeTotalDays, Math.max(0, Number(reading?.highestCompletedDay || INITIAL_BIBLE_READING.highestCompletedDay || 0)));
+  const maxUnlocked = Math.min(safeTotalDays, safeCompleted + 1);
+  const safeDay = Math.min(maxUnlocked, Math.max(1, Number(reading?.day || INITIAL_BIBLE_READING.day)));
+
   return {
     ...INITIAL_BIBLE_READING,
     ...(reading || {}),
+    totalDays: safeTotalDays,
     day: safeDay,
-    highestCompletedDay: Math.max(safeCompleted, safeDay - (reading?.completed ? 0 : 1)),
-    totalDays: 400,
-    completed: safeDay <= Math.max(safeCompleted, safeDay - (reading?.completed ? 0 : 1)),
+    highestCompletedDay: safeCompleted,
+    completed: safeDay <= safeCompleted,
+    currentStreak: Math.max(0, Number(reading?.currentStreak || 0)),
+    lastCompletedDate: String(reading?.lastCompletedDate || ''),
   };
 };
 
@@ -111,7 +140,12 @@ const ensureTaskId = (task: Task): Task => {
   return { ...task, id: `task-${compact || Date.now().toString()}` };
 };
 
-const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[], recentlyDeletedIds: Set<string>) => {
+const mergeTasksByIdentity = (
+  currentTasks: Task[],
+  incomingTasks: Task[],
+  recentlyDeletedIds: Set<string>,
+  preferIncoming = false
+) => {
   const merged = new Map<string, Task>();
 
   currentTasks.forEach((rawTask) => {
@@ -130,11 +164,9 @@ const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[], recen
     if (!existing) {
       merged.set(key, task);
     } else {
-      // Smart merge: keep local state as source of truth
-      const merged_task = { ...task, ...existing };
+      const merged_task = preferIncoming ? { ...existing, ...task } : { ...task, ...existing };
 
-      // Preserve local completion status if it's more recent
-      if (existing.completed && !task.completed) {
+      if (!preferIncoming && existing.completed && !task.completed) {
         merged_task.completed = true;
       }
 
@@ -146,7 +178,7 @@ const mergeTasksByIdentity = (currentTasks: Task[], incomingTasks: Task[], recen
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const getAccountKey = (currentUser: User | null) => String(currentUser?.id || currentUser?.email || '').trim().toLowerCase();
+  const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
 
   // Cache management for session persistence
   const cacheUser = (user: User | null) => {
@@ -230,7 +262,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem('edenify_reset_version', RESET_VERSION);
         }
 
-        const saved = localStorage.getItem('edenify_state');
+        const saved = localStorage.getItem('edenify_state_guest');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed.layers) setLayers(parsed.layers);
@@ -261,6 +293,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
+  useEffect(() => {
+    const accountKey = getAccountKey(user);
+    if (!accountKey) return;
+
+    try {
+      const saved = localStorage.getItem(`edenify_state_${accountKey}`);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (parsed.layers) setLayers(parsed.layers);
+      if (parsed.habits) setHabits(parsed.habits);
+      if (parsed.tasks) setTasks(parsed.tasks);
+      if (parsed.journal) setJournal(parsed.journal);
+      if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
+      if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
+    } catch (error) {
+      console.warn('Failed to restore account-scoped local state:', error);
+    }
+  }, [user?.id, user?.email]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateBiblePlanState = async () => {
+      const totalDays = await getTotalReadingDays();
+      const highest = Math.min(totalDays, Math.max(0, bibleReading.highestCompletedDay || 0));
+      const unlockedDay = Math.min(totalDays, highest + 1);
+      const todayKey = getLocalDateKey();
+      const shouldAdvanceOnNewDay = Boolean(
+        bibleReading.completed &&
+        bibleReading.lastCompletedDate &&
+        bibleReading.lastCompletedDate !== todayKey
+      );
+      const targetDay = shouldAdvanceOnNewDay
+        ? Math.min(totalDays, highest + 1)
+        : Math.min(unlockedDay, Math.max(1, bibleReading.day || 1));
+      const reading = await getDayReading(targetDay);
+      if (cancelled) return;
+
+      setBibleReading((prev) => {
+        if (
+          prev.totalDays === totalDays &&
+          prev.day === targetDay &&
+          prev.highestCompletedDay === highest &&
+          prev.passage === reading.passage &&
+          prev.text === reading.text
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          totalDays,
+          day: targetDay,
+          highestCompletedDay: highest,
+          passage: reading.passage,
+          text: reading.text,
+        };
+      });
+    };
+
+    void hydrateBiblePlanState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bibleReading.day, bibleReading.highestCompletedDay]);
+
   // Load cloud state from Supabase when user is available, then keep it synced.
   useEffect(() => {
     const accountKey = getAccountKey(user);
@@ -287,7 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteState.layers) setLayers(remoteState.layers);
       if (remoteState.habits) setHabits(remoteState.habits);
       if (remoteState.tasks) {
-        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, recentlyDeletedTaskIdsRef.current));
+        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, recentlyDeletedTaskIdsRef.current, true));
       }
       if (remoteState.journal) setJournal(remoteState.journal);
       if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
@@ -331,6 +430,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Save to localStorage on change
   useEffect(() => {
+    const accountKey = getAccountKey(user);
     const sanitizedUser = sanitizeUserForPersistence(user);
     const sanitizedTasks = tasks.map(sanitizeTaskForPersistence);
     const statePayload = {
@@ -345,12 +445,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       // Keep browser cache without persisted user identity.
-      localStorage.setItem('edenify_state', JSON.stringify({ ...statePayload, user: null }));
+      localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...statePayload, user: null }));
     } catch (error) {
       console.warn('Local cache save skipped (likely storage quota reached):', error);
     }
 
-    const accountKey = getAccountKey(user);
     if (accountKey) {
       const syncState = async () => {
         if (!hasCompletedInitialCloudSyncRef.current) return;
@@ -386,7 +485,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (nextHash === lastTelegramTasksHashRef.current) return;
 
         applyingTelegramSyncRef.current = true;
-        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, recentlyDeletedTaskIdsRef.current));
+        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, recentlyDeletedTaskIdsRef.current, true));
         lastTelegramTasksHashRef.current = nextHash;
       } catch (error) {
         console.warn('Telegram task pull failed:', error);
@@ -448,6 +547,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [tasks, user?.email, user?.id, user?.preferences.telegramChatId]);
 
   useEffect(() => {
+    void syncNativeTaskAlarms(tasks, user);
+  }, [tasks, user?.id, user?.email, user?.preferences.notifications.taskReminders]);
+
+  useEffect(() => {
     const applyTaskCompletionWindow = () => {
       const now = new Date();
       const todayString = now.toDateString();
@@ -491,6 +594,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const id = window.setInterval(applyTaskCompletionWindow, 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const syncBibleCompletionWithCalendar = () => {
+      const today = getLocalDateKey();
+      setBibleReading((prev) => {
+        if (!prev.completed) return prev;
+        if (prev.lastCompletedDate === today) return prev;
+        return { ...prev, completed: false };
+      });
+    };
+
+    syncBibleCompletionWithCalendar();
+    const id = window.setInterval(syncBibleCompletionWithCalendar, 60 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const preferredTimeRaw = String(user?.preferences.bibleReminderTime || '06:30').trim();
+    const normalizedTime = preferredTimeRaw.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/)
+      ? preferredTimeRaw
+      : '06:30';
+
+    setTasks((prev) => {
+      const existing = prev.find((task) => task.id === DAILY_BIBLE_TASK_ID);
+      const nextTask: Task = {
+        id: DAILY_BIBLE_TASK_ID,
+        name: `Read Scripture (Day ${bibleReading.day})`,
+        layerId: 'spiritual',
+        priority: 'B',
+        repeat: 'daily',
+        time: normalizedTime,
+        completed: Boolean(bibleReading.completed),
+        date: new Date().toISOString(),
+        alarmEnabled: Boolean(user?.preferences.bibleReminderAlarm ?? true),
+        preferredMusic: 'Scripture Reflection',
+      };
+
+      if (!existing) {
+        return [...prev, nextTask];
+      }
+
+      return prev.map((task) => task.id === DAILY_BIBLE_TASK_ID ? { ...existing, ...nextTask } : task);
+    });
+  }, [bibleReading.day, bibleReading.completed, user?.preferences.bibleReminderTime, user?.preferences.bibleReminderAlarm]);
 
   const updateLayer = (layerId: LayerId, updates: Partial<Layer>) => {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, ...updates } : l));
@@ -596,43 +743,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const loadBibleDay = async (targetDay: number, highestCompletedDay: number) => {
-    const day = Math.min(400, Math.max(1, targetDay));
-    const data = await getBibleReadingForDay(day);
+    const totalDays = await getTotalReadingDays();
+    const day = Math.min(totalDays, Math.max(1, targetDay));
+    const data = await getDayReading(day);
     setBibleReading({
       day,
-      totalDays: 400,
+      totalDays,
       highestCompletedDay,
       passage: data.passage,
       text: data.text,
       completed: day <= highestCompletedDay,
+      lastCompletedDate: bibleReading.lastCompletedDate || '',
+      currentStreak: Math.max(0, Number(bibleReading.currentStreak || 0)),
     });
   };
 
   const refreshBibleReading = async () => {
-    const data = await getBibleReadingForDay(bibleReading.day);
+    const totalDays = await getTotalReadingDays();
+    const safeDay = Math.min(totalDays, Math.max(1, bibleReading.day));
+    const data = await getDayReading(safeDay);
+    const today = getLocalDateKey();
     setBibleReading(prev => ({
       ...prev,
+      day: safeDay,
+      totalDays,
       passage: data.passage,
       text: data.text,
-      completed: prev.day <= prev.highestCompletedDay,
+      completed: prev.lastCompletedDate === today && safeDay <= prev.highestCompletedDay,
     }));
   };
 
   const goToBibleDay = async (targetDay: number) => {
-    const maxUnlockedDay = Math.min(400, bibleReading.highestCompletedDay + 2);
+    const totalDays = await getTotalReadingDays();
+    const today = getLocalDateKey();
+    const completedToday = bibleReading.lastCompletedDate === today && bibleReading.completed;
+    const maxUnlockedDay = completedToday
+      ? bibleReading.highestCompletedDay
+      : Math.min(totalDays, bibleReading.highestCompletedDay + 1);
     const bounded = Math.min(maxUnlockedDay, Math.max(1, targetDay));
     await loadBibleDay(bounded, bibleReading.highestCompletedDay);
   };
 
-  const completeBibleDay = async () => {
-    // Mark today as completed - do NOT move to next day
-    // Next day progression happens automatically on the next calendar day
-    const nextHighest = Math.max(bibleReading.highestCompletedDay, bibleReading.day);
-    setBibleReading(prev => ({
-      ...prev,
-      highestCompletedDay: nextHighest,
-      completed: true,
-    }));
+  const completeBibleDay = async (completed = true) => {
+    const today = getLocalDateKey();
+    const yesterday = getYesterdayDateKey();
+
+    setBibleReading((prev) => {
+      if (completed) {
+        if (prev.completed && prev.lastCompletedDate === today) return prev;
+        const nextHighest = Math.max(prev.highestCompletedDay, prev.day);
+        const daysSinceLast = prev.lastCompletedDate ? getDayDiff(prev.lastCompletedDate, today) : 0;
+        const nextStreak = prev.lastCompletedDate === yesterday
+          ? Math.max(1, Number(prev.currentStreak || 0) + 1)
+          : 1;
+        const shouldJumpToNextAfterLateConfirm = daysSinceLast > 1;
+        const nextDay = shouldJumpToNextAfterLateConfirm
+          ? Math.min(prev.totalDays, nextHighest + 1)
+          : prev.day;
+
+        return {
+          ...prev,
+          day: nextDay,
+          highestCompletedDay: nextHighest,
+          completed: true,
+          lastCompletedDate: today,
+          currentStreak: nextStreak,
+        };
+      }
+
+      const shouldRollbackHighest = prev.day === prev.highestCompletedDay && prev.lastCompletedDate === today;
+      return {
+        ...prev,
+        completed: false,
+        highestCompletedDay: shouldRollbackHighest ? Math.max(0, prev.highestCompletedDay - 1) : prev.highestCompletedDay,
+        lastCompletedDate: prev.lastCompletedDate === today ? '' : prev.lastCompletedDate,
+        currentStreak: prev.lastCompletedDate === today ? Math.max(0, Number(prev.currentStreak || 0) - 1) : prev.currentStreak,
+      };
+    });
   };
 
   const setDailyTaskGoal = (goal: number) => {

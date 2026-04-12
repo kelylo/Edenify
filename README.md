@@ -84,3 +84,23 @@ Notes:
   - Browser install prompt, or
   - the in-app "Install" suggestion banner on Home.
 - Installed app supports standalone launch and offline shell caching.
+
+## Native Shells (Mobile + Desktop/Laptop)
+
+Use native wrappers for stronger due/reminder reliability and background alarms.
+
+### Mobile (Capacitor)
+
+- Sync native platform:
+   - `npm run mobile:sync`
+- Open Android Studio project:
+   - `npm run mobile:android`
+
+### Desktop/Laptop (Electron)
+
+- Run desktop shell:
+   - `npm run desktop:start`
+- Build Windows installer:
+   - `npm run desktop:build`
+
+Detailed setup is in `NATIVE_SHELL_SETUP.md`.

@@ -68,7 +68,7 @@ const AppContent: React.FC = () => {
   const { user, authReady } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
-  const [bootProgress, setBootProgress] = useState(8);
+  const [bootProgress, setBootProgress] = useState(20);
   const [bootScreenVisible, setBootScreenVisible] = useState(true);
 
   const bootStageLabel = bootProgress < 35
@@ -102,19 +102,17 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (authReady) {
-      setBootProgress((current) => Math.max(current, 94));
+      setBootProgress((current) => Math.max(current, 98));
       const finishInterval = window.setInterval(() => {
         setBootProgress((current) => {
-          const next = Math.min(100, current + 2);
+          const next = Math.min(100, current + 4);
           if (next >= 100) {
             window.clearInterval(finishInterval);
-            window.setTimeout(() => {
-              setBootScreenVisible(false);
-            }, 180);
+            setBootScreenVisible(false);
           }
           return next;
         });
-      }, 22);
+      }, 12);
 
       return () => {
         window.clearInterval(finishInterval);
@@ -125,12 +123,12 @@ const AppContent: React.FC = () => {
     const startMs = Date.now();
     const warmupInterval = window.setInterval(() => {
       const elapsed = Date.now() - startMs;
-      const cap = elapsed < 1200 ? 34 : elapsed < 2600 ? 69 : 92;
+      const cap = elapsed < 450 ? 48 : elapsed < 1100 ? 78 : 94;
       setBootProgress((current) => {
         if (current >= cap) return current;
-        return Math.min(cap, current + 1);
+        return Math.min(cap, current + 3);
       });
-    }, 70);
+    }, 30);
 
     return () => {
       window.clearInterval(warmupInterval);

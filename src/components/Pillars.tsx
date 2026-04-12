@@ -157,19 +157,17 @@ const physicalNutrition = [
 ];
 
 const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId }) => {
-  const { layers, habits, tasks, addHabit, addTask, toggleHabit } = useApp();
+  const { user, layers, habits, tasks, addHabit, addTask, toggleHabit } = useApp();
 
   const [activeLayerId, setActiveLayerId] = useState<LayerId | null>(null);
   const [habitName, setHabitName] = useState('');
   const [habitMinutes, setHabitMinutes] = useState(15);
   const [habitFrequency, setHabitFrequency] = useState<'daily' | 'weekly'>('daily');
-  const [habitTime, setHabitTime] = useState('08:00');
+  const [habitPriority, setHabitPriority] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
   const [habitTimeFormat, setHabitTimeFormat] = useState<'24' | '12'>('24');
   const [habitHourInput, setHabitHourInput] = useState('08');
   const [habitMinuteInput, setHabitMinuteInput] = useState('00');
   const [habitPeriod, setHabitPeriod] = useState<'AM' | 'PM'>('AM');
-  const [habitSongName, setHabitSongName] = useState('');
-  const [habitSongDataUrl, setHabitSongDataUrl] = useState('');
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [layerPlan, setLayerPlan] = useState('');
   const [showAllGuides, setShowAllGuides] = useState(false);
@@ -181,7 +179,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
   const [bibleReadingToday, setBibleReadingToday] = useState(false);
   const [showEdenChat, setShowEdenChat] = useState(false);
-  const songFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -224,46 +221,22 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     }
   };
 
-  const handleSongUpload = (file: File | undefined) => {
-    if (!file) return;
-
-    if (!file.type.startsWith('audio/')) {
-      setLayerActionMessage('Please upload an audio file.');
-      return;
+  const resolveDefaultUploadedSong = () => {
+    const names = user?.preferences.customFocusPlaylistNames || [];
+    const urls = user?.preferences.customFocusPlaylistDataUrls || [];
+    if (names[0] && urls[0]) {
+      return { name: names[0], dataUrl: urls[0] };
     }
-
-    const maxSize = 20 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setLayerActionMessage('Song file must be under 20MB.');
-      return;
+    if (user?.preferences.customFocusSongName && user?.preferences.customFocusSongDataUrl) {
+      return { name: user.preferences.customFocusSongName, dataUrl: user.preferences.customFocusSongDataUrl };
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl.length > 25 * 1024 * 1024) {
-        setLayerActionMessage('Encoded song is too large.');
-        return;
-      }
-      setHabitSongName(file.name);
-      setHabitSongDataUrl(dataUrl);
-      setLayerActionMessage(`Song selected: ${file.name}`);
-    };
-    reader.onerror = () => {
-      setLayerActionMessage('Failed to upload song.');
-    };
-    reader.readAsDataURL(file);
+    return null;
   };
 
   const createHabitForLayer = (layerId: LayerId) => {
     const name = habitName.trim();
     if (!name) {
       setLayerActionMessage('Please enter a habit name.');
-      return;
-    }
-
-    if (!habitSongDataUrl) {
-      setLayerActionMessage('Please upload a song before creating a habit.');
       return;
     }
 
@@ -278,6 +251,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     const period = now.getHours() < 12 ? 'morning' : now.getHours() < 17 ? 'afternoon' : 'evening';
     const habitId = `habit-${Date.now()}`;
     const habitTaskId = `habit-task-${habitId}`;
+    const defaultUploadedSong = resolveDefaultUploadedSong();
 
     addHabit({
       id: habitId,
@@ -297,26 +271,27 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       id: habitTaskId,
       name: `[Habit] ${name}`,
       layerId,
-      priority: 'C',
+      priority: habitPriority,
       repeat: habitFrequency,
       time: finalTime,
       completed: false,
       date: new Date().toISOString(),
       alarmEnabled: true,
-      preferredMusic: habitSongName || 'Instrumental Warmth',
-      customAlarmAudioName: habitSongName,
-      customAlarmAudioDataUrl: habitSongDataUrl,
+      preferredMusic: defaultUploadedSong?.name || '',
+      customAlarmAudioName: defaultUploadedSong?.name,
+      customAlarmAudioDataUrl: defaultUploadedSong?.dataUrl,
+      estimatedDuration: Math.max(5, Math.min(300, habitMinutes)),
+      durationStartedAt: new Date().toISOString(),
     });
 
     setHabitName('');
     setHabitMinutes(15);
     setHabitFrequency('daily');
+    setHabitPriority('C');
     setHabitTimeFormat('24');
     setHabitHourInput('08');
     setHabitMinuteInput('00');
     setHabitPeriod('AM');
-    setHabitSongName('');
-    setHabitSongDataUrl('');
     setShowHabitSuggestions(false);
     setLayerActionMessage('Habit created and linked to a repeating task schedule.');
   };
@@ -776,16 +751,53 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                       </div>
                       <div>
                         <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Repeat</label>
-                        <select
-                          value={habitFrequency}
-                          onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
-                          title="Habit frequency"
-                          className="w-full rounded-xl border-2 border-primary/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface appearance-none cursor-pointer transition-all hover:border-primary/60 focus:border-primary focus:outline-none"
-                          style={{ accentColor: 'var(--color-primary, #FF6B35)' }}
-                        >
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setHabitFrequency('daily')}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitFrequency === 'daily'
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            Daily
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHabitFrequency('weekly')}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitFrequency === 'weekly'
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            Weekly
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Priority</label>
+                      <div className="flex flex-wrap gap-2">
+                        {(['A', 'B', 'C', 'D', 'E'] as const).map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setHabitPriority(value)}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitPriority === value
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            {value}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
@@ -894,31 +906,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                       </div>
                     )}
 
-                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-3">Reminder Song (Required)</label>
-                      <button
-                        type="button"
-                        onClick={() => songFileInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
-                      >
-                        {habitSongName ? '✓ Song Loaded' : 'Upload song'}
-                      </button>
-                      <input
-                        ref={songFileInputRef}
-                        type="file"
-                        accept="audio/*"
-                        title="Upload reminder song"
-                        onChange={(e) => handleSongUpload(e.target.files?.[0])}
-                        className="hidden"
-                      />
-                      {habitSongName && (
-                        <p className="text-xs text-primary mt-2 font-semibold">📌 {habitSongName}</p>
-                      )}
-                    </div>
-
                     <button
                       onClick={() => createHabitForLayer(activeLayer.id)}
-                      disabled={!habitName.trim() || !habitSongDataUrl}
+                      disabled={!habitName.trim()}
                       className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-6 font-label font-bold text-sm uppercase tracking-[0.12em] disabled:opacity-50 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
                     >
                       Create Habit + Loop Task
@@ -986,16 +976,53 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                       </div>
                       <div>
                         <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Repeat</label>
-                        <select
-                          value={habitFrequency}
-                          onChange={(e) => setHabitFrequency(e.target.value as 'daily' | 'weekly')}
-                          title="Habit frequency"
-                          className="w-full rounded-xl border-2 border-primary/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface appearance-none cursor-pointer transition-all hover:border-primary/60 focus:border-primary focus:outline-none"
-                          style={{ accentColor: 'var(--color-primary, #FF6B35)' }}
-                        >
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setHabitFrequency('daily')}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitFrequency === 'daily'
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            Daily
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHabitFrequency('weekly')}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitFrequency === 'weekly'
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            Weekly
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Priority</label>
+                      <div className="flex flex-wrap gap-2">
+                        {(['A', 'B', 'C', 'D', 'E'] as const).map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setHabitPriority(value)}
+                            className={cn(
+                              'px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-[0.12em] border transition-all',
+                              habitPriority === value
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                            )}
+                          >
+                            {value}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
@@ -1104,30 +1131,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                       </div>
                     )}
 
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => songFileInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] hover:bg-surface-container-high transition-colors active:scale-95"
-                      >
-                        {habitSongName ? '✓ Song Loaded' : 'Upload song'}
-                      </button>
-                      <input
-                        ref={songFileInputRef}
-                        type="file"
-                        accept="audio/*"
-                        title="Upload reminder song"
-                        onChange={(e) => handleSongUpload(e.target.files?.[0])}
-                        className="hidden"
-                      />
-                      {habitSongName && (
-                        <p className="text-xs text-primary mt-2 font-semibold">📌 {habitSongName}</p>
-                      )}
-                    </div>
-
                     <button
                       onClick={() => createHabitForLayer(activeLayer.id)}
-                      disabled={!habitName.trim() || !habitSongDataUrl}
+                      disabled={!habitName.trim()}
                       className="w-full rounded-full bg-gradient-to-br from-primary to-primary-container text-white py-3 px-6 font-label font-bold text-xs uppercase tracking-[0.12em] disabled:opacity-50 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95"
                     >
                       Save Habit + Loop Task

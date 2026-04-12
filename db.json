@@ -25,9 +25,16 @@
           "notifications": {
             "taskReminders": true,
             "dailyScripture": true,
-            "streakProtection": false
+            "streakProtection": true
           },
-          "mostRepeatedTasks": []
+          "mostRepeatedTasks": [
+            {
+              "name": "Read scripture day 1|spiritual",
+              "layerId": "spiritual",
+              "priority": "B",
+              "count": 1
+            }
+          ]
         },
         "role": "admin"
       },
@@ -89,15 +96,30 @@
         }
       ],
       "habits": [],
-      "tasks": [],
+      "tasks": [
+        {
+          "id": "daily-bible-reading-task",
+          "name": "Read Scripture (Day 1)",
+          "layerId": "spiritual",
+          "priority": "B",
+          "repeat": "daily",
+          "time": "06:30",
+          "completed": false,
+          "date": "2026-04-12T00:31:53.434Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Scripture Reflection"
+        }
+      ],
       "journal": [],
       "bibleReading": {
         "day": 1,
-        "totalDays": 400,
+        "totalDays": 365,
         "highestCompletedDay": 0,
-        "passage": "Genesis 1:1-5",
-        "text": "In the beginning God created the heavens and the earth.",
-        "completed": false
+        "passage": "John 1; Psalm 1",
+        "text": "Today's reading: John 1; Psalm 1",
+        "completed": false,
+        "currentStreak": 0,
+        "lastCompletedDate": ""
       },
       "dailyTaskGoal": 9
     },
@@ -189,7 +211,20 @@
         }
       ],
       "habits": [],
-      "tasks": [],
+      "tasks": [
+        {
+          "id": "tg-1775941099310-9df21",
+          "name": "Sleeping",
+          "layerId": "spiritual",
+          "priority": "A",
+          "repeat": "once",
+          "time": "22:00",
+          "completed": false,
+          "date": "2026-04-11T20:58:19.311Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth"
+        }
+      ],
       "journal": [],
       "bibleReading": {
         "day": 18,
@@ -199,23 +234,26 @@
         "text": "And put my cup, the silver cup, in the sack's mouth of the youngest, and his grain money. And he did according to the word that Joseph had spoken.",
         "completed": true
       },
-      "dailyTaskGoal": 9
+      "dailyTaskGoal": 9,
+      "preferences": {
+        "telegramChatId": "7875504612"
+      }
     }
   },
   "sessions": {},
   "telegram": {
-    "offset": 146642140,
+    "offset": 146642158,
     "byChatId": {
       "7875504612": {
         "tasks": [],
-        "userId": "admin-root",
+        "userId": "kelylo.ing@gmail.com",
         "defaults": {
           "preferredMusic": "Instrumental Warmth",
-          "alarmSound": "Aggressive Bell",
           "repeat": "once",
           "layerId": "general",
           "priority": "C",
-          "time": "08:00"
+          "time": "08:00",
+          "alarmSound": "Aggressive Bell"
         }
       }
     },
@@ -239,11 +277,14 @@
       "admin-root|task-1775928179848|2026-04-11T17:25|alarm": "2026-04-11T17:25:17.861Z",
       "7875504612|tg-1775928616793-d088b|2026-04-11T17:32": "2026-04-11T17:31:03.886Z",
       "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|reminder": "2026-04-11T17:32:17.935Z",
-      "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|alarm": "2026-04-11T17:37:19.678Z"
+      "admin-root|tg-1775928616793-d088b|2026-04-11T17:37|alarm": "2026-04-11T17:37:19.678Z",
+      "7875504612|tg-1775941099310-9df21|2026-04-11T20:55": "2026-04-11T20:58:21.723Z",
+      "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|reminder": "2026-04-11T20:58:25.424Z",
+      "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|alarm": "2026-04-11T21:00:00.568Z"
     },
     "poller": {
-      "ownerId": "7364-7ac411",
-      "updatedAt": "2026-04-11T20:27:51.099Z"
+      "ownerId": "20880-ffacc2",
+      "updatedAt": "2026-04-12T00:34:17.896Z"
     }
   }
 }

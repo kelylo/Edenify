@@ -77,7 +77,12 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
           </div>
 
           <button
-            onClick={() => onToggleComplete(!completedToday)}
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onToggleComplete(!completedToday);
+            }}
             className={cn(
               'flex items-center justify-center w-10 h-10 rounded-full transition-all flex-shrink-0',
               completedToday

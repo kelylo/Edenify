@@ -292,7 +292,7 @@ function getProactiveNudge(profile: UserProfile): string {
   const part = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const base = [
     `How can I support your ${part}?`,
-    'Want to set one high-impact task now?',
+,
     'Would a 25-minute focus block help right now?',
     'What small win can you complete in the next hour?',
   ];

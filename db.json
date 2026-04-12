@@ -1,5 +1,34 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": "kelylo.ing@gmail.com",
+      "email": "kelylo.ing@gmail.com",
+      "name": "Admin",
+      "role": "admin",
+      "avatar": "https://lh3.googleusercontent.com/aida-public/AB6AXuBcC3JJ6pbiJ4huGdQErp1HqdYXv5QSjjUVdzI5yxMSvCafZOcDElC70vwyd1yvnWQJIkA3SA3qV0hrcU_2aR21a_vYyL4__c5Vk5BMJnULE5kBRr0MVHbedGwSryNzECh11wQ0Gi7A4JRh44ZzxgSYBaozjBW6k6SNLpmcSxQ7sgHqQD_F8t7emA54L4Bk0Efhy-NicS6SGD4bOAOYC_NXfIGeo24tsTpoM26uqQn9erV_qKz6719c8vYXXpA-hWjbbQBp-e6tPA",
+      "preferences": {
+        "focusDuration": 25,
+        "shortBreakDuration": 5,
+        "longBreakDuration": 15,
+        "focusSound": "Rain Forest",
+        "focusAlarmSound": "",
+        "bibleReminderTime": "06:30 AM",
+        "bibleReminderAlarm": true,
+        "bibleReminderTelegram": true,
+        "telegramChatId": "7875504612",
+        "customFocusSongName": "",
+        "customFocusSongDataUrl": "",
+        "customFocusPlaylistNames": [],
+        "customFocusPlaylistDataUrls": [],
+        "shuffleFocusPlaylist": false,
+        "notifications": {
+          "taskReminders": true,
+          "dailyScripture": true,
+          "streakProtection": false
+        }
+      }
+    }
+  ],
   "data": {
     "kelylo.ing@gmail.com": {
       "user": {
@@ -34,7 +63,8 @@
               "priority": "B",
               "count": 1
             }
-          ]
+          ],
+          "readingPlanStartDate": "2026-04-12"
         },
         "role": "admin"
       },
@@ -105,7 +135,7 @@
           "repeat": "daily",
           "time": "06:30",
           "completed": false,
-          "date": "2026-04-12T00:31:53.434Z",
+          "date": "2026-04-12T01:52:59.277Z",
           "alarmEnabled": true,
           "preferredMusic": "Scripture Reflection"
         }
@@ -240,12 +270,34 @@
       }
     }
   },
-  "sessions": {},
+  "sessions": {
+    "sess-1775956393202-daff82eb": {
+      "userId": "kelylo.ing@gmail.com",
+      "createdAt": "2026-04-12T01:13:13.202Z"
+    },
+    "sess-1775958778085-7eb75a69": {
+      "userId": "kelylo.ing@gmail.com",
+      "createdAt": "2026-04-12T01:52:58.085Z"
+    }
+  },
   "telegram": {
-    "offset": 146642158,
+    "offset": 146642184,
     "byChatId": {
       "7875504612": {
-        "tasks": [],
+        "tasks": [
+          {
+            "id": "tg-1775960388569-585a4",
+            "name": "qwertyuikjhgfds",
+            "layerId": "spiritual",
+            "priority": "A",
+            "repeat": "once",
+            "time": "03:35",
+            "completed": false,
+            "date": "2026-04-12T02:19:48.569Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
+          }
+        ],
         "userId": "kelylo.ing@gmail.com",
         "defaults": {
           "preferredMusic": "Instrumental Warmth",
@@ -283,8 +335,8 @@
       "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|alarm": "2026-04-11T21:00:00.568Z"
     },
     "poller": {
-      "ownerId": "20880-ffacc2",
-      "updatedAt": "2026-04-12T00:38:44.040Z"
+      "ownerId": "23192-10044a",
+      "updatedAt": "2026-04-12T02:21:29.993Z"
     }
   }
 }

@@ -97,8 +97,12 @@ export const sendTelegramNotification = async (
   body: string
 ): Promise<boolean> => {
   if (!chatId || !chatId.trim()) {
+    console.debug('[Telegram] Skipped - no chat ID provided');
     return false;
   }
+
+  const normalizedChatId = chatId.trim();
+  console.log('[Telegram] Sending notification:', { chatId: normalizedChatId, title, bodyLen: body.length });
 
   try {
     const response = await fetch('/api/telegram/notify', {
@@ -107,15 +111,23 @@ export const sendTelegramNotification = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        chatId: chatId.trim(),
+        chatId: normalizedChatId,
         message: `📋 *${title}*\n\n${body}`,
       }),
     });
 
     const data = await response.json();
-    return response.ok && data?.success === true;
+    const success = response.ok && data?.success === true;
+    
+    if (success) {
+      console.log('[Telegram] Successfully sent');
+    } else {
+      console.warn('[Telegram] Failed - response:', { status: response.status, data });
+    }
+    
+    return success;
   } catch (error) {
-    console.warn('Failed to send Telegram notification:', error);
+    console.warn('[Telegram] Error sending notification:', error);
     return false;
   }
 };
@@ -132,14 +144,18 @@ export const sendCrossChannelNotification = async (
     telegram: false,
   };
 
+  console.log('[Notifications] sendCrossChannelNotification:', { title: payload.title, hasTelegram: !!telegramChatId });
+
   // Send system notification
   if('Notification' in window && Notification.permission === 'granted') {
     try {
       await sendSystemNotification(payload);
       results.system = true;
     } catch (error) {
-      console.warn('System notification failed:', error);
+      console.warn('[Notifications] System notification failed:', error);
     }
+  } else {
+    console.debug('[Notifications] System notifications not available or not granted');
   }
 
   // Send Telegram notification
@@ -152,8 +168,10 @@ export const sendCrossChannelNotification = async (
       );
       results.telegram = success;
     } catch (error) {
-      console.warn('Telegram notification failed:', error);
+      console.warn('[Notifications] Telegram notification failed:', error);
     }
+  } else {
+    console.debug('[Notifications] No Telegram chat ID provided');
   }
 
   return results;

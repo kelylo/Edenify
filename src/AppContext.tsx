@@ -343,36 +343,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let cancelled = false;
 
     const hydrateBiblePlanState = async () => {
-      const totalDays = await getTotalReadingDays();
-      const highest = Math.min(totalDays, Math.max(0, bibleReading.highestCompletedDay || 0));
-      const todayKey = getLocalDateKey();
-      const startKey = user?.preferences?.readingPlanStartDate || todayKey;
-      const elapsedDays = Math.max(0, getDayDiff(startKey, todayKey));
-      const timelineDay = Math.min(totalDays, elapsedDays + 1);
-      const targetDay = Math.max(1, timelineDay);
-      const reading = await getDayReading(targetDay);
-      if (cancelled) return;
+      try {
+        const totalDays = await getTotalReadingDays();
+        console.log('[Bible] Total reading days:', totalDays);
+        
+        const highest = Math.min(totalDays, Math.max(0, bibleReading.highestCompletedDay || 0));
+        const todayKey = getLocalDateKey();
+        const startKey = user?.preferences?.readingPlanStartDate || todayKey;
+        const elapsedDays = Math.max(0, getDayDiff(startKey, todayKey));
+        const timelineDay = Math.min(totalDays, elapsedDays + 1);
+        const targetDay = Math.max(1, timelineDay);
+        
+        console.log('[Bible] Fetching reading for day:', targetDay, 'start:', startKey, 'today:', todayKey);
+        
+        const reading = await getDayReading(targetDay);
+        
+        console.log('[Bible] Fetched reading:', { day: targetDay, passage: reading.passage, text: reading.text });
+        
+        if (cancelled) return;
 
-      setBibleReading((prev) => {
-        if (
-          prev.totalDays === totalDays &&
-          prev.day === targetDay &&
-          prev.highestCompletedDay === highest &&
-          prev.passage === reading.passage &&
-          prev.text === reading.text
-        ) {
-          return prev;
-        }
+        setBibleReading((prev) => {
+          if (
+            prev.totalDays === totalDays &&
+            prev.day === targetDay &&
+            prev.highestCompletedDay === highest &&
+            prev.passage === reading.passage &&
+            prev.text === reading.text
+          ) {
+            return prev;
+          }
 
-        return {
-          ...prev,
-          totalDays,
-          day: targetDay,
-          highestCompletedDay: highest,
-          passage: reading.passage,
-          text: reading.text,
-        };
-      });
+          console.log('[Bible] Updating reading state');
+          
+          return {
+            ...prev,
+            totalDays,
+            day: targetDay,
+            highestCompletedDay: highest,
+            passage: reading.passage,
+            text: reading.text,
+          };
+        });
+      } catch (error) {
+        console.error('[Bible] Error hydrating Bible plan:', error);
+      }
     };
 
     void hydrateBiblePlanState();
@@ -453,13 +467,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Save to localStorage on change
   useEffect(() => {
     const accountKey = getAccountKey(user);
-    const sanitizedUser = sanitizeUserForPersistence(user);
-    const sanitizedTasks = tasks.map(sanitizeTaskForPersistence);
-    const statePayload = {
-      user: sanitizedUser,
+    const localCacheUser = sanitizeUserForPersistence(user);
+    const localCacheTasks = tasks.map(sanitizeTaskForPersistence);
+    const localCacheStatePayload = {
+      user: localCacheUser,
       layers,
       habits,
-      tasks: sanitizedTasks,
+      tasks: localCacheTasks,
+      journal,
+      bibleReading,
+      dailyTaskGoal,
+    };
+    const cloudStatePayload = {
+      user,
+      layers,
+      habits,
+      tasks,
       journal,
       bibleReading,
       dailyTaskGoal,
@@ -467,7 +490,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       // Keep browser cache without persisted user identity.
-      localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...statePayload, user: null }));
+      localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...localCacheStatePayload, user: null }));
     } catch (error) {
       console.warn('Local cache save skipped (likely storage quota reached):', error);
     }
@@ -477,16 +500,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!hasCompletedInitialCloudSyncRef.current) return;
         if (applyingCloudStateRef.current) return;
 
-        const supabaseSaved = await saveUserState(accountKey, statePayload);
+        const supabaseSaved = await saveUserState(accountKey, cloudStatePayload);
         if (!supabaseSaved) {
-          const backendSaved = await saveBackendUserState(accountKey, statePayload);
+          const backendSaved = await saveBackendUserState(accountKey, cloudStatePayload);
           if (backendSaved) {
-            lastCloudStateHashRef.current = JSON.stringify(statePayload);
+            lastCloudStateHashRef.current = JSON.stringify(cloudStatePayload);
           }
           return;
         }
 
-        lastCloudStateHashRef.current = JSON.stringify(statePayload);
+        lastCloudStateHashRef.current = JSON.stringify(cloudStatePayload);
       };
 
       syncState();

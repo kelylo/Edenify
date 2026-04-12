@@ -396,13 +396,15 @@ const Home: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
+    console.log('[Reminder] Event triggered:', { title, detail, hasTelegram: !!user?.preferences.telegramChatId });
+
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
 
     // Send cross-channel notifications (system + Telegram)
     if (areNotificationsEnabled() || user?.preferences.telegramChatId) {
       try {
-        await sendCrossChannelNotification(
+        const results = await sendCrossChannelNotification(
           {
             title: title,
             body: detail,
@@ -411,9 +413,12 @@ const Home: React.FC = () => {
           },
           user?.preferences.telegramChatId
         );
+        console.log('[Reminder] Notification results:', results);
       } catch (error) {
-        console.warn('Failed to send notifications:', error);
+        console.warn('[Reminder] Failed to send notifications:', error);
       }
+    } else {
+      console.debug('[Reminder] Skipped notifications - not enabled and no telegram');
     }
   };
 
@@ -913,13 +918,19 @@ const Home: React.FC = () => {
   }, [refreshOperationalStatus]);
 
   useEffect(() => {
-    if (!user?.preferences.notifications.dailyScripture) return;
-    if (!user?.preferences.bibleReminderTime) return;
+    if (!user) return;
+    if (!user.preferences.notifications.dailyScripture) return;
+    if (!user.preferences.bibleReminderTime) return;
 
-    const normalized = user.preferences.bibleReminderTime.trim().toUpperCase();
+    const preferredTime = String(user.preferences.bibleReminderTime).trim();
+    const normalized = preferredTime.toUpperCase();
     const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
     const match24 = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match12 && !match24) return;
+    
+    if (!match12 && !match24) {
+      console.warn('[Bible Reminder] Invalid time format:', preferredTime);
+      return;
+    }
 
     let hours = 0;
     let minutes = 0;
@@ -943,36 +954,49 @@ const Home: React.FC = () => {
     }
 
     const delay = Math.max(500, nextReminder.getTime() - now.getTime());
+    const nextReminderStr = nextReminder.toLocaleString();
+    console.log(`[Bible Reminder] Scheduled for ${nextReminderStr} (in ${Math.round(delay / 1000 / 60)} minutes)`);
+
     if (bibleReminderTimeoutRef.current) {
       window.clearTimeout(bibleReminderTimeoutRef.current);
       bibleReminderTimeoutRef.current = null;
     }
 
     bibleReminderTimeoutRef.current = window.setTimeout(async () => {
-      const dateKey = format(new Date(), 'yyyy-MM-dd');
-      if (bibleReminderTriggeredDateRef.current === dateKey) return;
-      bibleReminderTriggeredDateRef.current = dateKey;
+      try {
+        const dateKey = format(new Date(), 'yyyy-MM-dd');
+        if (bibleReminderTriggeredDateRef.current === dateKey) {
+          console.log('[Bible Reminder] Skipped (already triggered today)');
+          return;
+        }
+        bibleReminderTriggeredDateRef.current = dateKey;
 
-      pushReminderEvent('Bible reminder', `Day ${bibleReading.day}: ${bibleReading.passage}`);
+        console.log('[Bible Reminder] Firing at', new Date().toLocaleString());
+        
+        // Use current bibleReading state at callback time
+        pushReminderEvent('Bible reminder', `Day ${bibleReading.day}: ${bibleReading.passage}`);
 
-      await tryBrowserNotification('Edenify Bible Reading', `Day ${bibleReading.day}: ${bibleReading.passage}`);
+        await tryBrowserNotification('Edenify Bible Reading', `Day ${bibleReading.day}: ${bibleReading.passage}`);
 
-      if (user.preferences.bibleReminderAlarm) {
-        setAlarmTask({
-          id: `bible-reminder-${Date.now()}`,
-          name: `Bible Reading Day ${bibleReading.day}`,
-          layerId: 'spiritual',
-          priority: 'B',
-          repeat: 'daily',
-          time: user.preferences.bibleReminderTime || '06:30 AM',
-          completed: false,
-          date: new Date().toISOString(),
-          alarmEnabled: true,
-          preferredMusic: 'Instrumental Warmth',
-        });
-        setAlarmOpen(true);
+        // Check current user preferences at callback time
+        if (user?.preferences.bibleReminderAlarm) {
+          setAlarmTask({
+            id: `bible-reminder-${Date.now()}`,
+            name: `Bible Reading Day ${bibleReading.day}`,
+            layerId: 'spiritual',
+            priority: 'B',
+            repeat: 'daily',
+            time: user.preferences.bibleReminderTime || '06:30 AM',
+            completed: false,
+            date: new Date().toISOString(),
+            alarmEnabled: true,
+            preferredMusic: 'Instrumental Warmth',
+          });
+          setAlarmOpen(true);
+        }
+      } catch (err) {
+        console.error('[Bible Reminder] Error during execution:', err);
       }
-
     }, delay);
 
     return () => {
@@ -982,6 +1006,7 @@ const Home: React.FC = () => {
       }
     };
   }, [
+    user?.id,
     user?.preferences.notifications.dailyScripture,
     user?.preferences.bibleReminderTime,
     user?.preferences.bibleReminderAlarm,

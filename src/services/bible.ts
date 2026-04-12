@@ -175,11 +175,15 @@ function parsePlanTextToMap(text: string): Record<number, string> {
  * Load the preset day reading plan, preferring bible-plan.json.
  */
 async function loadReadingPlan(): Promise<Record<number, string>> {
-  if (planLoaded && readingPlan) return readingPlan;
+  if (planLoaded && readingPlan) {
+    console.log('[Bible Plan] Using cached plan with', Object.keys(readingPlan).length, 'days');
+    return readingPlan;
+  }
 
   try {
+    console.log('[Bible Plan] Fetching /data/bible-plan.json...');
     const response = await fetch('/data/bible-plan.json');
-    if (!response.ok) throw new Error('bible-plan.json not found');
+    if (!response.ok) throw new Error(`bible-plan.json not found (status: ${response.status})`);
     const data = await response.json() as { readings: Record<string, { passages: string }> };
 
     readingPlan = {};
@@ -188,10 +192,14 @@ async function loadReadingPlan(): Promise<Record<number, string>> {
       readingPlan![Number(day)] = reading.passages;
     });
 
+    const dayCount = Object.keys(readingPlan).length;
+    console.log('[Bible Plan] Loaded successfully with', dayCount, 'days');
+    console.log('[Bible Plan] Sample days:', Object.keys(readingPlan).slice(0, 3).map(d => `Day ${d}: ${readingPlan![Number(d)]}`).join(', '));
+
     planLoaded = true;
     return readingPlan || {};
   } catch (error) {
-    console.warn('Could not load reading plan from /data/bible-plan.json:', error);
+    console.warn('[Bible Plan] Could not load reading plan from /data/bible-plan.json:', error);
     planLoaded = true;
     return {};
   }
@@ -205,14 +213,19 @@ export async function getDayReading(day: number): Promise<BibleDayReading> {
   const totalDays = Math.max(1, Object.keys(plan).length || 365);
   const safeDay = Math.min(totalDays, Math.max(1, day));
 
+  console.log('[getDayReading] day:', day, 'safeDay:', safeDay, 'planLoaded:', Object.keys(plan).length > 0);
+
   if (plan[safeDay]) {
-    return {
+    const result = {
       passage: plan[safeDay],
       text: `Today's reading: ${plan[safeDay]}`,
       context: `Day ${safeDay} of the reading plan.`
     };
+    console.log('[getDayReading] Found in plan:', result.passage);
+    return result;
   }
 
+  console.warn('[getDayReading] Not found in plan for day', safeDay);
   return {
     passage: `Day ${safeDay} unavailable`,
     text: 'Reading plan entry is missing for this day.',

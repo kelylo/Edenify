@@ -747,11 +747,100 @@ async function processBackgroundTaskReminders(dbPath: string) {
   }
 }
 
+function parseBibleReminderTime(timeStr: string): { hours: number; minutes: number } | null {
+  if (!timeStr) return null;
+  
+  const normalized = String(timeStr).trim().replace(/\s+/g, ' ').toUpperCase();
+  const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
+  const match24 = normalized.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
+
+  if (match12) {
+    let hours = Number(match12[1]);
+    const minutes = Number(match12[2]);
+    const period = match12[3];
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return { hours, minutes };
+  }
+
+  if (match24) {
+    return { hours: Number(match24[1]), minutes: Number(match24[2]) };
+  }
+
+  return null;
+}
+
+async function processBibleReminders(db: DbShape, token: string, now: Date) {
+  let changed = false;
+  const nowMs = now.getTime();
+
+  // Process Bible reminders for each user with Telegram linked
+  for (const [chatId, store] of Object.entries(db.telegram?.byChatId || {})) {
+    const userId = store?.userId;
+    if (!userId) continue;
+
+    const userData = db.data?.[userId];
+    if (!userData) continue;
+
+    const prefs = userData.user?.preferences;
+    if (!prefs?.bibleReminderTelegram || !prefs?.bibleReminderTime) continue;
+
+    // Parse the reminder time
+    const parsedTime = parseBibleReminderTime(prefs.bibleReminderTime);
+    if (!parsedTime) {
+      console.warn(`[Bible Reminder] Invalid time format for user ${userId}: ${prefs.bibleReminderTime}`);
+      continue;
+    }
+
+    // Calculate the next reminder moment
+    const reminderMoment = new Date(now);
+    reminderMoment.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+
+    // If the time has already passed today, it's tomorrow
+    if (reminderMoment.getTime() <= now.getTime()) {
+      reminderMoment.setDate(reminderMoment.getDate() + 1);
+    }
+
+    // Generate a key for this reminder (day-based to avoid multiple per day)
+    const dateKey = now.toISOString().slice(0, 10);
+    const reminderKey = `${chatId}|bible-reminder|${dateKey}`;
+
+    // Check if we're within the window to send (60 seconds before to 60 seconds after)
+    const delta = reminderMoment.getTime() - now.getTime();
+    const isTimeToSend = delta <= 60 * 1000 && delta >= -60 * 1000;
+
+    if (!isTimeToSend) {
+      // Not yet time for the reminder
+      continue;
+    }
+
+    // Check if we've already sent this reminder today
+    if (db.telegram?.reminders?.[reminderKey]) {
+      continue;
+    }
+
+    // Get the current Bible reading
+    const reading = userData.bibleReading || { day: 1, passage: 'Bible Reading' };
+    const message = `📖 *Daily Scripture* (Day ${reading.day})\n\n${reading.passage}\n\n_Time to read your daily Bible passage._`;
+
+    try {
+      console.log(`[Bible Reminder] Sending to ${chatId} at ${now.toLocaleString()}`);
+      await sendTelegramMessage(token, chatId, message);
+      db.telegram!.reminders![reminderKey] = now.toISOString();
+      changed = true;
+    } catch (error) {
+      console.error(`[Bible Reminder] Failed to send for user ${userId}:`, error);
+    }
+  }
+
+  return changed;
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 6001);
 
-  app.use(express.json());
+  app.use(express.json({ limit: '25mb' }));
 
   // Simple file-based DB
   const DB_PATH = path.join(process.cwd(), 'db.json');
@@ -1864,6 +1953,12 @@ async function startServer() {
               }
             }
           }
+        }
+
+        // Process Bible reminders from backend
+        const bibleReminderChanged = await processBibleReminders(db, token, now);
+        if (bibleReminderChanged) {
+          didChange = true;
         }
 
         if (didChange) {

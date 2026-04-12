@@ -33,6 +33,7 @@ interface WizardState {
   step: string;
   draft?: Partial<TelegramTask>;
   targetTaskId?: string;
+  invalidAttempts?: number;
 }
 
 interface TelegramDefaults {
@@ -1350,14 +1351,31 @@ async function startServer() {
           if (store.wizard.step === 'repeat') {
             const value = resolveNumberedChoice(text, repeatOptions) as RepeatMode | null;
             if (!value || !repeatOptions.includes(value)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid repeat entries. Defaults setup cancelled.\nUse /defaults to start over.');
+                clearWizard();
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, `Invalid choice. Send a number from the list.\n${formatNumberedOptions(repeatOptions)}`);
             } else {
               store.defaults.repeat = value;
               store.wizard.step = 'time';
+              store.wizard.invalidAttempts = 0;
               await sendTelegramMessage(token, chatId, `Default setup 2/2: send default time in 24h format (example 08:00). Current: ${defaults.time}`);
             }
           } else if (store.wizard.step === 'time') {
             if (!isValidTaskTime(text)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid time entries. Defaults setup cancelled.\nUse /defaults to start over.');
+                clearWizard();
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, 'Invalid time. Use 24h format HH:mm (example 18:30).');
             } else {
               store.defaults.time = normalize24HourTime(text);
@@ -1368,6 +1386,14 @@ async function startServer() {
         } else if (store.wizard?.mode === 'delete' && store.wizard.step === 'choose') {
           const index = parseChoiceIndex(text, activeTasks.length);
           if (index < 0) {
+            store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+            if (store.wizard.invalidAttempts >= 4) {
+              await sendTelegramMessage(token, chatId, 'Too many invalid choices. Delete cancelled.\nUse /delete to start over.');
+              clearWizard();
+              db.telegram!.byChatId![chatId] = store;
+              db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+              continue;
+            }
             await sendTelegramMessage(token, chatId, 'Invalid choice. Send a number from the list or /cancel.');
           } else {
             const target = activeTasks[index];
@@ -1379,10 +1405,18 @@ async function startServer() {
           if (store.wizard.step === 'choose') {
             const index = parseChoiceIndex(text, activeTasks.length);
             if (index < 0) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid choices. Edit cancelled.\nUse /edit to start over.');
+                clearWizard();
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, 'Invalid choice. Send a number from the list or /cancel.');
             } else {
               const target = activeTasks[index];
-              store.wizard = { mode: 'edit', step: 'field', targetTaskId: target.id };
+              store.wizard = { mode: 'edit', step: 'field', targetTaskId: target.id, invalidAttempts: 0 };
               await sendTelegramMessage(token, chatId, 'What to edit? Choose number:\n1. name\n2. time\n3. repeat\n4. layer\n5. priority');
             }
           } else if (store.wizard.step === 'field') {
@@ -1391,9 +1425,18 @@ async function startServer() {
             const field = fieldByNumber >= 0 ? editFields[fieldByNumber] : text.toLowerCase();
             const valid = editFields;
             if (!valid.includes(field)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid field choices. Edit cancelled.\nUse /edit to start over.');
+                clearWizard();
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, 'Invalid field. Choose: 1.name 2.time 3.repeat 4.layer 5.priority');
             } else {
               store.wizard.step = `value:${field}`;
+              store.wizard.invalidAttempts = 0;
               if (field === 'repeat') {
                 await sendTelegramMessage(token, chatId, `Choose new repeat mode by number:\n${formatNumberedOptions(repeatOptions)}`);
               } else if (field === 'layer') {
@@ -1414,6 +1457,14 @@ async function startServer() {
               const next = { ...store.tasks[idx] };
               if (field === 'name') {
                 if (text.trim().length < 2) {
+                  store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+                  if (store.wizard.invalidAttempts >= 4) {
+                    await sendTelegramMessage(token, chatId, 'Too many invalid name entries. Edit cancelled.\nUse /edit to start over.');
+                    clearWizard();
+                    db.telegram!.byChatId![chatId] = store;
+                    db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                    continue;
+                  }
                   await sendTelegramMessage(token, chatId, 'Name is too short. Send at least 2 characters.');
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
@@ -1423,6 +1474,14 @@ async function startServer() {
               }
               if (field === 'time') {
                 if (!isValidTaskTime(text)) {
+                  store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+                  if (store.wizard.invalidAttempts >= 4) {
+                    await sendTelegramMessage(token, chatId, 'Too many invalid time entries. Edit cancelled.\nUse /edit to start over.');
+                    clearWizard();
+                    db.telegram!.byChatId![chatId] = store;
+                    db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                    continue;
+                  }
                   await sendTelegramMessage(token, chatId, 'Invalid time. Use 24h format HH:mm (example 18:30).');
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
@@ -1433,6 +1492,14 @@ async function startServer() {
               if (field === 'repeat') {
                 const value = resolveNumberedChoice(text, repeatOptions) as RepeatMode | null;
                 if (!value || !repeatOptions.includes(value)) {
+                  store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+                  if (store.wizard.invalidAttempts >= 4) {
+                    await sendTelegramMessage(token, chatId, 'Too many invalid repeat entries. Edit cancelled.\nUse /edit to start over.');
+                    clearWizard();
+                    db.telegram!.byChatId![chatId] = store;
+                    db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                    continue;
+                  }
                   await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(repeatOptions)}`);
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
@@ -1443,6 +1510,14 @@ async function startServer() {
               if (field === 'layer') {
                 const value = resolveNumberedChoice(text, layerOptions) as LayerId | null;
                 if (!value || !layerOptions.includes(value)) {
+                  store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+                  if (store.wizard.invalidAttempts >= 4) {
+                    await sendTelegramMessage(token, chatId, 'Too many invalid layer entries. Edit cancelled.\nUse /edit to start over.');
+                    clearWizard();
+                    db.telegram!.byChatId![chatId] = store;
+                    db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                    continue;
+                  }
                   await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(layerOptions)}`);
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
@@ -1453,6 +1528,14 @@ async function startServer() {
               if (field === 'priority') {
                 const value = resolveNumberedChoice(text.toUpperCase(), priorityOptions) as Priority | null;
                 if (!value || !priorityOptions.includes(value)) {
+                  store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+                  if (store.wizard.invalidAttempts >= 4) {
+                    await sendTelegramMessage(token, chatId, 'Too many invalid priority entries. Edit cancelled.\nUse /edit to start over.');
+                    clearWizard();
+                    db.telegram!.byChatId![chatId] = store;
+                    db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                    continue;
+                  }
                   await sendTelegramMessage(token, chatId, `Invalid choice.\n${formatNumberedOptions(priorityOptions)}`);
                   db.telegram!.byChatId![chatId] = store;
                   db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
@@ -1469,6 +1552,14 @@ async function startServer() {
           const draft = store.wizard.draft || {};
           if (store.wizard.step === 'name') {
             if (text.trim().length < 2) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Task name too short too many times. Task setup cancelled.\nUse /set to start over.');
+                store.wizard = undefined;
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 1,
@@ -1482,7 +1573,7 @@ async function startServer() {
               continue;
             }
             draft.name = text;
-            store.wizard = { ...store.wizard, step: 'time', draft };
+            store.wizard = { ...store.wizard, step: 'time', draft, invalidAttempts: 0 };
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 2,
@@ -1493,6 +1584,14 @@ async function startServer() {
             }));
           } else if (store.wizard.step === 'time') {
             if (!isValidTaskTime(text)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid time entries. Task setup cancelled.\nUse /set to start over.');
+                store.wizard = undefined;
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 2,
@@ -1506,7 +1605,7 @@ async function startServer() {
               continue;
             }
             draft.time = normalize24HourTime(text);
-            store.wizard = { ...store.wizard, step: 'repeat', draft };
+            store.wizard = { ...store.wizard, step: 'repeat', draft, invalidAttempts: 0 };
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 3,
@@ -1518,6 +1617,14 @@ async function startServer() {
           } else if (store.wizard.step === 'repeat') {
             const value = resolveNumberedChoice(text, repeatOptions) as RepeatMode | null;
             if (!value || !repeatOptions.includes(value)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid repeat entries. Task setup cancelled.\nUse /set to start over.');
+                store.wizard = undefined;
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 3,
@@ -1531,7 +1638,7 @@ async function startServer() {
               continue;
             }
             draft.repeat = value;
-            store.wizard = { ...store.wizard, step: 'layer', draft };
+            store.wizard = { ...store.wizard, step: 'layer', draft, invalidAttempts: 0 };
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 4,
@@ -1543,6 +1650,14 @@ async function startServer() {
           } else if (store.wizard.step === 'layer') {
             const value = resolveNumberedChoice(text, layerOptions) as LayerId | null;
             if (!value || !layerOptions.includes(value)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid layer entries. Task setup cancelled.\nUse /set to start over.');
+                store.wizard = undefined;
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 4,
@@ -1556,7 +1671,7 @@ async function startServer() {
               continue;
             }
             draft.layerId = value;
-            store.wizard = { ...store.wizard, step: 'priority', draft };
+            store.wizard = { ...store.wizard, step: 'priority', draft, invalidAttempts: 0 };
             await sendTelegramMessage(token, chatId, buildWizardCard({
               flow: 'TASK SETUP',
               step: 5,
@@ -1568,6 +1683,14 @@ async function startServer() {
           } else if (store.wizard.step === 'priority') {
             const value = resolveNumberedChoice(text.toUpperCase(), priorityOptions) as Priority | null;
             if (!value || !priorityOptions.includes(value)) {
+              store.wizard.invalidAttempts = (store.wizard.invalidAttempts || 0) + 1;
+              if (store.wizard.invalidAttempts >= 4) {
+                await sendTelegramMessage(token, chatId, 'Too many invalid priority entries. Task setup cancelled.\nUse /set to start over.');
+                store.wizard = undefined;
+                db.telegram!.byChatId![chatId] = store;
+                db.telegram!.offset = Math.max(db.telegram!.offset || 0, updateId);
+                continue;
+              }
               await sendTelegramMessage(token, chatId, buildWizardCard({
                 flow: 'TASK SETUP',
                 step: 5,

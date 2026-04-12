@@ -1,7 +1,6 @@
 import {
   chatWithEden,
   initializeEdenAgent,
-  maybeProactiveMessage,
   getAgentProfile,
   getRecentAgentConversations,
   getDailyBibleReading,
@@ -106,7 +105,6 @@ export async function recordFeedback(_conversationId: string, helpful: boolean, 
 export {
   chatWithEden,
   initializeEdenAgent,
-  maybeProactiveMessage,
   getDailyBibleReading,
   getEdenInsight,
   suggestTaskWithGemini,

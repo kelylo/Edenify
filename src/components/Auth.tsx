@@ -203,8 +203,39 @@ const Auth: React.FC = () => {
       return;
     }
 
-    setAuthError('Sign up is unavailable: Supabase is not configured for this environment.');
-    setIsLoading(false);
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const fallbackResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          password,
+        }),
+      });
+
+      const fallbackData = await fallbackResponse.json();
+      if (!fallbackResponse.ok || !fallbackData?.success || !fallbackData?.user) {
+        setAuthError(fallbackData?.error || 'Sign up failed.');
+        setIsLoading(false);
+        return;
+      }
+
+      const nextUser = buildUserFromAuth(
+        fallbackData.user.email || normalizedEmail,
+        fallbackData.user.email || normalizedEmail,
+        fullName || fallbackData.user.name || normalizedEmail.split('@')[0]
+      ) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
+
+      await bootstrapSession(nextUser);
+      setUser(nextUser);
+      setIsLoading(false);
+    } catch (error) {
+      setAuthError('Sign up failed. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   const handleReset = async (e: React.FormEvent) => {

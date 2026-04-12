@@ -43,11 +43,15 @@ self.addEventListener('notificationclick', (event) => {
   const url = event.notification.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
-      // Check if app window is already open
+      // Reuse existing app window and navigate it to the deep-link target.
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        if (client.url === url && 'focus' in client) {
-          return (client as WindowClient).focus();
+        if ('focus' in client) {
+          const windowClient = client as WindowClient;
+          if ('navigate' in windowClient) {
+            return windowClient.navigate(url).then((navigated) => navigated?.focus() || windowClient.focus());
+          }
+          return windowClient.focus();
         }
       }
       // Open new window if not open

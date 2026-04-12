@@ -81,9 +81,10 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
-      const custom = event as CustomEvent<{ tab?: string; layerId?: string }>;
+      const custom = event as CustomEvent<{ tab?: string; layerId?: string; taskId?: string }>;
       const tab = custom.detail?.tab;
       const layerId = custom.detail?.layerId;
+      const taskId = custom.detail?.taskId;
 
       if (tab) {
         setActiveTab(tab);
@@ -92,6 +93,13 @@ const AppContent: React.FC = () => {
       if (layerId) {
         setSelectedLayerId(layerId);
       }
+
+      if (taskId) {
+        setActiveTab('home');
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('edenify:focus-task', { detail: { taskId } }));
+        }, 120);
+      }
     };
 
     window.addEventListener('edenify:navigate', handleNavigate as EventListener);
@@ -99,6 +107,23 @@ const AppContent: React.FC = () => {
       window.removeEventListener('edenify:navigate', handleNavigate as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const taskId = params.get('taskId');
+
+    if (tab) {
+      setActiveTab(tab);
+    }
+
+    if (taskId) {
+      setActiveTab('home');
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('edenify:focus-task', { detail: { taskId } }));
+      }, 200);
+    }
+  }, [authReady]);
 
   useEffect(() => {
     if (authReady) {

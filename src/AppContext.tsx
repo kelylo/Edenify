@@ -183,6 +183,20 @@ const mergeTasksByIdentity = (
   return Array.from(merged.values());
 };
 
+const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | null> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
 
@@ -225,7 +239,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lastCloudStateHashRef = useRef('');
   const recentlyDeletedTaskIdsRef = useRef<Set<string>>(new Set());
   const deletionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const shouldUseLocalCacheRef = useRef(true);
 
   // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
   const setUser = (nextUser: User | null | ((prev: User | null) => User | null)) => {
@@ -325,8 +338,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user.preferences?.readingPlanStartDate) return;
 
     const today = getLocalDateKey();
-    const currentDay = Math.max(1, Number(bibleReading.day || 1));
-    const inferredStart = shiftDateKey(today, -(currentDay - 1));
 
     setUser((prev) => {
       if (!prev) return prev;
@@ -335,7 +346,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev,
         preferences: {
           ...prev.preferences,
-          readingPlanStartDate: inferredStart,
+          readingPlanStartDate: today,
         },
       };
     });
@@ -437,28 +448,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const pullFromCloud = async () => {
-      let remoteState = await loadUserState(accountKey);
-      if (!remoteState) {
-        remoteState = await loadBackendUserState(accountKey);
-      }
+      const [supabaseState, backendState] = await Promise.all([
+        withTimeout(loadUserState(accountKey), 2500),
+        withTimeout(loadBackendUserState(accountKey), 2500),
+      ]);
+
+      const remoteState = supabaseState || backendState;
       if (remoteState) {
         applyRemoteState(remoteState);
-      } else if (!cancelled && hasCompletedInitialCloudSyncRef.current) {
-        // Cloud pull failed or returned no data - fall back to localStorage for this account-scoped data
-        try {
-          const saved = localStorage.getItem(`edenify_state_${accountKey}`);
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed.layers) setLayers(parsed.layers);
-            if (parsed.habits) setHabits(parsed.habits);
-            if (parsed.tasks) setTasks(parsed.tasks);
-            if (parsed.journal) setJournal(parsed.journal);
-            if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
-            if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
-          }
-        } catch (error) {
-          console.warn('Failed to load localStorage fallback:', error);
-        }
       }
     };
 
@@ -475,7 +472,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     bootstrap();
     const intervalId = window.setInterval(() => {
       void pullFromCloud();
-    }, 10000);
+    }, 3000);
 
     return () => {
       cancelled = true;
@@ -810,13 +807,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const totalDays = await getTotalReadingDays();
     const day = Math.min(totalDays, Math.max(1, targetDay));
     const data = await getDayReading(day);
+    const today = getLocalDateKey();
     setBibleReading({
       day,
       totalDays,
       highestCompletedDay,
       passage: data.passage,
       text: data.text,
-      completed: day <= highestCompletedDay,
+      completed: bibleReading.lastCompletedDate === today,
       lastCompletedDate: bibleReading.lastCompletedDate || '',
       currentStreak: Math.max(0, Number(bibleReading.currentStreak || 0)),
     });
@@ -824,27 +822,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshBibleReading = async () => {
     const totalDays = await getTotalReadingDays();
-    const safeDay = Math.min(totalDays, Math.max(1, bibleReading.day));
-    const data = await getDayReading(safeDay);
     const today = getLocalDateKey();
+    const startKey = user?.preferences?.readingPlanStartDate || today;
+    const elapsedDays = Math.max(0, getDayDiff(startKey, today));
+    const safeDay = Math.min(totalDays, elapsedDays + 1);
+    const data = await getDayReading(safeDay);
     setBibleReading(prev => ({
       ...prev,
       day: safeDay,
       totalDays,
       passage: data.passage,
       text: data.text,
-      completed: prev.lastCompletedDate === today && safeDay <= prev.highestCompletedDay,
+      completed: prev.lastCompletedDate === today,
     }));
   };
 
   const goToBibleDay = async (targetDay: number) => {
     const totalDays = await getTotalReadingDays();
     const today = getLocalDateKey();
-    const completedToday = bibleReading.lastCompletedDate === today && bibleReading.completed;
-    const maxUnlockedDay = completedToday
-      ? bibleReading.highestCompletedDay
-      : Math.min(totalDays, bibleReading.highestCompletedDay + 1);
-    const bounded = Math.min(Math.max(maxUnlockedDay, bibleReading.day), Math.max(1, targetDay));
+    const startKey = user?.preferences?.readingPlanStartDate || today;
+    const elapsedDays = Math.max(0, getDayDiff(startKey, today));
+    const maxReadableDay = Math.min(totalDays, elapsedDays + 1);
+    const bounded = Math.min(maxReadableDay, Math.max(1, targetDay));
     await loadBibleDay(bounded, bibleReading.highestCompletedDay);
   };
 

@@ -27,6 +27,33 @@
           "streakProtection": false
         }
       }
+    },
+    {
+      "id": "verify+1269880683@example.com",
+      "email": "verify+1269880683@example.com",
+      "name": "verify+1269880683",
+      "role": "user",
+      "preferences": {
+        "focusDuration": 25,
+        "shortBreakDuration": 5,
+        "longBreakDuration": 15,
+        "focusSound": "Rain Forest",
+        "focusAlarmSound": "",
+        "bibleReminderTime": "06:30 AM",
+        "bibleReminderAlarm": true,
+        "bibleReminderTelegram": true,
+        "telegramChatId": "",
+        "customFocusSongName": "",
+        "customFocusSongDataUrl": "",
+        "customFocusPlaylistNames": [],
+        "customFocusPlaylistDataUrls": [],
+        "shuffleFocusPlaylist": false,
+        "notifications": {
+          "taskReminders": true,
+          "dailyScripture": true,
+          "streakProtection": false
+        }
+      }
     }
   ],
   "data": {
@@ -79,6 +106,12 @@
               "name": "Habit review plan|academic",
               "layerId": "academic",
               "priority": "C",
+              "count": 1
+            },
+            {
+              "name": "Sleep a little|physical",
+              "layerId": "physical",
+              "priority": "A",
               "count": 1
             }
           ],
@@ -182,7 +215,7 @@
           "repeat": "daily",
           "time": "06:30",
           "completed": false,
-          "date": "2026-04-12T02:29:04.392Z",
+          "date": "2026-04-12T07:17:19.902Z",
           "alarmEnabled": true,
           "preferredMusic": "Scripture Reflection"
         },
@@ -239,6 +272,18 @@
           "preferredMusic": "Instrumental Warmth",
           "estimatedDuration": 12,
           "durationStartedAt": "2026-04-12T02:23:25.373Z"
+        },
+        {
+          "id": "tg-1775977923891-d23bb",
+          "name": "Sleep a little",
+          "layerId": "physical",
+          "priority": "A",
+          "repeat": "once",
+          "time": "08:17",
+          "completed": false,
+          "date": "2026-04-12T07:12:03.892Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth"
         }
       ],
       "journal": [],
@@ -246,8 +291,8 @@
         "day": 1,
         "totalDays": 365,
         "highestCompletedDay": 0,
-        "passage": "John 1; Psalm 1",
-        "text": "Today's reading: John 1; Psalm 1",
+        "passage": "John 1; Psalms 1",
+        "text": "Today's reading: John 1; Psalms 1",
         "completed": false,
         "currentStreak": 0,
         "lastCompletedDate": ""
@@ -379,10 +424,14 @@
     "sess-1775958778085-7eb75a69": {
       "userId": "kelylo.ing@gmail.com",
       "createdAt": "2026-04-12T01:52:58.085Z"
+    },
+    "sess-1775979270591-eaae4ba4": {
+      "userId": "verify+1269880683@example.com",
+      "createdAt": "2026-04-12T07:34:30.592Z"
     }
   },
   "telegram": {
-    "offset": 146642186,
+    "offset": 146642194,
     "byChatId": {
       "7875504612": {
         "tasks": [
@@ -394,7 +443,7 @@
             "repeat": "daily",
             "time": "06:30",
             "completed": false,
-            "date": "2026-04-12T02:29:04.392Z",
+            "date": "2026-04-12T07:17:19.902Z",
             "alarmEnabled": true,
             "preferredMusic": "Scripture Reflection"
           },
@@ -445,6 +494,18 @@
             "date": "2026-04-12T02:23:25.373Z",
             "alarmEnabled": true,
             "preferredMusic": "Instrumental Warmth"
+          },
+          {
+            "id": "tg-1775977923891-d23bb",
+            "name": "Sleep a little",
+            "layerId": "physical",
+            "priority": "A",
+            "repeat": "once",
+            "time": "08:17",
+            "completed": false,
+            "date": "2026-04-12T07:12:03.892Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
           }
         ],
         "userId": "kelylo.ing@gmail.com",
@@ -488,11 +549,13 @@
       "7875504612|habit-task-habit-1775960605372|2026-04-12T02:20|due": "2026-04-12T02:24:19.801Z",
       "7875504612|habit-task-habit-1775960605372|2026-04-13T02:20|due": "2026-04-12T02:25:19.811Z",
       "7875504612|tg-1775960388569-585a4|2026-04-12T02:30": "2026-04-12T02:29:19.879Z",
-      "7875504612|tg-1775960388569-585a4|2026-04-12T02:30|due": "2026-04-12T02:34:14.474Z"
+      "7875504612|tg-1775960388569-585a4|2026-04-12T02:30|due": "2026-04-12T02:34:14.474Z",
+      "7875504612|tg-1775977923891-d23bb|2026-04-12T07:12": "2026-04-12T07:12:04.910Z",
+      "7875504612|tg-1775977923891-d23bb|2026-04-12T07:12|due": "2026-04-12T07:16:05.960Z"
     },
     "poller": {
       "ownerId": "23192-10044a",
-      "updatedAt": "2026-04-12T02:37:10.335Z"
+      "updatedAt": "2026-04-12T07:39:46.534Z"
     }
   }
 }

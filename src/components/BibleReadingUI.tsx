@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Circle, ChevronRight, BookOpen } from 'lucide-react';
+import { CheckCircle2, Circle, BookOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { getDayReading } from '../services/bible';
 
@@ -25,7 +25,6 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
 }) => {
   const [reading, setReading] = useState<ReadingData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [nextReading, setNextReading] = useState<ReadingData | null>(null);
 
   useEffect(() => {
     const loadReading = async () => {
@@ -36,15 +35,6 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
           day: currentDay,
           passages: today.passage,
         });
-
-        // Load next day preview (locked if not completed today)
-        if (completedToday) {
-          const tomorrow = await getDayReading(Math.min(365, currentDay + 1));
-          setNextReading({
-            day: Math.min(365, currentDay + 1),
-            passages: tomorrow.passage,
-          });
-        }
       } catch (error) {
         console.error('Failed to load Bible reading:', error);
       } finally {
@@ -53,7 +43,7 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
     };
 
     loadReading();
-  }, [currentDay, completedToday]);
+  }, [currentDay]);
 
   if (loading) {
     return (
@@ -123,38 +113,6 @@ export const BibleReadingUI: React.FC<BibleReadingUIProps> = ({
         </div>
       </div>
 
-      {/* Next Day Preview or Locked */}
-      {nextReading && (
-        <div className={cn(
-          'rounded-xl border-2 p-4 transition-all',
-          completedToday
-            ? 'border-primary/20 bg-primary/5'
-            : 'border-outline-variant/30 bg-surface-container-lowest opacity-60'
-        )}>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-secondary mb-2">
-                {completedToday ? 'Tomorrow' : 'Locked'}
-              </p>
-              {completedToday ? (
-                <>
-                  <p className="text-xs font-bold text-on-surface mb-2">
-                    Day {nextReading.day}
-                  </p>
-                  <p className="text-xs text-secondary font-mono">
-                    {nextReading.passages}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-secondary">
-                  Complete today to see tomorrow's reading
-                </p>
-              )}
-            </div>
-            {completedToday && <ChevronRight size={18} className="text-primary mt-1" />}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

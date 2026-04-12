@@ -203,12 +203,8 @@ const Auth: React.FC = () => {
       return;
     }
 
-    setTimeout(() => {
-      const nextUser = buildUserFromAuth(email || 'user@edenify.com', (email || 'user@edenify.com').trim().toLowerCase(), fullName || email.split('@')[0]) as { id: string; email: string; name: string; role?: 'admin' | 'user' };
-      bootstrapSession(nextUser);
-      setUser(nextUser);
-      setIsLoading(false);
-    }, 1500);
+    setAuthError('Sign up is unavailable: Supabase is not configured for this environment.');
+    setIsLoading(false);
   };
 
   const handleReset = async (e: React.FormEvent) => {
@@ -231,12 +227,8 @@ const Auth: React.FC = () => {
       return;
     }
 
-    setTimeout(() => {
-      alert(`Reset link sent to ${email}`);
-      setEmail('');
-      setMode('login');
-      setIsLoading(false);
-    }, 1500);
+    setAuthError('Password reset is unavailable: Supabase is not configured for this environment.');
+    setIsLoading(false);
   };
 
   const resetForm = () => {

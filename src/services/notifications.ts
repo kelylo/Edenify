@@ -8,6 +8,7 @@ export interface NotificationPayload {
   body: string;
   icon?: string;
   tag?: string; // For browser notification deduplication
+  taskId?: string;
 }
 
 /**
@@ -47,6 +48,10 @@ export const sendSystemNotification = async (payload: NotificationPayload): Prom
   }
 
   try {
+    const targetUrl = payload.taskId
+      ? `/?tab=home&taskId=${encodeURIComponent(payload.taskId)}`
+      : '/';
+
     // Prefer service-worker notifications when available for better background reliability.
     if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.ready.catch(() => null);
@@ -59,7 +64,7 @@ export const sendSystemNotification = async (payload: NotificationPayload): Prom
           renotify: true,
           vibrate: [240, 120, 240],
           requireInteraction: false,
-          data: { url: '/' },
+          data: { url: targetUrl, taskId: payload.taskId || null },
         });
         return;
       }
@@ -81,6 +86,9 @@ export const sendSystemNotification = async (payload: NotificationPayload): Prom
     // Bring app to focus when notification is clicked
     notification.onclick = () => {
       window.focus();
+      if (payload.taskId) {
+        window.location.href = targetUrl;
+      }
       notification.close();
     };
   } catch (error) {

@@ -45,12 +45,17 @@ function getFutureDue(task: Task, nowMs: number) {
   return reminderDue;
 }
 
-function buildNativeAlarms(tasks: Task[]): NativeAlarmItem[] {
+function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
   const nowMs = Date.now();
   const items: NativeAlarmItem[] = [];
 
   tasks.forEach((task) => {
     if (task.completed || task.alarmEnabled === false) return;
+
+    const isBibleTask = task.id === 'daily-bible-reading-task';
+    const taskReminderEnabled = Boolean(user.preferences.notifications.taskReminders);
+    const bibleReminderEnabled = Boolean(user.preferences.notifications.dailyScripture) && Boolean(user.preferences.bibleReminderAlarm ?? true);
+    if (!taskReminderEnabled && !(isBibleTask && bibleReminderEnabled)) return;
 
     const dueDate = getFutureDue(task, nowMs);
     if (!dueDate) return;
@@ -134,9 +139,8 @@ async function syncElectronAlarms(items: NativeAlarmItem[]) {
 
 export async function syncNativeTaskAlarms(tasks: Task[], user: User | null) {
   if (!user) return;
-  if (!user.preferences.notifications.taskReminders) return;
 
-  const items = buildNativeAlarms(tasks);
+  const items = buildNativeAlarms(tasks, user);
   if (items.length === 0) return;
 
   if (isNativeMobileShell()) {

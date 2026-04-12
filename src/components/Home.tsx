@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximiz
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight,suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
-import { sendCrossChannelNotification, areNotificationsEnabled } from '../services/notifications';
+import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync } from '../services/notifications';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
 import { LayerId, Task } from '../types';
@@ -137,6 +137,7 @@ const Home: React.FC = () => {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
 
   const [readingSuggestion, setReadingSuggestion] = useState('');
   const [scripturePages, setScripturePages] = useState<BibleVerse[][]>([]);
@@ -206,12 +207,12 @@ const Home: React.FC = () => {
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
-  const maxBibleDay = Math.max(
-    bibleReading.day,
-    completedToday
-      ? bibleReading.highestCompletedDay
-      : Math.min(bibleReading.totalDays, bibleReading.highestCompletedDay + 1)
-  );
+  const readingStartDate = user?.preferences?.readingPlanStartDate || todayDateKey;
+  const readingElapsedMs = new Date(`${todayDateKey}T00:00:00`).getTime() - new Date(`${readingStartDate}T00:00:00`).getTime();
+  const readingElapsedDays = Number.isFinite(readingElapsedMs)
+    ? Math.max(0, Math.floor(readingElapsedMs / (24 * 60 * 60 * 1000)))
+    : 0;
+  const maxBibleDay = Math.max(1, Math.min(bibleReading.totalDays, readingElapsedDays + 1));
   const canNavigateBible = true;
   const notificationsEnabled = Boolean(
     user?.preferences.notifications.taskReminders &&
@@ -388,7 +389,7 @@ const Home: React.FC = () => {
     }
   };
 
-  const pushReminderEvent = async (title: string, detail: string) => {
+  const pushReminderEvent = async (title: string, detail: string, taskId?: string) => {
     const item = {
       id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
       title,
@@ -410,6 +411,7 @@ const Home: React.FC = () => {
             body: detail,
             icon: '/edenify-logo.png',
             tag: `reminder-${item.id}`,
+            taskId,
           },
           user?.preferences.telegramChatId
         );
@@ -421,6 +423,43 @@ const Home: React.FC = () => {
       console.debug('[Reminder] Skipped notifications - not enabled and no telegram');
     }
   };
+
+  const getTaskCardDomId = useCallback((taskId: string) => `task-card-${encodeURIComponent(taskId)}`, []);
+
+  const focusTaskFromNotification = useCallback((taskId: string) => {
+    setFocusedTaskId(taskId);
+    window.setTimeout(() => {
+      const element = document.getElementById(getTaskCardDomId(taskId));
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 140);
+  }, [getTaskCardDomId]);
+
+  useEffect(() => {
+    const handleFocusTask = (event: Event) => {
+      const custom = event as CustomEvent<{ taskId?: string }>;
+      const taskId = custom.detail?.taskId;
+      if (!taskId) return;
+      focusTaskFromNotification(taskId);
+    };
+
+    window.addEventListener('edenify:focus-task', handleFocusTask as EventListener);
+
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get('taskId');
+    if (taskId) {
+      focusTaskFromNotification(taskId);
+    }
+
+    return () => {
+      window.removeEventListener('edenify:focus-task', handleFocusTask as EventListener);
+    };
+  }, [focusTaskFromNotification]);
+
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    const id = window.setTimeout(() => setFocusedTaskId(null), 8000);
+    return () => window.clearTimeout(id);
+  }, [focusedTaskId]);
 
   useEffect(() => {
     if (!notificationStatus) return;
@@ -777,7 +816,7 @@ const Home: React.FC = () => {
       triggeredRef.current.add(reminderKey);
 
       const layerName = layers.find((layer) => layer.id === task.layerId)?.name || 'General';
-      pushReminderEvent('Task reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
+      pushReminderEvent('Task reminder', `${task.name} from ${layerName} starts in 5 minutes.`, task.id);
 
       if (user?.preferences.notifications.taskReminders) {
         await tryBrowserNotification('Edenify Task Reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
@@ -789,7 +828,7 @@ const Home: React.FC = () => {
       if (alarmTriggeredRef.current.has(alarmKey)) return;
       alarmTriggeredRef.current.add(alarmKey);
 
-      void pushReminderEvent('Task due now', `${task.name} is due now (${task.time}).`);
+      void pushReminderEvent('Task due now', `${task.name} is due now (${task.time}).`, task.id);
       setNotificationStatus(`${task.name} is due now.`);
       setAlarmTask(task);
       setAlarmOpen(true);
@@ -922,6 +961,8 @@ const Home: React.FC = () => {
     if (!user.preferences.notifications.dailyScripture) return;
     if (!user.preferences.bibleReminderTime) return;
 
+    void registerBibleReminderSync();
+
     const preferredTime = String(user.preferences.bibleReminderTime).trim();
     const normalized = preferredTime.toUpperCase();
     const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
@@ -962,7 +1003,7 @@ const Home: React.FC = () => {
       bibleReminderTimeoutRef.current = null;
     }
 
-    bibleReminderTimeoutRef.current = window.setTimeout(async () => {
+    const fireBibleReminder = async () => {
       try {
         const dateKey = format(new Date(), 'yyyy-MM-dd');
         if (bibleReminderTriggeredDateRef.current === dateKey) {
@@ -997,13 +1038,52 @@ const Home: React.FC = () => {
       } catch (err) {
         console.error('[Bible Reminder] Error during execution:', err);
       }
+    };
+
+    bibleReminderTimeoutRef.current = window.setTimeout(() => {
+      void fireBibleReminder();
     }, delay);
+
+    const catchUpId = window.setInterval(() => {
+      const current = new Date();
+      const todayKey = format(current, 'yyyy-MM-dd');
+      if (bibleReminderTriggeredDateRef.current === todayKey) return;
+
+      const scheduledToday = new Date(current);
+      scheduledToday.setHours(hours, minutes, 0, 0);
+      const lagMs = current.getTime() - scheduledToday.getTime();
+
+      // If app was backgrounded/killed around reminder time, fire once when back.
+      if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
+        void fireBibleReminder();
+      }
+    }, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+
+      const current = new Date();
+      const todayKey = format(current, 'yyyy-MM-dd');
+      if (bibleReminderTriggeredDateRef.current === todayKey) return;
+
+      const scheduledToday = new Date(current);
+      scheduledToday.setHours(hours, minutes, 0, 0);
+      const lagMs = current.getTime() - scheduledToday.getTime();
+
+      if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
+        void fireBibleReminder();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       if (bibleReminderTimeoutRef.current) {
         window.clearTimeout(bibleReminderTimeoutRef.current);
         bibleReminderTimeoutRef.current = null;
       }
+      window.clearInterval(catchUpId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [
     user?.id,
@@ -1020,6 +1100,26 @@ const Home: React.FC = () => {
     const loadFullPassage = async () => {
       setLoadingScriptureText(true);
       try {
+        const loadChapterWithAliases = async (bookName: string, chapterNo: number): Promise<BibleVerse[]> => {
+          const normalized = bookName.trim();
+          const candidates = Array.from(new Set([
+            normalized,
+            normalized.replace(/\bPsalms\b/i, 'Psalm'),
+            normalized.replace(/\bPsalm\b/i, 'Psalms'),
+            normalized.replace(/\bSong of Solomon\b/i, 'Song of Songs'),
+            normalized.replace(/\bSong of Songs\b/i, 'Song of Solomon'),
+            normalized.replace(/\bSong of Songs\b/i, 'Canticles'),
+            normalized.replace(/\bCanticles\b/i, 'Song of Songs'),
+          ]));
+
+          for (const candidate of candidates) {
+            const chapter = await getChapter(candidate, chapterNo);
+            if (chapter.length > 0) return chapter;
+          }
+
+          return [];
+        };
+
         const segments = bibleReading.passage
           .split(';')
           .map((part) => part.trim())
@@ -1041,7 +1141,7 @@ const Home: React.FC = () => {
           const passagePage: BibleVerse[] = [];
 
           if (singleVerseStart !== null) {
-            const chapter = await getChapter(book, chapterStart);
+            const chapter = await loadChapterWithAliases(book, chapterStart);
             const filtered = chapter.filter((v) => {
               if (singleVerseEnd !== null) return v.verse >= singleVerseStart && v.verse <= singleVerseEnd;
               return v.verse === singleVerseStart;
@@ -1055,7 +1155,7 @@ const Home: React.FC = () => {
           }
 
           for (let chapterNo = chapterStart; chapterNo <= chapterEnd; chapterNo += 1) {
-            const chapter = await getChapter(book, chapterNo);
+            const chapter = await loadChapterWithAliases(book, chapterNo);
             passagePage.push(...chapter);
           }
 
@@ -1694,6 +1794,7 @@ const Home: React.FC = () => {
                 return (
                   <motion.div
                     key={task.id}
+                    id={getTaskCardDomId(task.id)}
                     layout
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1702,7 +1803,8 @@ const Home: React.FC = () => {
                     className={cn(
                       'rounded-xl border px-4 py-3 flex items-center gap-3 bg-surface-container-lowest',
                       completed ? 'opacity-60 border-transparent bg-surface-container-low' : 'border-outline-variant/35',
-                      failed && !completed ? 'border-red-300 bg-red-50/70' : ''
+                      failed && !completed ? 'border-red-300 bg-red-50/70' : '',
+                      focusedTaskId === task.id ? 'ring-2 ring-primary border-primary/60 shadow-[0_0_0_3px_rgba(150,68,7,0.15)]' : ''
                     )}
                   >
                     <button aria-label={`Toggle task ${task.name}`} title="Toggle task" onClick={() => toggleTask(task.id)} className={cn('transition-colors', completed ? 'text-primary' : 'text-secondary/35 hover:text-primary')}>

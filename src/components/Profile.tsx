@@ -61,6 +61,20 @@ const Profile: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    const syncBibleReminderBackground = async () => {
+      if (!user) return;
+      const remindersEnabled = Boolean(user.preferences.notifications.dailyScripture) && Boolean(user.preferences.bibleReminderTime);
+      if (remindersEnabled) {
+        await registerBibleReminderSync();
+      } else {
+        await unregisterBibleReminderSync();
+      }
+    };
+
+    void syncBibleReminderBackground();
+  }, [user?.id, user?.preferences.notifications.dailyScripture, user?.preferences.bibleReminderTime]);
+
   if (!user) return null;
 
   const updatePreference = <K extends keyof typeof user.preferences>(key: K, value: typeof user.preferences[K]) => {
@@ -160,7 +174,18 @@ const Profile: React.FC = () => {
       }
 
       if (!statusData?.configured) {
-        setTelegramStatus('Telegram bot token is missing on server. Please set TELEGRAM_BOT_TOKEN on Render/local server.');
+        await fetch('/api/telegram/link', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatId: normalizedChatId,
+            userId: accountKey,
+          }),
+        }).catch(() => null);
+
+        setTelegramStatus('Telegram chat ID saved, but the server bot token is missing. Add TELEGRAM_BOT_TOKEN on Render/local server to send Telegram messages.');
         return;
       }
 

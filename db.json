@@ -74,6 +74,12 @@
               "layerId": "spiritual",
               "priority": "A",
               "count": 1
+            },
+            {
+              "name": "Habit review plan|academic",
+              "layerId": "academic",
+              "priority": "C",
+              "count": 1
             }
           ],
           "readingPlanStartDate": "2026-04-12"
@@ -137,7 +143,36 @@
           "icon": "LayoutGrid"
         }
       ],
-      "habits": [],
+      "habits": [
+        {
+          "id": "habit-1775960605372",
+          "name": "Review & Plan",
+          "layerId": "academic",
+          "frequency": "daily",
+          "durationMinutes": 12,
+          "streak": 0,
+          "history": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "completedToday": false,
+          "timeOfDay": "morning",
+          "time": "03:25",
+          "linkedTaskId": "habit-task-habit-1775960605372"
+        }
+      ],
       "tasks": [
         {
           "id": "daily-bible-reading-task",
@@ -147,7 +182,7 @@
           "repeat": "daily",
           "time": "06:30",
           "completed": false,
-          "date": "2026-04-12T01:52:59.277Z",
+          "date": "2026-04-12T02:29:04.392Z",
           "alarmEnabled": true,
           "preferredMusic": "Scripture Reflection"
         },
@@ -158,12 +193,12 @@
           "priority": "C",
           "repeat": "once",
           "time": "03:05",
-          "completed": true,
+          "completed": false,
           "date": "2026-04-12T02:02:01.669Z",
           "alarmEnabled": true,
           "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 25,
-          "durationStartedAt": "2026-04-12T02:02:01.669Z"
+          "durationStartedAt": "2026-04-12T02:29:19.879Z",
+          "estimatedDuration": 25
         },
         {
           "id": "tg-1775960388569-585a4",
@@ -190,6 +225,20 @@
           "preferredMusic": "Instrumental Warmth",
           "estimatedDuration": 25,
           "durationStartedAt": "2026-04-12T02:21:17.325Z"
+        },
+        {
+          "id": "habit-task-habit-1775960605372",
+          "name": "[Habit] Review & Plan",
+          "layerId": "academic",
+          "priority": "C",
+          "repeat": "daily",
+          "time": "03:25",
+          "completed": false,
+          "date": "2026-04-12T02:23:25.373Z",
+          "alarmEnabled": true,
+          "preferredMusic": "Instrumental Warmth",
+          "estimatedDuration": 12,
+          "durationStartedAt": "2026-04-12T02:23:25.373Z"
         }
       ],
       "journal": [],
@@ -338,6 +387,30 @@
       "7875504612": {
         "tasks": [
           {
+            "id": "daily-bible-reading-task",
+            "name": "Read Scripture (Day 1)",
+            "layerId": "spiritual",
+            "priority": "B",
+            "repeat": "daily",
+            "time": "06:30",
+            "completed": false,
+            "date": "2026-04-12T02:29:04.392Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Scripture Reflection"
+          },
+          {
+            "id": "task-1775959321669",
+            "name": "Plan top priorities and clear workspace",
+            "layerId": "general",
+            "priority": "C",
+            "repeat": "once",
+            "time": "03:05",
+            "completed": false,
+            "date": "2026-04-12T02:02:01.669Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
+          },
+          {
             "id": "tg-1775960388569-585a4",
             "name": "qwertyuikjhgfds",
             "layerId": "spiritual",
@@ -346,6 +419,30 @@
             "time": "03:35",
             "completed": false,
             "date": "2026-04-12T02:19:48.569Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
+          },
+          {
+            "id": "task-1775960477325",
+            "name": "Plan top priorities and clear workspace",
+            "layerId": "general",
+            "priority": "C",
+            "repeat": "once",
+            "time": "03:25",
+            "completed": false,
+            "date": "2026-04-12T02:21:17.325Z",
+            "alarmEnabled": true,
+            "preferredMusic": "Instrumental Warmth"
+          },
+          {
+            "id": "habit-task-habit-1775960605372",
+            "name": "[Habit] Review & Plan",
+            "layerId": "academic",
+            "priority": "C",
+            "repeat": "daily",
+            "time": "03:25",
+            "completed": false,
+            "date": "2026-04-12T02:23:25.373Z",
             "alarmEnabled": true,
             "preferredMusic": "Instrumental Warmth"
           }
@@ -385,11 +482,16 @@
       "7875504612|tg-1775941099310-9df21|2026-04-11T20:55": "2026-04-11T20:58:21.723Z",
       "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|reminder": "2026-04-11T20:58:25.424Z",
       "admin-root|tg-1775941099310-9df21|2026-04-11T21:00|alarm": "2026-04-11T21:00:00.568Z",
-      "7875504612|task-1775960477325|2026-04-12T02:20": "2026-04-12T02:21:49.772Z"
+      "7875504612|task-1775960477325|2026-04-12T02:20": "2026-04-12T02:21:49.772Z",
+      "7875504612|habit-task-habit-1775960605372|2026-04-12T02:20": "2026-04-12T02:23:49.797Z",
+      "7875504612|task-1775960477325|2026-04-12T02:20|due": "2026-04-12T02:24:19.801Z",
+      "7875504612|habit-task-habit-1775960605372|2026-04-12T02:20|due": "2026-04-12T02:24:19.801Z",
+      "7875504612|habit-task-habit-1775960605372|2026-04-13T02:20|due": "2026-04-12T02:25:19.811Z",
+      "7875504612|tg-1775960388569-585a4|2026-04-12T02:30": "2026-04-12T02:29:19.879Z"
     },
     "poller": {
       "ownerId": "23192-10044a",
-      "updatedAt": "2026-04-12T02:22:01.556Z"
+      "updatedAt": "2026-04-12T02:34:11.474Z"
     }
   }
 }

@@ -35,7 +35,7 @@ interface AppState {
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
-const RESET_VERSION = 'edenify-reset-2026-04-11';
+const RESET_VERSION = 'edenify-reset-2026-04-12-b1'; // Cache bust: Psalms fix
 const MAX_PERSISTED_DATA_URL_LENGTH = 450_000;
 const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 
@@ -225,6 +225,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const lastCloudStateHashRef = useRef('');
   const recentlyDeletedTaskIdsRef = useRef<Set<string>>(new Set());
   const deletionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldUseLocalCacheRef = useRef(true);
 
   // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
   const setUser = (nextUser: User | null | ((prev: User | null) => User | null)) => {
@@ -265,19 +266,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const resetMarker = localStorage.getItem('edenify_reset_version');
         if (resetMarker !== RESET_VERSION) {
+          // Version mismatch - clear old cached state to force fresh load
+          localStorage.removeItem('edenify_state_guest');
           localStorage.setItem('edenify_reset_version', RESET_VERSION);
         }
 
-        const saved = localStorage.getItem('edenify_state_guest');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.layers) setLayers(parsed.layers);
-          if (parsed.habits) setHabits(parsed.habits);
-          if (parsed.tasks) setTasks(parsed.tasks);
-          if (parsed.journal) setJournal(parsed.journal);
-          if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
-          if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
-        }
+        // Don't load guest state yet - let cloud sync be authoritative.
+        // Only use localStorage as fallback if cloud pull fails later.
       } catch (error) {
         console.warn('Session restore failed:', error);
         // If offline or error, still try cached user as fallback
@@ -303,20 +298,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const accountKey = getAccountKey(user);
     if (!accountKey) return;
 
+    // Skip loading from localStorage until cloud sync completes.
+    // This ensures fresh data is pulled on hard refresh instead of serving stale cache.
+    if (!hasCompletedInitialCloudSyncRef.current) {
+      return;
+    }
+
     try {
       const saved = localStorage.getItem(`edenify_state_${accountKey}`);
       if (!saved) return;
       const parsed = JSON.parse(saved);
-      if (parsed.layers) setLayers(parsed.layers);
-      if (parsed.habits) setHabits(parsed.habits);
-      if (parsed.tasks) setTasks(parsed.tasks);
-      if (parsed.journal) setJournal(parsed.journal);
+      // Only apply if we have no data (cloud was offline/unavailable)
+      if (parsed.layers && layers === INITIAL_LAYERS) setLayers(parsed.layers);
+      if (parsed.habits && habits === INITIAL_HABITS) setHabits(parsed.habits);
+      if (parsed.tasks && tasks === INITIAL_TASKS) setTasks(parsed.tasks);
+      if (parsed.journal && journal.length === 0) setJournal(parsed.journal);
       if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
       if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
     } catch (error) {
       console.warn('Failed to restore account-scoped local state:', error);
     }
-  }, [user?.id, user?.email]);
+  }, [user?.id, user?.email, hasCompletedInitialCloudSyncRef.current]);
 
   useEffect(() => {
     if (!user) return;
@@ -439,8 +441,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!remoteState) {
         remoteState = await loadBackendUserState(accountKey);
       }
-      if (!remoteState || cancelled) return;
-      applyRemoteState(remoteState);
+      if (remoteState) {
+        applyRemoteState(remoteState);
+      } else if (!cancelled && hasCompletedInitialCloudSyncRef.current) {
+        // Cloud pull failed or returned no data - fall back to localStorage for this account-scoped data
+        try {
+          const saved = localStorage.getItem(`edenify_state_${accountKey}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.layers) setLayers(parsed.layers);
+            if (parsed.habits) setHabits(parsed.habits);
+            if (parsed.tasks) setTasks(parsed.tasks);
+            if (parsed.journal) setJournal(parsed.journal);
+            if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
+            if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
+          }
+        } catch (error) {
+          console.warn('Failed to load localStorage fallback:', error);
+        }
+      }
     };
 
     const bootstrap = async () => {

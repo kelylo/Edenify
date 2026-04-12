@@ -20,25 +20,10 @@ let bibleData: BibleVerse[] = [];
 let isLoaded = false;
 let readingPlan: Record<number, string> | null = null;
 let planLoaded = false;
-
-// Clear caches when the page regains focus to allow hard refresh to take effect
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      console.log('[Bible] Page visible - clearing cache to allow refresh');
-      isLoaded = false;
-      planLoaded = false;
-      bibleData = [];
-      readingPlan = null;
-    }
-  });
-}
 const PLAN_CACHE_KEY = 'edenify-bible-plan-v2'; // Cache bust on version change
 
 async function loadBibleDataFromJson(): Promise<BibleVerse[]> {
-  const response = await fetch('/bible-data.json?t=' + Date.now(), {
-    cache: 'no-store',
-  });
+  const response = await fetch('/bible-data.json');
   if (!response.ok) throw new Error('bible-data.json not found');
 
   const data = await response.json();
@@ -198,9 +183,7 @@ async function loadReadingPlan(): Promise<Record<number, string>> {
 
   try {
     console.log('[Bible Plan] Fetching /data/bible-plan.json...');
-    const response = await fetch('/data/bible-plan.json?t=' + Date.now(), {
-      cache: 'no-store',
-    });
+    const response = await fetch('/data/bible-plan.json');
     if (!response.ok) throw new Error(`bible-plan.json not found (status: ${response.status})`);
     const data = await response.json() as { readings: Record<string, { passages: string }> };
 

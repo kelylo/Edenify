@@ -734,49 +734,49 @@ const Eden: React.FC = () => {
           >
             <Sparkles className="text-primary" size={18} />
             <span className="text-sm">{showProactive}</span>
-            <button onClick={() => setShowProactive(null)} className="ml-2">
+            <button onClick={() => setShowProactive(null)} className="ml-2" title="Dismiss" aria-label="Dismiss message">
               <X size={16} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <header className="p-4 border-b border-outline-variant/40 bg-white/90 backdrop-blur-md sticky top-0 z-20">
+      <header className="px-4 py-3 border-b border-outline-variant/30 bg-white/95 backdrop-blur-sm sticky top-0 z-20 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {isMobileView ? (
               <button
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+                className="h-10 w-10 rounded-xl bg-surface-container-low hover:bg-surface-container border border-outline-variant/35 text-primary flex items-center justify-center transition-colors"
                 aria-label="Toggle chat history"
                 title="Toggle chat history"
               >
                 <Menu size={18} />
               </button>
             ) : (
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
-                <Sparkles size={20} />
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center text-white shadow-sm">
+                <Sparkles size={18} />
               </div>
             )}
             <div className="min-w-0">
-              <h1 className="text-base font-semibold truncate">Eden</h1>
-              <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                Online
+              <h1 className="text-sm font-semibold truncate">Eden</h1>
+              <p className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Available
               </p>
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/35 text-xs text-on-surface-variant">
-            <span>GPT-5.3-Codex</span>
-            <ChevronDown size={14} />
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/30 text-xs text-on-surface-variant hover:bg-surface-container transition-colors cursor-pointer">
+            <span className="font-medium">Eden GPT</span>
+            <ChevronDown size={12} />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {!isMobileView && (
               <button
                 onClick={toggleListening}
-                className={cn('h-10 w-10 rounded-2xl border border-outline-variant/35 flex items-center justify-center', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary')}
+                className={cn('h-10 w-10 rounded-lg border flex items-center justify-center transition-all', isListening ? 'bg-error/10 border-error text-error' : 'bg-surface-container-low border-outline-variant/35 text-primary hover:bg-surface-container')}
                 aria-label="Voice mode"
                 title="Voice mode"
               >
@@ -785,7 +785,7 @@ const Eden: React.FC = () => {
             )}
             <button
               onClick={() => void startNewConversation()}
-              className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+              className="h-10 w-10 rounded-lg bg-surface-container-low border border-outline-variant/35 text-primary hover:bg-surface-container flex items-center justify-center transition-colors"
               aria-label="New chat"
               title="New chat"
             >
@@ -794,7 +794,7 @@ const Eden: React.FC = () => {
             {!isMobileView && (
               <button
                 onClick={() => setSidebarOpen((prev) => !prev)}
-                className="h-10 w-10 rounded-2xl bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
+                className="h-10 w-10 rounded-lg bg-surface-container-low border border-outline-variant/35 text-primary hover:bg-surface-container flex items-center justify-center transition-colors"
                 aria-label="Toggle sidebar"
                 title="Toggle sidebar"
               >
@@ -805,11 +805,9 @@ const Eden: React.FC = () => {
         </div>
 
         {agentProfile?.lastActiveLayer && (
-          <div className="mt-2 flex items-center gap-3 text-xs text-on-surface-variant">
-            <div className="flex items-center gap-1">
-              <Layers size={12} />
-              <span>Focus: {agentProfile.lastActiveLayer}</span>
-            </div>
+          <div className="mt-2.5 flex items-center gap-2 text-[10px] text-on-surface-variant">
+            <Layers size={12} className="text-primary/60" />
+            <span className="font-medium">Focus: {agentProfile.lastActiveLayer}</span>
           </div>
         )}
       </header>
@@ -818,35 +816,42 @@ const Eden: React.FC = () => {
         <AnimatePresence>
           {sidebarOpen && (
             <motion.div
-              initial={isMobileView ? { x: -320, opacity: 0 } : { width: 0, opacity: 0 }}
-              animate={isMobileView ? { x: 0, opacity: 1 } : { width: 300, opacity: 1 }}
-              exit={isMobileView ? { x: -320, opacity: 0 } : { width: 0, opacity: 0 }}
+              initial={isMobileView ? { x: -280, opacity: 0 } : { width: 0, opacity: 0 }}
+              animate={isMobileView ? { x: 0, opacity: 1 } : { width: 280, opacity: 1 }}
+              exit={isMobileView ? { x: -280, opacity: 0 } : { width: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className={cn(
-                'border-r border-outline-variant bg-surface-container-lowest overflow-y-auto p-4',
-                isMobileView ? 'fixed top-[74px] bottom-[88px] left-0 z-30 w-[280px] shadow-2xl' : 'relative w-[300px]'
+                'border-r border-outline-variant/30 bg-surface-container-lowest overflow-y-auto',
+                isMobileView ? 'fixed top-[66px] bottom-[100px] left-0 z-30 w-[280px] shadow-xl' : 'relative w-[280px]'
               )}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-medium flex items-center gap-2">
-                  <History size={16} /> History
-                </h3>
-                <button
-                  onClick={() => void startNewConversation()}
-                  className="h-8 w-8 rounded-lg bg-surface-container-low border border-outline-variant/35 text-primary flex items-center justify-center"
-                  aria-label="New chat"
-                  title="New chat"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-              <h4 className="text-xs uppercase tracking-[0.14em] text-secondary mb-2 font-bold">Recent Conversations</h4>
-              <div className="space-y-2">
-                {conversationHistory.map((conv, index) => (
-                  <div key={`${conv.id || index}`} className="text-xs p-2 rounded-lg bg-surface-container-low">
-                    <div className="font-medium truncate">{conv.userMessage}</div>
-                    <div className="text-on-surface-variant truncate">{conv.edenResponse}</div>
+              <div className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History size={16} className="text-primary" />
+                    <h3 className="font-semibold text-sm">History</h3>
                   </div>
-                ))}
+                  <button
+                    onClick={() => void startNewConversation()}
+                    className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 flex items-center justify-center transition-colors"
+                    aria-label="New chat"
+                    title="New chat"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {conversationHistory.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant/60 py-4 text-center">No conversations yet</p>
+                  ) : (
+                    conversationHistory.map((conv, index) => (
+                      <div key={`${conv.id || index}`} className="text-xs p-3 rounded-lg bg-surface-container-low hover:bg-surface-container border border-outline-variant/20 cursor-pointer transition-colors group">
+                        <div className="font-medium truncate line-clamp-2 text-on-surface group-hover:text-primary transition-colors">{conv.userMessage}</div>
+                        <div className="text-on-surface-variant/70 truncate line-clamp-1 mt-1">{conv.edenResponse}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -855,7 +860,7 @@ const Eden: React.FC = () => {
         {isMobileView && sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 top-[74px] bottom-[88px] bg-black/20 z-20"
+            className="fixed inset-0 top-[66px] bottom-[100px] bg-black/25 z-20 backdrop-blur-sm"
             aria-label="Close sidebar overlay"
             title="Close sidebar"
           />
@@ -864,12 +869,12 @@ const Eden: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4" ref={scrollRef}>
           <AnimatePresence initial={false}>
             {messages.map((message) => (
-              <motion.div key={message.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn('flex gap-3 max-w-[85%]', message.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto')}>
-                <div className={cn('w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0', message.role === 'user' ? 'bg-gradient-to-br from-secondary to-primary-container text-white' : 'bg-primary/10 text-primary')}>
+              <motion.div key={message.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn('flex gap-3 max-w-[92%]', message.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto')}>
+                <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-sm font-semibold', message.role === 'user' ? 'bg-gradient-to-br from-secondary to-primary-container text-white' : 'bg-primary/10 text-primary')}>
                   {message.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
                 </div>
                 <div className="group relative">
-                  <div className={cn('p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm', message.role === 'user' ? 'bg-primary text-white rounded-br-md' : 'bg-white border border-outline-variant/40 rounded-bl-md text-on-surface')}>
+                  <div className={cn('p-3 rounded-lg text-sm leading-relaxed', message.role === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-white border border-outline-variant/30 rounded-bl-none text-on-surface shadow-sm')}>
                     {message.role === 'user' ? (
                       <p className="whitespace-pre-wrap">{message.text}</p>
                     ) : (
@@ -887,15 +892,15 @@ const Eden: React.FC = () => {
                     )}
                   </div>
                   {message.role === 'model' && (
-                    <div className="absolute -bottom-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-background p-1 rounded-lg shadow">
-                      <button onClick={() => copyToClipboard(message.text)} className="p-1 hover:bg-surface-container rounded">
-                        <Copy size={12} />
+                    <div className="absolute -bottom-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-white border border-outline-variant/30 p-1.5 rounded-lg shadow-md">
+                      <button onClick={() => copyToClipboard(message.text)} className="p-1 hover:bg-surface-container rounded transition-colors" title="Copy">
+                        <Copy size={14} className="text-on-surface-variant" />
                       </button>
-                      <button onClick={() => void handleFeedback(message.id, 'helpful')} className={cn('p-1 rounded transition-transform hover:scale-110', message.feedback === 'helpful' ? 'text-emerald-600 bg-emerald-50' : 'hover:bg-surface-container')}>
-                        <ThumbsUp size={12} />
+                      <button onClick={() => void handleFeedback(message.id, 'helpful')} className={cn('p-1 rounded transition-all', message.feedback === 'helpful' ? 'text-emerald-600 bg-emerald-50' : 'hover:bg-surface-container text-on-surface-variant')} title="Helpful">
+                        <ThumbsUp size={14} />
                       </button>
-                      <button onClick={() => void handleFeedback(message.id, 'unhelpful')} className={cn('p-1 rounded transition-transform hover:scale-110', message.feedback === 'unhelpful' ? 'text-rose-600 bg-rose-50' : 'hover:bg-surface-container')}>
-                        <ThumbsDown size={12} />
+                      <button onClick={() => void handleFeedback(message.id, 'unhelpful')} className={cn('p-1 rounded transition-all', message.feedback === 'unhelpful' ? 'text-rose-600 bg-rose-50' : 'hover:bg-surface-container text-on-surface-variant')} title="Unhelpful">
+                        <ThumbsDown size={14} />
                       </button>
                     </div>
                   )}
@@ -905,20 +910,20 @@ const Eden: React.FC = () => {
 
             {agenticStatus && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mr-auto">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-outline-variant/40 text-xs text-secondary">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-outline-variant/30 text-xs text-secondary shadow-sm">
                   <Loader2 size={12} className="animate-spin" />
-                  {agenticStatus === 'thinking' ? 'Thinking...' : agenticStatus === 'searching' ? 'Searching...' : 'Composing...'}
+                  <span className="font-medium">{agenticStatus === 'thinking' ? 'Thinking...' : agenticStatus === 'searching' ? 'Searching...' : 'Composing...'}</span>
                 </div>
               </motion.div>
             )}
 
             {isTyping && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3 mr-auto">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Loader2 size={16} className="animate-spin" />
+                <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                  <Loader2 size={14} className="animate-spin" />
                 </div>
-                <div className="p-4 rounded-2xl bg-surface-container-low border border-outline-variant rounded-tl-none">
-                  <div className="flex gap-1">
+                <div className="p-3 rounded-lg bg-white border border-outline-variant/30 rounded-bl-none shadow-sm">
+                  <div className="flex gap-1.5">
                     <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce" />
                     <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.2s]" />
                     <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0.4s]" />
@@ -932,22 +937,24 @@ const Eden: React.FC = () => {
 
       <AnimatePresence>
         {undoStack.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm">
-            <span>{undoStack[0].description}</span>
-            <button onClick={() => performUndo(undoStack[0])} className="font-medium text-primary-light flex items-center gap-1">
-              <Undo2 size={14} /> Undo
-            </button>
-            <button onClick={() => setUndoStack((prev) => prev.slice(1))}>
-              <X size={14} />
-            </button>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 text-sm border border-outline-variant/20">
+            <span className="font-medium">{undoStack[0].description}</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => performUndo(undoStack[0])} className="font-semibold text-primary-light hover:text-primary-light/80 flex items-center gap-1 transition-colors">
+                <Undo2 size={14} /> Undo
+              </button>
+              <button onClick={() => setUndoStack((prev) => prev.slice(1))} className="text-inverse-on-surface hover:text-inverse-on-surface/70 transition-colors" title="Dismiss" aria-label="Dismiss undo">
+                <X size={16} />
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {suggestions.length > 0 && (
-        <div className="px-6 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+        <div className="px-4 sm:px-6 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
           {suggestions.map((suggestion) => (
-            <button key={suggestion.id} onClick={suggestion.action} className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-low border border-outline-variant rounded-full text-xs whitespace-nowrap hover:bg-surface-container transition-colors">
+            <button key={suggestion.id} onClick={suggestion.action} className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container-low border border-outline-variant/30 rounded-lg text-xs whitespace-nowrap hover:bg-surface-container transition-colors">
               {suggestion.icon}
               {suggestion.text}
             </button>
@@ -955,30 +962,30 @@ const Eden: React.FC = () => {
         </div>
       )}
 
-      <div className="p-4 sm:p-5 bg-white/95 backdrop-blur-md border-t border-outline-variant/40">
+      <div className="p-3 sm:p-4 bg-white/95 backdrop-blur-sm border-t border-outline-variant/30 shadow-lg">
         {taskFlow && (
-          <div className="mb-3 p-3 bg-primary/5 border border-primary/20 rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
+          <div className="mb-3 p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs">
+              <div className="h-6 w-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold">
                 {taskFlow.step === 'name' ? '1' : taskFlow.step === 'time' ? '2' : taskFlow.step === 'repeat' ? '3' : taskFlow.step === 'layer' ? '4' : taskFlow.step === 'priority' ? '5' : <Check size={12} />}
               </div>
-              <span>{taskFlow.mode === 'create' ? `Creating task: ${taskFlow.draft.name || '...'}` : 'Deleting task'}</span>
+              <span className="font-medium">{taskFlow.mode === 'create' ? `Creating: ${taskFlow.draft.name || '..'}` : 'Delete task'}</span>
             </div>
-            <button onClick={() => setTaskFlow(null)} className="text-xs text-on-surface-variant hover:text-error">
+            <button onClick={() => setTaskFlow(null)} className="text-xs text-on-surface-variant hover:text-error transition-colors">
               Cancel
             </button>
           </div>
         )}
 
         <div className="relative flex items-end gap-2">
-          <input ref={attachmentInputRef} type="file" className="hidden" />
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" />
+          <input ref={attachmentInputRef} type="file" className="hidden" title="Attach file" aria-label="Attach file" />
+          <input ref={cameraInputRef} type="file" className="hidden" title="Capture image" aria-label="Capture image" />
 
           {isMobileView ? (
             <div className="relative" onClick={(event) => event.stopPropagation()}>
               <button
                 onClick={() => setToolsOpen((prev) => !prev)}
-                className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40"
+                className="p-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary border border-outline-variant/30 transition-colors"
                 title="Open tools"
                 aria-label="Open tools"
               >
@@ -988,44 +995,45 @@ const Eden: React.FC = () => {
               <AnimatePresence>
                 {toolsOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 6 }}
-                    className="absolute bottom-12 left-0 rounded-xl border border-outline-variant/35 bg-surface-container-lowest shadow-lg p-2 flex flex-col gap-1 min-w-[150px] z-20"
+                    initial={{ opacity: 0, scale: 0.92, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: 6 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    className="absolute bottom-14 left-0 rounded-lg border border-outline-variant/30 bg-white shadow-lg p-1 flex flex-col gap-0.5 min-w-[140px] z-20"
                   >
                     <button
                       onClick={() => {
                         setToolsOpen(false);
                         attachmentInputRef.current?.click();
                       }}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-surface-container-low text-sm text-on-surface transition-colors"
                     >
-                      <Paperclip size={14} /> File
+                      <Paperclip size={16} className="text-primary" /> File
                     </button>
                     <button
                       onClick={() => {
                         setToolsOpen(false);
                         cameraInputRef.current?.click();
                       }}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-surface-container-low text-sm text-on-surface transition-colors"
                     >
-                      <Camera size={14} /> Camera
+                      <Camera size={16} className="text-primary" /> Camera
                     </button>
                     <button
                       onClick={() => {
                         setToolsOpen(false);
                         setInput((prev) => `${prev}${prev ? ' ' : ''}🙂`);
                       }}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-surface-container-low text-sm text-on-surface"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-surface-container-low text-sm text-on-surface transition-colors"
                     >
-                      <Smile size={14} /> Emoji
+                      <Smile size={16} className="text-primary" /> Emoji
                     </button>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
           ) : (
-            <button onClick={() => attachmentInputRef.current?.click()} className="p-2.5 rounded-xl bg-surface-container-low text-primary border border-outline-variant/40" title="Attach file" aria-label="Attach file">
+            <button onClick={() => attachmentInputRef.current?.click()} className="p-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary border border-outline-variant/30 transition-colors" title="Attach file" aria-label="Attach file">
               <Paperclip size={18} />
             </button>
           )}
@@ -1044,20 +1052,20 @@ const Eden: React.FC = () => {
               rows={1}
               autoFocus
               placeholder={inputPlaceholder}
-              className="w-full resize-none overflow-y-auto bg-white border border-outline-variant/50 rounded-2xl py-4 pl-5 pr-14 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              className="w-full resize-none overflow-y-auto bg-white border border-outline-variant/40 rounded-xl py-3 pl-4 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
             />
             {input.trim() ? (
-              <button onClick={() => void handleSend()} disabled={isTyping} className="absolute right-2 bottom-2 p-2.5 rounded-xl bg-primary text-white disabled:opacity-50 disabled:bg-secondary transition-all shadow-md active:scale-95" title="Send" aria-label="Send">
-                <Send size={20} />
+              <button onClick={() => void handleSend()} disabled={isTyping} className="absolute right-2.5 bottom-2.5 p-2 rounded-lg bg-primary hover:bg-primary/90 text-white disabled:opacity-50 transition-all shadow-sm active:scale-95" title="Send" aria-label="Send">
+                <Send size={18} />
               </button>
             ) : isMobileView ? (
               <button
                 onClick={toggleListening}
-                className={cn('absolute right-2 bottom-2 p-2.5 rounded-xl transition-colors', isListening ? 'bg-error text-white' : 'bg-surface-container-low text-primary border border-outline-variant')}
+                className={cn('absolute right-2.5 bottom-2.5 p-2 rounded-lg transition-all', isListening ? 'bg-error/10 text-error border border-error/30' : 'bg-surface-container-low text-primary border border-outline-variant/30')}
                 title="Voice mode"
                 aria-label="Voice mode"
               >
-                {isListening ? <StopCircle size={20} /> : <Mic size={20} />}
+                {isListening ? <StopCircle size={18} /> : <Mic size={18} />}
               </button>
             ) : null}
           </div>

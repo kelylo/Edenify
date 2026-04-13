@@ -38,9 +38,15 @@ View your app in AI Studio: https://ai.studio/apps/748d00fe-b2c1-4d2b-9415-ceec8
 2. Preview built app:
    `npm run preview`
 
-## Deploy to Render (Free Tier)
+## Deploy to Render (24/7 Bot)
 
 This project includes a ready-to-use Render blueprint: `render.yaml`.
+
+Why this matters for Telegram:
+- The Telegram polling loop runs in the Node server process.
+- If you run locally and close VS Code, that process stops, so the bot stops.
+- Deploying to Render keeps the process running remotely.
+- For true always-on behavior, use a non-sleeping plan (Starter or higher).
 
 ### Option A: Blueprint Deploy (recommended)
 
@@ -50,14 +56,16 @@ This project includes a ready-to-use Render blueprint: `render.yaml`.
 
 Render will use:
 - Build command: `npm install && npm run build`
-- Start command: `NODE_ENV=production npx tsx server.ts`
+- Start command: `npm run start`
+- Health check: `/api/health`
 
 ### Option B: Manual Web Service
 
 1. Create a new **Web Service** in Render.
 2. Runtime: **Node**.
 3. Build command: `npm install && npm run build`
-4. Start command: `NODE_ENV=production npx tsx server.ts`
+4. Start command: `npm run start`
+5. Plan: **Starter** (or higher) for 24/7 Telegram polling.
 
 ### Environment Variables (Render)
 
@@ -76,6 +84,7 @@ Notes:
 - Do not expose Gemini keys to frontend code; they are server-only.
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to frontend code; keep it server-only.
 - Render injects `PORT` automatically; this server already reads it.
+- If using free/sleeping instances, Telegram polling can pause when the service sleeps.
 
 ## PWA Install (Mobile + Desktop)
 

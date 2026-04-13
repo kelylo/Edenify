@@ -307,10 +307,10 @@ const Home: React.FC = () => {
         layerId: entry.layerId,
         count: entry.count,
       })),
-      limit: 8,
+      limit: 12,
     });
 
-    return suggestions.slice(0, 5);
+    return suggestions.slice(0, 8);
   }, [debouncedTaskName, newTaskLayer, tasks, user?.preferences.mostRepeatedTasks]);
 
   useEffect(() => {

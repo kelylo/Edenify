@@ -63,6 +63,9 @@ interface DbShape {
       ownerId: string;
       updatedAt: string;
     };
+    lastPollAt?: string;
+    lastPollErrorAt?: string;
+    lastPollError?: string;
   };
 }
 
@@ -150,6 +153,23 @@ function readDb(dbPath: string): DbShape {
 
 function writeDb(dbPath: string, db: DbShape) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+}
+
+function buildBibleReadingTelegramText(userState: any) {
+  const reading = userState?.bibleReading;
+  if (!reading || (!reading.passage && !reading.text)) {
+    return 'No daily scripture is available yet. Open Edenify once to refresh your Bible reading, then try /scripture again.';
+  }
+
+  const day = Number(reading.day || 1);
+  const passage = String(reading.passage || 'Daily Scripture').trim();
+  const verseText = String(reading.text || '').trim();
+  const context = String(reading.context || '').trim();
+
+  const parts = [`📖 Daily Scripture${Number.isFinite(day) ? ` (Day ${day})` : ''}`, passage];
+  if (verseText) parts.push(`"${verseText}"`);
+  if (context) parts.push(`Reflection: ${context}`);
+  return parts.join('\n\n');
 }
 
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
@@ -1277,6 +1297,9 @@ async function startServer() {
       webhookError: webhookStatus.lastErrorMessage,
       linkedChats,
       hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
+      lastPollAt: db.telegram?.lastPollAt || '',
+      lastPollErrorAt: db.telegram?.lastPollErrorAt || '',
+      lastPollError: db.telegram?.lastPollError || '',
     });
   });
 
@@ -1422,6 +1445,7 @@ async function startServer() {
       if (!token) return;
       await ensureTelegramPollingMode(token);
       db.telegram = db.telegram || { offset: 0, byChatId: {} };
+      db.telegram.lastPollAt = new Date().toISOString();
       if (!canOwnTelegramPoller(db, pollerOwnerId)) {
         return;
       }
@@ -1438,6 +1462,9 @@ async function startServer() {
       if (updates.length === 0) {
         const latest = readDb(DB_PATH);
         latest.telegram = latest.telegram || { offset: 0, byChatId: {} };
+        latest.telegram.lastPollAt = new Date().toISOString();
+        latest.telegram.lastPollError = '';
+        latest.telegram.lastPollErrorAt = '';
         if (latest.telegram.poller?.ownerId === pollerOwnerId) {
           latest.telegram.poller.updatedAt = new Date().toISOString();
           writeDb(DB_PATH, latest);
@@ -1497,10 +1524,14 @@ async function startServer() {
           await sendTelegramMessage(
             token,
             chatId,
-            'Edenify bot is alive.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show chat id\n/defaults - set default repeat/time\n/cancel - cancel current wizard'
+            'Edenify bot is alive.\nCommands:\n/set - step by step add task\n/delete - choose undone task to delete\n/edit or /modify - choose task to edit\n/tasks - list tasks\n/chatid - show chat id\n/scripture - send your daily Bible passage\n/defaults - set default repeat/time\n/cancel - cancel current wizard'
           );
         } else if (command === '/chatid') {
           await sendTelegramMessage(token, chatId, `Your chat ID is: ${chatId}`);
+        } else if (command === '/scripture' || command === '/bible' || command === '/verse') {
+          const userId = store.userId;
+          const userState = userId ? db.data?.[userId] : null;
+          await sendTelegramMessage(token, chatId, buildBibleReadingTelegramText(userState));
         } else if (command === '/tasks') {
           if (activeTasks.length === 0) {
             await sendTelegramMessage(token, chatId, 'No pending tasks. Use /set to add a new one.');
@@ -1927,9 +1958,21 @@ async function startServer() {
         ownerId: pollerOwnerId,
         updatedAt: new Date().toISOString(),
       };
+      db.telegram!.lastPollAt = new Date().toISOString();
+      db.telegram!.lastPollError = '';
+      db.telegram!.lastPollErrorAt = '';
       writeDb(DB_PATH, db);
     } catch (error) {
       console.error('Telegram polling failed:', error);
+      try {
+        const failedDb = readDb(DB_PATH);
+        failedDb.telegram = failedDb.telegram || { offset: 0, byChatId: {}, reminders: {} };
+        failedDb.telegram.lastPollError = String((error as any)?.message || error || 'Polling failed');
+        failedDb.telegram.lastPollErrorAt = new Date().toISOString();
+        writeDb(DB_PATH, failedDb);
+      } catch {
+        // Ignore write issues while recording polling failures.
+      }
     } finally {
       isPollingTelegram = false;
     }

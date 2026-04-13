@@ -83,6 +83,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'plan top 3 tasks today', layer: 'general' },
     { text: "review today's lectures before class", layer: 'academic' },
     { text: 'drink water before coffee', layer: 'physical' },
+    { text: 'prepare your first priority block', layer: 'general' },
+    { text: '10-minute stretch and mobility', layer: 'physical' },
+    { text: 'review one key formula', layer: 'academic' },
   ],
   afternoon: [
     { text: 'deep study 45 minutes no phone', layer: 'academic' },
@@ -91,6 +94,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'stand up and reset every hour', layer: 'physical' },
     { text: 'track daily wins checklist', layer: 'general' },
     { text: 'practice coding 30 minutes', layer: 'academic' },
+    { text: 'midday prayer and reset', layer: 'spiritual' },
+    { text: 'review spending for today', layer: 'financial' },
+    { text: 'finish one delayed task now', layer: 'general' },
   ],
   evening: [
     { text: 'review formulas before sleep', layer: 'academic' },
@@ -99,6 +105,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'prepare bag night before', layer: 'general' },
     { text: 'sleep at same time daily', layer: 'physical' },
     { text: 'write daily reflection 3 lines', layer: 'spiritual' },
+    { text: 'walk 20 minutes after dinner', layer: 'physical' },
+    { text: 'plan top 3 tasks for tomorrow', layer: 'general' },
+    { text: 'review one lecture summary', layer: 'academic' },
   ],
   night: [
     { text: 'review goals morning and night', layer: 'general' },
@@ -107,6 +116,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'prepare bag night before', layer: 'general' },
     { text: 'sleep at same time daily', layer: 'physical' },
     { text: 'short gratitude prayer night', layer: 'spiritual' },
+    { text: 'read one scripture passage', layer: 'spiritual' },
+    { text: 'set tomorrow focus alarm', layer: 'general' },
+    { text: 'quick budget check before bed', layer: 'financial' },
   ],
 };
 
@@ -149,7 +161,7 @@ const buildQuickSuggestions = (input: string, currentLayer?: LayerId | null) => 
     }))
     .sort((a, b) => b.score - a.score);
 
-  return ranked.slice(0, 5);
+  return ranked.slice(0, 8);
 };
 
 const formatTimeDisplay = (time: string) => {

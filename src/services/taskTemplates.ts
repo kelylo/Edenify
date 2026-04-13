@@ -706,19 +706,38 @@ export const getEdenTypingSuggestions = (params: {
     });
 
   const results: EdenTemplate[] = [];
+  const pushUnique = (template: EdenTemplate) => {
+    if (results.length >= limit) return;
+    if (results.some((item) => item.id === template.id)) return;
+    results.push(template);
+  };
+
   for (const item of ranked) {
-    if (results.length >= limit) break;
-    if (!results.some((template) => template.id === item.template.id)) {
-      results.push(item.template);
-    }
+    pushUnique(item.template);
   }
 
   if (results.length < limit) {
     for (const item of tokenCandidates.sort((a, b) => b.score - a.score)) {
-      if (results.length >= limit) break;
-      if (!results.some((template) => template.id === item.template.id)) {
-        results.push(item.template);
-      }
+      pushUnique(item.template);
+    }
+  }
+
+  if (results.length < limit) {
+    const fallbackPool = layerId ? getEdenTemplatesByLayer(layerId) : getAllEdenTemplates();
+    const fallbackRanked = fallbackPool
+      .map((template, index) => ({
+        template,
+        score:
+          getTemplateAutocompleteScore(template, query || getBaseTemplateName(template), index, recommendedBoosts.get(template.id) || 0) +
+          (template.layerId === layerId ? 8 : 0),
+      }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return getBaseTemplateName(a.template).localeCompare(getBaseTemplateName(b.template));
+      });
+
+    for (const item of fallbackRanked) {
+      pushUnique(item.template);
     }
   }
 

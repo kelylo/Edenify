@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
-        includeAssets: ['Mobile icon.png', 'Splash Screen 1.png', 'Desktop Icon (1).png', 'icons/pwa-192.png', 'icons/pwa-512.png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
+        includeAssets: ['Mobile icon.png', 'Desktop Icon (1).png', 'icons/pwa-192.png', 'icons/pwa-512.png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'sw.ts',
@@ -27,14 +27,7 @@ export default defineConfig(({mode}) => {
           scope: '/',
           orientation: 'portrait-primary',
           categories: ['productivity', 'lifestyle'],
-          screenshots: [
-            {
-              src: '/Splash%20Screen%201.png',
-              sizes: '192x192',
-              form_factor: 'narrow',
-              type: 'image/png',
-            },
-          ],
+          screenshots: [],
           icons: [
             {
               src: '/Mobile%20icon.png',

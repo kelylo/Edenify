@@ -26,3 +26,13 @@ services:
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+  - type: cron
+    name: edenify-keepalive
+    runtime: node
+    schedule: "*/10 * * * *"
+    buildCommand: npm install
+    startCommand: >-
+      node -e "const url=(process.env.KEEPALIVE_URL||'').trim(); if(!url){console.log('KEEPALIVE_URL not set, skipping ping.'); process.exit(0);} fetch(url,{method:'GET'}).then(r=>{console.log('keepalive status',r.status); process.exit(r.ok?0:1);}).catch(e=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
+    envVars:
+      - key: KEEPALIVE_URL
+        sync: false

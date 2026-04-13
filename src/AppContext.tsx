@@ -41,7 +41,6 @@ const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const DEFAULT_REVISION_HABIT_ID = 'default-academic-revision-habit';
 const DEFAULT_REVISION_TIME = '19:00';
-const FIXED_BIBLE_REMINDER_TIME = '06:30';
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -428,21 +427,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!prev) return prev;
 
       const nextReadingStartDate = prev.preferences?.readingPlanStartDate || today;
-      const needsReminderTimeFix = prev.preferences?.bibleReminderTime !== FIXED_BIBLE_REMINDER_TIME;
       const needsReadingStart = prev.preferences?.readingPlanStartDate !== nextReadingStartDate;
 
-      if (!needsReminderTimeFix && !needsReadingStart) return prev;
+      if (!needsReadingStart) return prev;
 
       return {
         ...prev,
         preferences: {
           ...prev.preferences,
           readingPlanStartDate: nextReadingStartDate,
-          bibleReminderTime: FIXED_BIBLE_REMINDER_TIME,
         },
       };
     });
-  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, user?.preferences?.bibleReminderTime, bibleReading.day]);
+  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, bibleReading.day]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -841,7 +838,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
-    const normalizedTime = FIXED_BIBLE_REMINDER_TIME;
+    const normalizedTime = user?.preferences?.bibleReminderTime || INITIAL_USER.preferences.bibleReminderTime || '06:30 AM';
 
     setTasks((prev) => {
       const existing = prev.find((task) => task.id === DAILY_BIBLE_TASK_ID);
@@ -864,7 +861,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return prev.map((task) => task.id === DAILY_BIBLE_TASK_ID ? { ...existing, ...nextTask } : task);
     });
-  }, [bibleReading.day, bibleReading.completed, user?.preferences.bibleReminderAlarm]);
+  }, [bibleReading.day, bibleReading.completed, user?.preferences.bibleReminderAlarm, user?.preferences.bibleReminderTime]);
 
   const updateLayer = (layerId: LayerId, updates: Partial<Layer>) => {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, ...updates } : l));

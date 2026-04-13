@@ -16,7 +16,6 @@ import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
-const FIXED_BIBLE_REMINDER_TIME = '06:30';
 const ACADEMIC_TIMETABLE: Record<number, string[]> = {
   0: [],
   1: ['Resistance des materiaux', 'Hydraulique appliquee', 'Beton arme'],
@@ -927,7 +926,7 @@ const Home: React.FC = () => {
 
     void registerBibleReminderSync();
 
-    const preferredTime = FIXED_BIBLE_REMINDER_TIME;
+    const preferredTime = user.preferences.bibleReminderTime || '06:30 AM';
     const normalized = preferredTime.toUpperCase();
     const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
     const match24 = normalized.match(/^(\d{1,2}):(\d{2})$/);
@@ -1040,6 +1039,7 @@ const Home: React.FC = () => {
     user?.id,
     user?.preferences.notifications.dailyScripture,
     user?.preferences.bibleReminderAlarm,
+    user?.preferences.bibleReminderTime,
     bibleReading.day,
     bibleReading.passage,
   ]);

@@ -88,15 +88,13 @@ type UserPreferencesShape = Partial<{
   customFocusPlaylistDataUrls: string[];
 }>;
 
-const FIXED_BIBLE_REMINDER_TIME = '06:30';
-
 const defaultUserPreferences = {
   focusDuration: 25,
   shortBreakDuration: 5,
   longBreakDuration: 15,
   focusSound: 'Rain Forest',
   focusAlarmSound: '',
-  bibleReminderTime: FIXED_BIBLE_REMINDER_TIME,
+  bibleReminderTime: '06:30 AM',
   bibleReminderAlarm: true,
   bibleReminderTelegram: true,
   revisionDefaultsApplied: false,
@@ -870,6 +868,7 @@ function parseBibleReminderTime(timeStr: string): { hours: number; minutes: numb
 async function processBibleReminders(db: DbShape, token: string, now: Date) {
   let changed = false;
   const nowMs = now.getTime();
+  const catchUpWindowMs = 6 * 60 * 60 * 1000;
 
   // Process Bible reminders for each user with Telegram linked
   for (const [chatId, store] of Object.entries(db.telegram?.byChatId || {})) {
@@ -879,32 +878,28 @@ async function processBibleReminders(db: DbShape, token: string, now: Date) {
     const userData = db.data?.[userId];
     if (!userData) continue;
 
-    const prefs = userData.user?.preferences;
+    const prefs = {
+      ...defaultUserPreferences,
+      ...(userData?.preferences || {}),
+      ...(userData?.user?.preferences || {}),
+    };
     if (!prefs?.bibleReminderTelegram) continue;
 
-    // Use one global fixed schedule for scripture reminders.
-    const parsedTime = parseBibleReminderTime(FIXED_BIBLE_REMINDER_TIME);
+    const parsedTime = parseBibleReminderTime(String(prefs?.bibleReminderTime || defaultUserPreferences.bibleReminderTime));
     if (!parsedTime) continue;
 
-    // Calculate the next reminder moment
-    const reminderMoment = new Date(now);
-    reminderMoment.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
-
-    // If the time has already passed today, it's tomorrow
-    if (reminderMoment.getTime() <= now.getTime()) {
-      reminderMoment.setDate(reminderMoment.getDate() + 1);
-    }
+    const scheduledToday = new Date(now);
+    scheduledToday.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+    const deltaMs = nowMs - scheduledToday.getTime();
 
     // Generate a key for this reminder (day-based to avoid multiple per day)
     const dateKey = now.toISOString().slice(0, 10);
     const reminderKey = `${chatId}|bible-reminder|${dateKey}`;
 
-    // Check if we're within the window to send (60 seconds before to 60 seconds after)
-    const delta = reminderMoment.getTime() - now.getTime();
-    const isTimeToSend = delta <= 60 * 1000 && delta >= -60 * 1000;
+    // Send on-time, or catch up once after cold starts/wake events.
+    const isTimeToSend = deltaMs >= -60 * 1000 && deltaMs <= catchUpWindowMs;
 
     if (!isTimeToSend) {
-      // Not yet time for the reminder
       continue;
     }
 
@@ -2192,15 +2187,16 @@ async function startServer() {
       }
 
       if (prefs.notifications?.dailyScripture) {
-        const parsedTime = parseBibleReminderTime(FIXED_BIBLE_REMINDER_TIME);
+        const parsedTime = parseBibleReminderTime(String(prefs.bibleReminderTime || defaultUserPreferences.bibleReminderTime));
         if (parsedTime) {
           const scheduled = new Date(now);
           scheduled.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
-          const deltaMs = scheduled.getTime() - nowMs;
+          const deltaMs = nowMs - scheduled.getTime();
+          const catchUpWindowMs = 6 * 60 * 60 * 1000;
           const dateKey = now.toISOString().slice(0, 10);
           const bibleReminderKey = `${sessionUserId}|sw|bible-reminder|${dateKey}`;
 
-          if (!db.telegram.reminders[bibleReminderKey] && deltaMs <= 120_000 && deltaMs >= -120_000) {
+          if (!db.telegram.reminders[bibleReminderKey] && deltaMs >= -120_000 && deltaMs <= catchUpWindowMs) {
             const reading = userData.bibleReading || {};
             res.json({
               shouldNotify: true,

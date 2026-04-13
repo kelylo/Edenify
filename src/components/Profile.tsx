@@ -5,6 +5,27 @@ import { cn } from '../lib/utils';
 import { registerBibleReminderSync, unregisterBibleReminderSync } from '../services/notifications';
 import AndroidDiagnostics from './AndroidDiagnostics';
 
+const toTimeInputValue = (value: string) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
+  const match24 = normalized.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
+
+  if (match12) {
+    let hours = Number(match12[1]);
+    const minutes = Number(match12[2]);
+    const period = match12[3].toUpperCase();
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
+  if (match24) {
+    return `${String(Number(match24[1])).padStart(2, '0')}:${match24[2]}`;
+  }
+
+  return '06:30';
+};
+
 const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
   const [telegramStatus, setTelegramStatus] = useState('');
@@ -437,9 +458,15 @@ const Profile: React.FC = () => {
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Reminder Time</span>
-              <span className="text-sm font-bold text-primary">Fixed at 06:30</span>
+              <input
+                type="time"
+                title="Bible reminder time"
+                value={toTimeInputValue(user.preferences.bibleReminderTime || '06:30 AM')}
+                onChange={(e) => updatePreference('bibleReminderTime', e.target.value)}
+                className="rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm"
+              />
             </div>
-            <p className="text-xs text-on-surface-variant">Bible reminder time is fixed globally and cannot be changed per user.</p>
+            <p className="text-xs text-on-surface-variant">This reminder time is personal to your account and syncs to backend reminders.</p>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Alarm Ring</span>
               <button

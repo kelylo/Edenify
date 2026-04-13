@@ -46,14 +46,14 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
         <div className="min-h-screen bg-background flex items-center justify-center px-6 text-center">
           <div className="max-w-sm space-y-3">
             <p className="text-xs uppercase tracking-[0.2em] font-bold text-primary">Edenify</p>
-            <h1 className="text-2xl font-serif text-on-surface">We hit a small hiccup.</h1>
-            <p className="text-sm text-on-surface-variant">Please refresh and continue. If this keeps showing, we will recover your session as soon as the app restarts.</p>
+            <h1 className="text-2xl font-serif text-on-surface">Session is recovering.</h1>
+            <p className="text-sm text-on-surface-variant">A temporary render issue occurred. Try reloading once.</p>
             <button
               type="button"
               onClick={() => window.location.reload()}
               className="mt-2 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em]"
             >
-              Refresh Now
+              Reload
             </button>
           </div>
         </div>
@@ -166,6 +166,19 @@ const AppContent: React.FC = () => {
       if (retryId) window.clearTimeout(retryId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!authReady || backendReady) return;
+
+    const openAnywayTimer = window.setTimeout(() => {
+      setBootStatusText('Network is slow. Opening app and retrying cloud connection in background.');
+      setBackendReady(true);
+    }, 12000);
+
+    return () => {
+      window.clearTimeout(openAnywayTimer);
+    };
+  }, [authReady, backendReady]);
 
   useEffect(() => {
     if (authReady) {

@@ -16,6 +16,7 @@ import { BibleReadingUI } from './BibleReadingUI';
 
 const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
+const FIXED_BIBLE_REMINDER_TIME = '06:30';
 const ACADEMIC_TIMETABLE: Record<number, string[]> = {
   0: [],
   1: ['Resistance des materiaux', 'Hydraulique appliquee', 'Beton arme'],
@@ -356,6 +357,15 @@ const Home: React.FC = () => {
     setAlarmTask(null);
   };
 
+  useEffect(() => {
+    if (!alarmOpen || !alarmTask) return;
+
+    const latestTask = tasks.find((task) => task.id === alarmTask.id);
+    if (!latestTask || latestTask.alarmEnabled === false || isTaskCompletedForToday(latestTask)) {
+      stopActiveAlarm();
+    }
+  }, [alarmOpen, alarmTask, tasks]);
+
   const requestNotificationPermission = async (withFeedback: boolean) => {
     if (!('Notification' in window)) {
       if (withFeedback) setNotificationStatus('Notifications are not supported on this browser.');
@@ -407,6 +417,10 @@ const Home: React.FC = () => {
     });
 
     setNotificationStatus(turningOn ? 'Notification is ON' : 'Notification is OFF');
+
+    if (!turningOn) {
+      stopActiveAlarm();
+    }
 
     if (turningOn) {
       await tryBrowserNotification('Edenify Notifications', 'All notifications are now enabled.');
@@ -802,6 +816,7 @@ const Home: React.FC = () => {
 
     const now = Date.now();
     tasks.forEach((task) => {
+      if (!user?.preferences.notifications.taskReminders) return;
       if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
 
       const reminderDue = getFutureDue(task, now);
@@ -883,7 +898,9 @@ const Home: React.FC = () => {
 
           void pushReminderEvent('Academic revision reminder', detail, revisionTask.id);
           setNotificationStatus(subjects.length ? `Tomorrow: ${subjects.join(', ')}` : 'Revision block: no classes tomorrow.');
-          void playTaskAlarm(revisionTask.name, revisionTask.customAlarmAudioDataUrl || getDefaultAlarmFromPreferences()?.dataUrl);
+          if (revisionTask.alarmEnabled !== false) {
+            void playTaskAlarm(revisionTask.name, revisionTask.customAlarmAudioDataUrl || getDefaultAlarmFromPreferences()?.dataUrl);
+          }
         }
 
         scheduleNextReminder();
@@ -922,11 +939,10 @@ const Home: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     if (!user.preferences.notifications.dailyScripture) return;
-    if (!user.preferences.bibleReminderTime) return;
 
     void registerBibleReminderSync();
 
-    const preferredTime = String(user.preferences.bibleReminderTime).trim();
+    const preferredTime = FIXED_BIBLE_REMINDER_TIME;
     const normalized = preferredTime.toUpperCase();
     const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
     const match24 = normalized.match(/^(\d{1,2}):(\d{2})$/);
@@ -1038,7 +1054,6 @@ const Home: React.FC = () => {
   }, [
     user?.id,
     user?.preferences.notifications.dailyScripture,
-    user?.preferences.bibleReminderTime,
     user?.preferences.bibleReminderAlarm,
     bibleReading.day,
     bibleReading.passage,

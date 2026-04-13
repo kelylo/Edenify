@@ -41,6 +41,7 @@ const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const DEFAULT_REVISION_HABIT_ID = 'default-academic-revision-habit';
 const DEFAULT_REVISION_TIME = '19:00';
+const FIXED_BIBLE_REMINDER_TIME = '06:30';
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -312,6 +313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [bibleReading, setBibleReading] = useState<BibleReading>(INITIAL_BIBLE_READING);
   const [dailyTaskGoal, setDailyTaskGoalState] = useState<number>(9);
+  const [cloudSyncReady, setCloudSyncReady] = useState(false);
   const applyingTelegramSyncRef = useRef(false);
   const lastTelegramTasksHashRef = useRef('');
   const hasCompletedInitialCloudSyncRef = useRef(false);
@@ -360,13 +362,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const resetMarker = localStorage.getItem('edenify_reset_version');
         if (resetMarker !== RESET_VERSION) {
-          // Version mismatch - clear old cached state to force fresh load
-          localStorage.removeItem('edenify_state_guest');
+          // Keep existing local state; only update marker so app upgrades do not wipe user progress.
           localStorage.setItem('edenify_reset_version', RESET_VERSION);
         }
 
-        // Don't load guest state yet - let cloud sync be authoritative.
-        // Only use localStorage as fallback if cloud pull fails later.
+        // Don't load guest state yet - let cloud sync initialize first.
       } catch (error) {
         console.warn('Session restore failed:', error);
         // If offline or error, still try cached user as fallback
@@ -393,8 +393,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!accountKey) return;
 
     // Skip loading from localStorage until cloud sync completes.
-    // This ensures fresh data is pulled on hard refresh instead of serving stale cache.
-    if (!hasCompletedInitialCloudSyncRef.current) {
+    if (!cloudSyncReady) {
       return;
     }
 
@@ -412,7 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
       console.warn('Failed to restore account-scoped local state:', error);
     }
-  }, [user?.id, user?.email, hasCompletedInitialCloudSyncRef.current]);
+  }, [user?.id, user?.email, cloudSyncReady]);
 
   useEffect(() => {
     const accountKey = getAccountKey(user);
@@ -422,22 +421,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!user) return;
-    if (user.preferences?.readingPlanStartDate) return;
 
     const today = getLocalDateKey();
 
     setUser((prev) => {
       if (!prev) return prev;
-      if (prev.preferences?.readingPlanStartDate) return prev;
+
+      const nextReadingStartDate = prev.preferences?.readingPlanStartDate || today;
+      const needsReminderTimeFix = prev.preferences?.bibleReminderTime !== FIXED_BIBLE_REMINDER_TIME;
+      const needsReadingStart = prev.preferences?.readingPlanStartDate !== nextReadingStartDate;
+
+      if (!needsReminderTimeFix && !needsReadingStart) return prev;
+
       return {
         ...prev,
         preferences: {
           ...prev.preferences,
-          readingPlanStartDate: today,
+          readingPlanStartDate: nextReadingStartDate,
+          bibleReminderTime: FIXED_BIBLE_REMINDER_TIME,
         },
       };
     });
-  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, bibleReading.day]);
+  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate, user?.preferences?.bibleReminderTime, bibleReading.day]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -557,6 +562,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const accountKey = getAccountKey(user);
     if (!accountKey) {
       hasCompletedInitialCloudSyncRef.current = false;
+      setCloudSyncReady(false);
       lastCloudStateHashRef.current = '';
       return;
     }
@@ -582,7 +588,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...Array.from(recentlyDeletedTaskIdsRef.current),
           ...Object.keys(deletedTaskTombstonesRef.current),
         ]);
-        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, blockedTaskIds, true));
+        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, blockedTaskIds, false));
       }
       if (remoteState.journal) setJournal(remoteState.journal);
       if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
@@ -612,6 +618,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } finally {
         if (!cancelled) {
           hasCompletedInitialCloudSyncRef.current = true;
+          setCloudSyncReady(true);
         }
       }
     };
@@ -673,7 +680,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (accountKey) {
       const syncState = async () => {
-        if (!hasCompletedInitialCloudSyncRef.current) return;
+        if (!cloudSyncReady) return;
         if (applyingCloudStateRef.current) return;
 
         const supabaseSaved = await saveUserState(accountKey, cloudStatePayload);
@@ -690,7 +697,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       syncState();
     }
-  }, [user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal]);
+  }, [user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal, cloudSyncReady]);
 
   useEffect(() => {
     const chatId = user?.preferences.telegramChatId?.trim();
@@ -834,10 +841,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
-    const preferredTimeRaw = String(user?.preferences.bibleReminderTime || '06:30').trim();
-    const normalizedTime = preferredTimeRaw.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/)
-      ? preferredTimeRaw
-      : '06:30';
+    const normalizedTime = FIXED_BIBLE_REMINDER_TIME;
 
     setTasks((prev) => {
       const existing = prev.find((task) => task.id === DAILY_BIBLE_TASK_ID);
@@ -860,7 +864,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return prev.map((task) => task.id === DAILY_BIBLE_TASK_ID ? { ...existing, ...nextTask } : task);
     });
-  }, [bibleReading.day, bibleReading.completed, user?.preferences.bibleReminderTime, user?.preferences.bibleReminderAlarm]);
+  }, [bibleReading.day, bibleReading.completed, user?.preferences.bibleReminderAlarm]);
 
   const updateLayer = (layerId: LayerId, updates: Partial<Layer>) => {
     setLayers(prev => prev.map(l => l.id === layerId ? { ...l, ...updates } : l));

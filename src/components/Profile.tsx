@@ -8,8 +8,6 @@ const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
   const [telegramStatus, setTelegramStatus] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
-  const [bibleReminderDraft, setBibleReminderDraft] = useState('06:30');
-  const [bibleReminderStatus, setBibleReminderStatus] = useState('');
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [hasInstallCapability, setHasInstallCapability] = useState(false);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState(false);
@@ -19,28 +17,6 @@ const Profile: React.FC = () => {
   const level = useMemo(() => Math.round(layers.reduce((acc, layer) => acc + layer.level, 0) / Math.max(1, layers.length)), [layers]);
   const xp = useMemo(() => layers.reduce((acc, layer) => acc + layer.xp, 0), [layers]);
   const maxXp = useMemo(() => layers.reduce((acc, layer) => acc + layer.maxXp, 0), [layers]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const raw = (user.preferences.bibleReminderTime || '06:30').trim().toUpperCase();
-    const match12 = raw.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
-    const match24 = raw.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
-
-    if (match24) {
-      setBibleReminderDraft(`${String(Number(match24[1])).padStart(2, '0')}:${match24[2]}`);
-      return;
-    }
-
-    if (match12) {
-      let hours = Number(match12[1]);
-      const minutes = Number(match12[2]);
-      const period = match12[3].toUpperCase();
-      if (period === 'PM' && hours !== 12) hours += 12;
-      if (period === 'AM' && hours === 12) hours = 0;
-      setBibleReminderDraft(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
-    }
-  }, [user?.preferences.bibleReminderTime]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -84,7 +60,7 @@ const Profile: React.FC = () => {
   useEffect(() => {
     const syncBibleReminderBackground = async () => {
       if (!user) return;
-      const remindersEnabled = Boolean(user.preferences.notifications.dailyScripture) && Boolean(user.preferences.bibleReminderTime);
+      const remindersEnabled = Boolean(user.preferences.notifications.dailyScripture);
       if (remindersEnabled) {
         await registerBibleReminderSync();
       } else {
@@ -93,7 +69,7 @@ const Profile: React.FC = () => {
     };
 
     void syncBibleReminderBackground();
-  }, [user?.id, user?.preferences.notifications.dailyScripture, user?.preferences.bibleReminderTime]);
+  }, [user?.id, user?.preferences.notifications.dailyScripture]);
 
   if (!user) return null;
 
@@ -145,20 +121,6 @@ const Profile: React.FC = () => {
     } catch {
       setTelegramStatus('Could not upload profile image.');
     }
-  };
-
-  const confirmBibleReminderTime = () => {
-    if (!/^([0-1]?\d|2[0-3]):([0-5]\d)$/.test(bibleReminderDraft)) {
-      setBibleReminderStatus('Invalid time. Use the time picker.');
-      return;
-    }
-    updatePreference('bibleReminderTime', bibleReminderDraft);
-    setBibleReminderStatus(`Bible reminder saved at ${bibleReminderDraft}.`);
-    
-    // Register periodic background sync for mobile notifications when app is closed
-    registerBibleReminderSync().catch((error) => {
-      console.warn('[Profile] Failed to register background sync:', error);
-    });
   };
 
   const testTelegramConnection = async () => {
@@ -444,25 +406,9 @@ const Profile: React.FC = () => {
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Reminder Time</span>
-              <input
-                type="time"
-                title="Bible reminder time"
-                placeholder="06:30"
-                value={bibleReminderDraft}
-                onChange={(e) => setBibleReminderDraft(e.target.value)}
-                className="w-28 rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm text-right"
-              />
+              <span className="text-sm font-bold text-primary">Fixed at 06:30</span>
             </div>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={confirmBibleReminderTime}
-                className="px-3 py-1.5 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em]"
-              >
-                Confirm Time
-              </button>
-            </div>
-            {bibleReminderStatus && <p className="text-xs text-secondary">{bibleReminderStatus}</p>}
+            <p className="text-xs text-on-surface-variant">Bible reminder time is fixed globally and cannot be changed per user.</p>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Alarm Ring</span>
               <button

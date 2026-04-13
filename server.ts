@@ -88,13 +88,15 @@ type UserPreferencesShape = Partial<{
   customFocusPlaylistDataUrls: string[];
 }>;
 
+const FIXED_BIBLE_REMINDER_TIME = '06:30';
+
 const defaultUserPreferences = {
   focusDuration: 25,
   shortBreakDuration: 5,
   longBreakDuration: 15,
   focusSound: 'Rain Forest',
   focusAlarmSound: '',
-  bibleReminderTime: '06:30 AM',
+  bibleReminderTime: FIXED_BIBLE_REMINDER_TIME,
   bibleReminderAlarm: true,
   bibleReminderTelegram: true,
   revisionDefaultsApplied: false,
@@ -878,14 +880,11 @@ async function processBibleReminders(db: DbShape, token: string, now: Date) {
     if (!userData) continue;
 
     const prefs = userData.user?.preferences;
-    if (!prefs?.bibleReminderTelegram || !prefs?.bibleReminderTime) continue;
+    if (!prefs?.bibleReminderTelegram) continue;
 
-    // Parse the reminder time
-    const parsedTime = parseBibleReminderTime(prefs.bibleReminderTime);
-    if (!parsedTime) {
-      console.warn(`[Bible Reminder] Invalid time format for user ${userId}: ${prefs.bibleReminderTime}`);
-      continue;
-    }
+    // Use one global fixed schedule for scripture reminders.
+    const parsedTime = parseBibleReminderTime(FIXED_BIBLE_REMINDER_TIME);
+    if (!parsedTime) continue;
 
     // Calculate the next reminder moment
     const reminderMoment = new Date(now);
@@ -2192,8 +2191,8 @@ async function startServer() {
         }
       }
 
-      if (prefs.notifications?.dailyScripture && prefs.bibleReminderTime) {
-        const parsedTime = parseBibleReminderTime(String(prefs.bibleReminderTime));
+      if (prefs.notifications?.dailyScripture) {
+        const parsedTime = parseBibleReminderTime(FIXED_BIBLE_REMINDER_TIME);
         if (parsedTime) {
           const scheduled = new Date(now);
           scheduled.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);

@@ -18,7 +18,7 @@
     },
     {
       "src": "/Splash%20Screen%201.png",
-      "sizes": "1080x2340",
+      "sizes": "512x512",
       "form_factor": "wide",
       "type": "image/png"
     }

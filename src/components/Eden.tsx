@@ -75,6 +75,15 @@ const INTRO_MESSAGE =
 const defaultPreferredMusic = 'Instrumental Warmth';
 const DRAFT_INPUT_STORAGE_KEY = 'eden.chat.draft.v1';
 
+const shuffleSmall = <T,>(items: T[]) => {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+};
+
 const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: LayerId }>> = {
   morning: [
     { text: 'wake up without snooze', layer: 'physical' },
@@ -86,6 +95,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'prepare your first priority block', layer: 'general' },
     { text: '10-minute stretch and mobility', layer: 'physical' },
     { text: 'review one key formula', layer: 'academic' },
+    { text: 'no phone first 30 minutes morning', layer: 'general' },
+    { text: 'clean desk before study session', layer: 'general' },
+    { text: 'prepare bag night before', layer: 'general' },
   ],
   afternoon: [
     { text: 'deep study 45 minutes no phone', layer: 'academic' },
@@ -97,6 +109,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'midday prayer and reset', layer: 'spiritual' },
     { text: 'review spending for today', layer: 'financial' },
     { text: 'finish one delayed task now', layer: 'general' },
+    { text: 'revise yesterday notes 10 minutes', layer: 'academic' },
+    { text: 'daily gym 30 minutes minimum', layer: 'physical' },
+    { text: 'learn one software skill daily', layer: 'academic' },
   ],
   evening: [
     { text: 'review formulas before sleep', layer: 'academic' },
@@ -108,6 +123,8 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'walk 20 minutes after dinner', layer: 'physical' },
     { text: 'plan top 3 tasks for tomorrow', layer: 'general' },
     { text: 'review one lecture summary', layer: 'academic' },
+    { text: 'track daily expenses', layer: 'financial' },
+    { text: 'review weekly progress every sunday', layer: 'general' },
   ],
   night: [
     { text: 'review goals morning and night', layer: 'general' },
@@ -119,6 +136,9 @@ const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: Lay
     { text: 'read one scripture passage', layer: 'spiritual' },
     { text: 'set tomorrow focus alarm', layer: 'general' },
     { text: 'quick budget check before bed', layer: 'financial' },
+    { text: 'finish what you start daily', layer: 'general' },
+    { text: 'choose discipline over comfort', layer: 'general' },
+    { text: 'study even when bored', layer: 'academic' },
   ],
 };
 
@@ -157,11 +177,11 @@ const buildQuickSuggestions = (input: string, currentLayer?: LayerId | null) => 
       score:
         (item.layer && item.layer === layerHint ? 20 : 0) +
         (TIME_SLOT_KEYWORDS[slot].test(item.text) ? 10 : 0) -
-        index,
+        index + Math.floor(Math.random() * 4),
     }))
     .sort((a, b) => b.score - a.score);
 
-  return ranked.slice(0, 8);
+  return shuffleSmall(ranked).slice(0, 8);
 };
 
 const formatTimeDisplay = (time: string) => {

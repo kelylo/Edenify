@@ -222,7 +222,6 @@ const Home: React.FC = () => {
   const academicReminderTimeoutRef = useRef<number | null>(null);
   const academicReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
-  const edenSuggestionCursorRef = useRef(0);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
   const readingStartDate = user?.preferences?.readingPlanStartDate || todayDateKey;
@@ -441,21 +440,6 @@ const Home: React.FC = () => {
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
 
-    const taskAudio = taskId ? tasks.find((task) => task.id === taskId)?.customAlarmAudioDataUrl : undefined;
-    const defaultAudio = getDefaultAlarmFromPreferences()?.dataUrl;
-    const selectedAudio = taskAudio || defaultAudio;
-
-    // Play alarm sound (uploaded audio only)
-    try {
-      if (title.includes('📖') || title.includes('Bible')) {
-        await playBibleReminderAlarm(selectedAudio);
-      } else {
-        await playTaskAlarm(title, selectedAudio);
-      }
-    } catch (error) {
-      console.warn('[Reminder] Alarm playback failed:', error);
-    }
-
     // Send cross-channel notifications (system only - Telegram handled by backend)
     if (areNotificationsEnabled() || user?.preferences.telegramChatId) {
       try {
@@ -510,7 +494,7 @@ const Home: React.FC = () => {
 
     window.addEventListener('edenify:focus-task', handleFocusTask as EventListener);
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.controller?.addEventListener('message', handleSwMessage);
+      navigator.serviceWorker.addEventListener('message', handleSwMessage as EventListener);
     }
 
     const params = new URLSearchParams(window.location.search);
@@ -522,7 +506,7 @@ const Home: React.FC = () => {
     return () => {
       window.removeEventListener('edenify:focus-task', handleFocusTask as EventListener);
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.controller?.removeEventListener('message', handleSwMessage);
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage as EventListener);
       }
     };
   }, [focusTaskFromNotification]);
@@ -1291,12 +1275,8 @@ const Home: React.FC = () => {
       return;
     }
 
-    const localDateKey = (() => {
-      if (newTaskRepeat === 'weekly' || newTaskRepeat === 'once') {
-        return newTaskDate;
-      }
-      return format(new Date(), 'yyyy-MM-dd');
-    })();
+    const baseDate = newTaskRepeat === 'weekly' ? new Date(`${newTaskDate}T00:00:00`) : new Date();
+    const dueDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
 
     const draftTask: Task = {
       id: `task-${Date.now()}`,
@@ -1306,7 +1286,7 @@ const Home: React.FC = () => {
       repeat: newTaskRepeat,
       time: resolvedTime,
       completed: false,
-      date: localDateKey,
+      date: dueDate.toISOString(),
       alarmEnabled: newTaskAlarmEnabled,
       preferredMusic: newTaskPreferredMusic || newTaskCustomAlarmName || 'Uploaded Song',
       customAlarmAudioName: newTaskCustomAlarmName || 'Uploaded Song',
@@ -1434,10 +1414,6 @@ const Home: React.FC = () => {
     });
 
     if (recommendations.length > 0) {
-      const cursor = edenSuggestionCursorRef.current % recommendations.length;
-      edenSuggestionCursorRef.current += 1;
-      const rotated = [...recommendations.slice(cursor), ...recommendations.slice(0, cursor)];
-      applyTemplateDraft(rotated[0]);
       setEdenTemplatePool(recommendations);
       setShowTemplatePicker(true);
     } else {

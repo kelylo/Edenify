@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
 import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2 } from 'lucide-react';
 import { cn, formatXP, getProgress } from '../lib/utils';
@@ -6,7 +6,6 @@ import { Habit, Layer, LayerId } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getEdenInsight } from '../services/gemini';
 import { BibleReadingUI } from './BibleReadingUI';
-import { getRecommendedEdenTemplates } from '../services/taskTemplates';
 
 const iconByLayer: Record<LayerId, string> = {
   spiritual: 'auto_awesome',
@@ -178,13 +177,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
   const [bibleReadingToday, setBibleReadingToday] = useState(false);
-  const habitSuggestionCursorRef = useRef<Record<LayerId, number>>({
-    spiritual: 0,
-    academic: 0,
-    financial: 0,
-    physical: 0,
-    general: 0,
-  });
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -281,7 +273,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       repeat: habitFrequency,
       time: finalTime,
       completed: false,
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date().toISOString(),
       alarmEnabled: true,
       preferredMusic: defaultUploadedSong?.name || '',
       customAlarmAudioName: defaultUploadedSong?.name,
@@ -330,24 +322,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const getEdenHabitSuggestions = async (layer: Layer) => {
     setIsGeneratingHabit(true);
     try {
-      const templatePool = getRecommendedEdenTemplates({
-        tasks,
-        layerId: layer.id,
-        limit: 30,
-      });
-
-      const cursor = habitSuggestionCursorRef.current[layer.id] % Math.max(1, templatePool.length);
-      habitSuggestionCursorRef.current[layer.id] += 1;
-      const rotatedTemplates = templatePool.length > 0
-        ? [...templatePool.slice(cursor), ...templatePool.slice(0, cursor)]
-        : [];
-
-      const templateSuggestions = rotatedTemplates.slice(0, 8).map((template) => ({
-        name: template.name,
-        description: `${template.category.replace(/-/g, ' ')} • ${template.repeat} • ${template.time}`,
-        duration: Math.max(5, Number(template.estimatedDuration || 20)),
-      }));
-
       const suggestions = await getEdenInsight(
         `For someone building a ${layer.name} layer habit, suggest 5 specific, actionable habits they could implement. Format as JSON array with objects: {name, description, duration (in minutes)}. Be concise.`
       );
@@ -356,26 +330,36 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
           { name: 'Morning prayer block', description: 'Begin with focused prayer and one scripture.', duration: 12 },
           { name: 'Scripture reflection', description: 'Read and note one practical application.', duration: 15 },
           { name: 'Evening gratitude journal', description: 'Write three gratitude lines before sleep.', duration: 10 },
+          { name: 'Bible chapter reading', description: 'Read one chapter and write one takeaway.', duration: 12 },
+          { name: 'Short gratitude prayer', description: 'Pray with focus and thank God for three things.', duration: 5 },
         ],
         academic: [
           { name: 'Active recall sprint', description: 'Recall key concepts without notes.', duration: 25 },
           { name: 'Practice problem set', description: 'Solve targeted questions in one weak area.', duration: 30 },
           { name: 'Lecture review', description: 'Summarize one lecture into key points.', duration: 20 },
+          { name: 'Past exam practice', description: 'Work through old questions under timed conditions.', duration: 45 },
+          { name: 'Lecture summary page', description: 'Condense one lecture into a single page.', duration: 20 },
         ],
         financial: [
           { name: 'Expense tracking check', description: 'Record all purchases and categories.', duration: 10 },
           { name: 'Budget review', description: 'Adjust one budget line and next action.', duration: 15 },
           { name: 'Savings transfer habit', description: 'Move a fixed amount to savings.', duration: 8 },
+          { name: 'Daily expense log', description: 'Write down every spend from today.', duration: 10 },
+          { name: 'Money concept study', description: 'Learn one money principle and apply it.', duration: 12 },
         ],
         physical: [
           { name: 'Mobility routine', description: 'Joint mobility and stretch routine.', duration: 15 },
           { name: 'Bodyweight circuit', description: 'Short strength session for consistency.', duration: 20 },
           { name: 'Hydration checkpoint', description: 'Track and complete hydration target.', duration: 5 },
+          { name: 'No-snooze wakeup', description: 'Wake up immediately without hitting snooze.', duration: 5 },
+          { name: 'Post-study stretch', description: 'Stretch after study or work to reset posture.', duration: 10 },
         ],
         general: [
           { name: 'Top 3 planning', description: 'Define three priorities for the day.', duration: 10 },
           { name: 'Desk reset', description: 'Clear workspace before deep work.', duration: 8 },
           { name: 'End-of-day review', description: 'Review wins and plan tomorrow.', duration: 12 },
+          { name: '5-second start', description: 'Begin the smallest next step immediately.', duration: 5 },
+          { name: 'Daily discipline check', description: 'Track one win and one correction.', duration: 10 },
         ],
       };
       try {
@@ -384,10 +368,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
           ? normalized.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
           : normalized;
         const parsed = JSON.parse(extracted);
-        const parsedSuggestions = Array.isArray(parsed) ? parsed.slice(0, 6) : [];
-        setHabitSuggestions([...templateSuggestions.slice(0, 4), ...parsedSuggestions].slice(0, 10));
+        setHabitSuggestions(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
       } catch {
-        setHabitSuggestions((templateSuggestions.length > 0 ? templateSuggestions : fallbackByLayer[layer.id]).slice(0, 10));
+        setHabitSuggestions(fallbackByLayer[layer.id].slice(0, 6));
       }
       setShowHabitSuggestions(true);
     } finally {
@@ -411,7 +394,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       repeat: 'once',
       time: '08:00 AM',
       completed: false,
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date().toISOString(),
       alarmEnabled: true,
       preferredMusic: 'Instrumental Warmth',
     });

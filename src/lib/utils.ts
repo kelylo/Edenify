@@ -87,17 +87,7 @@ export function parseTaskDueDate(task: Task): Date | null {
   }
 
   const now = new Date();
-  const rawDate = String(task.date || '').trim();
-  const datePart = rawDate.includes('T') ? rawDate.slice(0, 10) : rawDate;
-
-  let baseDate: Date;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-    const [year, month, day] = datePart.split('-').map(Number);
-    baseDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-  } else {
-    baseDate = new Date(rawDate || now.toISOString());
-  }
-
+  const baseDate = new Date(task.date || now.toISOString());
   if (Number.isNaN(baseDate.getTime())) return null;
 
   if (task.repeat === 'daily') {

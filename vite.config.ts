@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
-        includeAssets: ['Mobile icon.png', 'Splash Screen 1.png', 'Desktop Icon (1).png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
+        includeAssets: ['Mobile icon.png', 'Splash Screen 1.png', 'Desktop Icon (1).png', 'icons/pwa-192.png', 'icons/pwa-512.png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'sw.ts',
@@ -29,7 +29,7 @@ export default defineConfig(({mode}) => {
           categories: ['productivity', 'lifestyle'],
           screenshots: [
             {
-              src: '/icons/pwa-192.png',
+              src: '/Splash%20Screen%201.png',
               sizes: '192x192',
               form_factor: 'narrow',
               type: 'image/png',
@@ -73,7 +73,7 @@ export default defineConfig(({mode}) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
-              urlPattern: ({ request, url }) => request.destination === '' && url.pathname.startsWith('/api/'),
+              urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/api/'),
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'edenify-api',

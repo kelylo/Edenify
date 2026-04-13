@@ -11,14 +11,14 @@
   "categories": ["productivity", "lifestyle"],
   "screenshots": [
     {
-      "src": "/icons/pwa-192.png",
+      "src": "/Splash%20Screen%201.png",
       "sizes": "192x192",
       "form_factor": "narrow",
       "type": "image/png"
     },
     {
-      "src": "/icons/pwa-512.png",
-      "sizes": "512x512",
+      "src": "/Splash%20Screen%201.png",
+      "sizes": "1080x2340",
       "form_factor": "wide",
       "type": "image/png"
     }
@@ -37,13 +37,13 @@
       "purpose": "any"
     },
     {
-      "src": "/icons/pwa-192.png",
+      "src": "/Mobile%20icon.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/pwa-512.png",
+      "src": "/Mobile%20icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -57,7 +57,7 @@
       "url": "/?pwa=true&tab=home",
       "icons": [
         {
-          "src": "/icons/pwa-192.png",
+          "src": "/Mobile%20icon.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -70,7 +70,7 @@
       "url": "/?pwa=true&tab=focus",
       "icons": [
         {
-          "src": "/icons/pwa-192.png",
+          "src": "/Mobile%20icon.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -83,7 +83,7 @@
       "url": "/?pwa=true&tab=eden",
       "icons": [
         {
-          "src": "/icons/pwa-192.png",
+          "src": "/Mobile%20icon.png",
           "sizes": "192x192",
           "type": "image/png"
         }

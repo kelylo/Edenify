@@ -12,7 +12,7 @@ const jobs = new Map();
 const activeAlarmBeeps = new Map();
 
 function resolveIconPath() {
-  return path.join(__dirname, '..', 'public', 'icons', 'desktop-256.png');
+  return path.join(__dirname, '..', 'public', 'Desktop Icon (1).png');
 }
 
 function showDueNotification(alarm) {

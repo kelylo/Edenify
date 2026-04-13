@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { Capacitor } from '@capacitor/core';
 
 const DEVICE_BRAND_INSTRUCTIONS: Record<string, { name: string; steps: string[] }> = {
   samsung: {
@@ -66,38 +67,29 @@ const AndroidDiagnostics: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    const detectDevice = async () => {
-      try {
-        // Check if running on Android using Capacitor
-        const { Device } = await import('@capacitor/device');
+    const detectDevice = () => {
+      const platform = Capacitor.getPlatform();
+      const ua = (navigator.userAgent || '').toLowerCase();
+      const isAndroidPlatform = platform === 'android' || /android/.test(ua);
+      setIsAndroid(isAndroidPlatform);
+      if (!isAndroidPlatform) return;
 
-        const info = await Device.getInfo();
-        if (info.platform === 'android') {
-          setIsAndroid(true);
-
-          // Try to detect device manufacturer
-          const manufacturer = (info as any).manufacturer?.toLowerCase() || '';
-          if (manufacturer.includes('samsung')) {
-            setDeviceBrand('samsung');
-          } else if (manufacturer.includes('xiaomi')) {
-            setDeviceBrand('xiaomi');
-          } else if (manufacturer.includes('oneplus')) {
-            setDeviceBrand('oneplus');
-          } else if (manufacturer.includes('huawei')) {
-            setDeviceBrand('huawei');
-          } else if (manufacturer.includes('oppo') || manufacturer.includes('realme')) {
-            setDeviceBrand('realme');
-          } else {
-            setDeviceBrand('');
-          }
-        }
-      } catch {
-        // Not running on Android or Capacitor not available
-        setIsAndroid(false);
+      if (ua.includes('samsung')) {
+        setDeviceBrand('samsung');
+      } else if (ua.includes('xiaomi') || ua.includes('redmi') || ua.includes('poco')) {
+        setDeviceBrand('xiaomi');
+      } else if (ua.includes('oneplus')) {
+        setDeviceBrand('oneplus');
+      } else if (ua.includes('huawei') || ua.includes('honor')) {
+        setDeviceBrand('huawei');
+      } else if (ua.includes('oppo') || ua.includes('realme')) {
+        setDeviceBrand('realme');
+      } else {
+        setDeviceBrand('');
       }
     };
 
-    void detectDevice();
+    detectDevice();
   }, []);
 
   if (!isAndroid) return null;

@@ -222,6 +222,7 @@ const Home: React.FC = () => {
   const academicReminderTimeoutRef = useRef<number | null>(null);
   const academicReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+  const edenSuggestionCursorRef = useRef(0);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
   const readingStartDate = user?.preferences?.readingPlanStartDate || todayDateKey;
@@ -1290,8 +1291,12 @@ const Home: React.FC = () => {
       return;
     }
 
-    const baseDate = newTaskRepeat === 'weekly' ? new Date(`${newTaskDate}T00:00:00`) : new Date();
-    const dueDate = Number.isNaN(baseDate.getTime()) ? new Date() : baseDate;
+    const localDateKey = (() => {
+      if (newTaskRepeat === 'weekly' || newTaskRepeat === 'once') {
+        return newTaskDate;
+      }
+      return format(new Date(), 'yyyy-MM-dd');
+    })();
 
     const draftTask: Task = {
       id: `task-${Date.now()}`,
@@ -1301,7 +1306,7 @@ const Home: React.FC = () => {
       repeat: newTaskRepeat,
       time: resolvedTime,
       completed: false,
-      date: dueDate.toISOString(),
+      date: localDateKey,
       alarmEnabled: newTaskAlarmEnabled,
       preferredMusic: newTaskPreferredMusic || newTaskCustomAlarmName || 'Uploaded Song',
       customAlarmAudioName: newTaskCustomAlarmName || 'Uploaded Song',
@@ -1429,6 +1434,10 @@ const Home: React.FC = () => {
     });
 
     if (recommendations.length > 0) {
+      const cursor = edenSuggestionCursorRef.current % recommendations.length;
+      edenSuggestionCursorRef.current += 1;
+      const rotated = [...recommendations.slice(cursor), ...recommendations.slice(0, cursor)];
+      applyTemplateDraft(rotated[0]);
       setEdenTemplatePool(recommendations);
       setShowTemplatePicker(true);
     } else {

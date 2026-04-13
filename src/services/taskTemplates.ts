@@ -458,6 +458,94 @@ const GENERAL_TASKS: string[] = [
   'Publish or prepare something, not just consume',
 ];
 
+const USER_CURATED_TEMPLATES: Array<{
+  name: string;
+  layerId: LayerId;
+  priority: 'A' | 'B' | 'C' | 'D' | 'E';
+  repeat: 'once' | 'daily' | 'weekly';
+  time: string;
+}> = [
+  { name: 'Wake up without snooze', layerId: 'general', priority: 'A', repeat: 'daily', time: '06:00' },
+  { name: 'Morning prayer 5 minutes', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '06:10' },
+  { name: 'Read bible one chapter', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '06:30' },
+  { name: 'Plan top 3 tasks today', layerId: 'general', priority: 'A', repeat: 'daily', time: '07:00' },
+  { name: 'Review today lectures before class', layerId: 'academic', priority: 'A', repeat: 'daily', time: '07:30' },
+  { name: 'Revise yesterday notes 10 minutes', layerId: 'academic', priority: 'A', repeat: 'daily', time: '08:00' },
+  { name: 'Deep study 45 minutes no phone', layerId: 'academic', priority: 'A', repeat: 'daily', time: '14:00' },
+  { name: 'Solve 5 hard problems daily', layerId: 'academic', priority: 'A', repeat: 'daily', time: '15:00' },
+  { name: 'Watch lecture replay at 1.25x speed', layerId: 'academic', priority: 'B', repeat: 'daily', time: '16:00' },
+  { name: 'Summarize lecture into one page', layerId: 'academic', priority: 'A', repeat: 'daily', time: '17:00' },
+  { name: 'Review formulas before sleep', layerId: 'academic', priority: 'A', repeat: 'daily', time: '21:30' },
+  { name: 'Practice past exam questions daily', layerId: 'academic', priority: 'A', repeat: 'daily', time: '19:00' },
+  { name: 'Start studying before feeling ready', layerId: 'academic', priority: 'A', repeat: 'daily', time: '13:00' },
+  { name: 'Finish hardest task before noon', layerId: 'general', priority: 'A', repeat: 'daily', time: '10:30' },
+  { name: 'No phone first 30 minutes morning', layerId: 'general', priority: 'A', repeat: 'daily', time: '06:00' },
+  { name: 'Block social media during study', layerId: 'general', priority: 'A', repeat: 'daily', time: '13:30' },
+  { name: 'Use timer 45 minute focus block', layerId: 'general', priority: 'A', repeat: 'daily', time: '14:30' },
+  { name: 'Stand up and reset every hour', layerId: 'physical', priority: 'B', repeat: 'daily', time: '12:00' },
+  { name: 'Track daily wins checklist', layerId: 'general', priority: 'B', repeat: 'daily', time: '20:30' },
+  { name: 'Clean desk before study session', layerId: 'general', priority: 'B', repeat: 'daily', time: '13:20' },
+  { name: 'Prepare bag night before', layerId: 'general', priority: 'B', repeat: 'daily', time: '21:00' },
+  { name: 'Sleep at same time daily', layerId: 'physical', priority: 'A', repeat: 'daily', time: '22:30' },
+  { name: 'Wake up same time daily', layerId: 'physical', priority: 'A', repeat: 'daily', time: '06:00' },
+  { name: 'Daily gym 30 minutes minimum', layerId: 'physical', priority: 'A', repeat: 'daily', time: '18:00' },
+  { name: 'Pushups after waking up', layerId: 'physical', priority: 'B', repeat: 'daily', time: '06:05' },
+  { name: 'Stretch after study session', layerId: 'physical', priority: 'B', repeat: 'daily', time: '17:45' },
+  { name: 'Walk 10 minutes after meals', layerId: 'physical', priority: 'B', repeat: 'daily', time: '13:00' },
+  { name: 'Drink water before coffee', layerId: 'physical', priority: 'B', repeat: 'daily', time: '06:02' },
+  { name: 'Train even when tired', layerId: 'physical', priority: 'A', repeat: 'daily', time: '18:30' },
+  { name: 'Record gym progress weekly', layerId: 'physical', priority: 'B', repeat: 'weekly', time: '20:00' },
+  { name: 'Pray before starting work', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '07:50' },
+  { name: 'Short gratitude prayer night', layerId: 'spiritual', priority: 'B', repeat: 'daily', time: '21:45' },
+  { name: 'Memorize one bible verse daily', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '20:00' },
+  { name: 'Avoid idle scrolling alone', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '20:15' },
+  { name: 'Replace bad habit with short prayer', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '16:30' },
+  { name: 'Read one christian book page', layerId: 'spiritual', priority: 'B', repeat: 'daily', time: '21:15' },
+  { name: 'Youtube script idea brainstorming 10 minutes', layerId: 'financial', priority: 'B', repeat: 'daily', time: '11:00' },
+  { name: 'Write 5 video titles daily', layerId: 'financial', priority: 'B', repeat: 'daily', time: '11:30' },
+  { name: 'Research trending youtube topics', layerId: 'financial', priority: 'B', repeat: 'daily', time: '12:00' },
+  { name: 'Record short voice notes ideas', layerId: 'financial', priority: 'B', repeat: 'daily', time: '12:20' },
+  { name: 'Edit video 20 minutes daily', layerId: 'financial', priority: 'B', repeat: 'daily', time: '18:45' },
+  { name: 'Upload one video weekly minimum', layerId: 'financial', priority: 'A', repeat: 'weekly', time: '19:30' },
+  { name: 'Study successful youtube thumbnails', layerId: 'financial', priority: 'B', repeat: 'daily', time: '12:45' },
+  { name: 'Improve one editing skill daily', layerId: 'financial', priority: 'B', repeat: 'daily', time: '19:00' },
+  { name: 'Build youtube habit not motivation', layerId: 'financial', priority: 'A', repeat: 'daily', time: '20:00' },
+  { name: 'Learn one software skill daily', layerId: 'academic', priority: 'A', repeat: 'daily', time: '16:30' },
+  { name: 'Practice coding 30 minutes', layerId: 'academic', priority: 'A', repeat: 'daily', time: '17:30' },
+  { name: 'Build small project weekly', layerId: 'academic', priority: 'A', repeat: 'weekly', time: '18:00' },
+  { name: 'Fix one bug daily', layerId: 'academic', priority: 'A', repeat: 'daily', time: '18:20' },
+  { name: 'Read software documentation 10 minutes', layerId: 'academic', priority: 'B', repeat: 'daily', time: '17:00' },
+  { name: 'Learn keyboard shortcuts daily', layerId: 'academic', priority: 'B', repeat: 'daily', time: '10:00' },
+  { name: 'Organize project folders properly', layerId: 'general', priority: 'B', repeat: 'daily', time: '17:10' },
+  { name: 'Talk to one useful person daily', layerId: 'general', priority: 'B', repeat: 'daily', time: '12:30' },
+  { name: 'Ask one good question in class', layerId: 'academic', priority: 'B', repeat: 'daily', time: '09:00' },
+  { name: 'Help a classmate understand topic', layerId: 'general', priority: 'B', repeat: 'daily', time: '15:30' },
+  { name: 'Build small professional network', layerId: 'general', priority: 'B', repeat: 'weekly', time: '16:00' },
+  { name: 'Avoid negative conversations', layerId: 'spiritual', priority: 'B', repeat: 'daily', time: '14:00' },
+  { name: 'Listen more than talk', layerId: 'general', priority: 'B', repeat: 'daily', time: '12:40' },
+  { name: 'Track daily expenses', layerId: 'financial', priority: 'A', repeat: 'daily', time: '20:15' },
+  { name: 'Save small amount daily', layerId: 'financial', priority: 'A', repeat: 'daily', time: '20:20' },
+  { name: 'Learn one money concept daily', layerId: 'financial', priority: 'B', repeat: 'daily', time: '20:30' },
+  { name: 'Avoid unnecessary purchases', layerId: 'financial', priority: 'A', repeat: 'daily', time: '13:15' },
+  { name: 'Focus on skill building over comfort', layerId: 'general', priority: 'A', repeat: 'daily', time: '11:45' },
+  { name: 'Meditate quietly 5 minutes', layerId: 'spiritual', priority: 'B', repeat: 'daily', time: '21:20' },
+  { name: 'Visualize finishing tasks today', layerId: 'general', priority: 'B', repeat: 'daily', time: '07:10' },
+  { name: 'Review goals morning and night', layerId: 'general', priority: 'A', repeat: 'daily', time: '07:05' },
+  { name: 'Write daily reflection 3 lines', layerId: 'spiritual', priority: 'B', repeat: 'daily', time: '21:35' },
+  { name: 'Review weekly progress every sunday', layerId: 'general', priority: 'A', repeat: 'weekly', time: '18:00' },
+  { name: 'Start task immediately 5 second rule', layerId: 'general', priority: 'A', repeat: 'daily', time: '08:15' },
+  { name: 'Do smallest possible next step', layerId: 'general', priority: 'A', repeat: 'daily', time: '08:20' },
+  { name: 'Finish what you start daily', layerId: 'general', priority: 'A', repeat: 'daily', time: '20:40' },
+  { name: 'Avoid perfectionism start rough', layerId: 'general', priority: 'A', repeat: 'daily', time: '08:25' },
+  { name: 'Measure output not time', layerId: 'general', priority: 'A', repeat: 'daily', time: '20:45' },
+  { name: 'Focus on execution not motivation', layerId: 'general', priority: 'A', repeat: 'daily', time: '08:30' },
+  { name: 'Study even when bored', layerId: 'academic', priority: 'A', repeat: 'daily', time: '19:10' },
+  { name: 'Work when others waste time', layerId: 'general', priority: 'A', repeat: 'daily', time: '13:10' },
+  { name: 'Choose discipline over comfort', layerId: 'general', priority: 'A', repeat: 'daily', time: '09:00' },
+  { name: 'Repeat small wins daily', layerId: 'general', priority: 'A', repeat: 'daily', time: '20:50' },
+  { name: 'Build identity as disciplined person', layerId: 'spiritual', priority: 'A', repeat: 'daily', time: '21:50' },
+];
+
 // ----------------------------------------------------------------------
 // Category & Metadata Assignment
 // ----------------------------------------------------------------------
@@ -574,6 +662,28 @@ const buildAllTemplates = (): EdenTemplate[] => {
   processLayer('financial', FINANCIAL_TASKS, 'B', 'daily');
   processLayer('physical', PHYSICAL_TASKS, 'A', 'daily');
   processLayer('general', GENERAL_TASKS, 'C', 'once');
+
+  const pinnedSeen = new Set<string>();
+  USER_CURATED_TEMPLATES.forEach((entry) => {
+    const key = `${entry.layerId}|${entry.name.toLowerCase()}`;
+    if (pinnedSeen.has(key)) return;
+    pinnedSeen.add(key);
+
+    templates.push({
+      id: `tpl-user-curated-${entry.layerId}-${idCounter++}`,
+      name: entry.name,
+      layerId: entry.layerId,
+      priority: entry.priority,
+      repeat: entry.repeat,
+      time: entry.time,
+      category: 'core-habit',
+      estimatedDuration: 25,
+      tags: ['user-curated', entry.layerId, 'discipline'],
+      difficulty: 3,
+      energyLevel: 'medium',
+      createdFrom: 'system',
+    });
+  });
 
   return templates;
 };

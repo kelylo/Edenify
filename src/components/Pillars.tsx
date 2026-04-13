@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2 } from 'lucide-react';
 import { cn, formatXP, getProgress } from '../lib/utils';
@@ -6,6 +6,7 @@ import { Habit, Layer, LayerId } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getEdenInsight } from '../services/gemini';
 import { BibleReadingUI } from './BibleReadingUI';
+import { getRecommendedEdenTemplates } from '../services/taskTemplates';
 
 const iconByLayer: Record<LayerId, string> = {
   spiritual: 'auto_awesome',
@@ -177,6 +178,13 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
   const [bibleReadingToday, setBibleReadingToday] = useState(false);
+  const habitSuggestionCursorRef = useRef<Record<LayerId, number>>({
+    spiritual: 0,
+    academic: 0,
+    financial: 0,
+    physical: 0,
+    general: 0,
+  });
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -273,7 +281,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       repeat: habitFrequency,
       time: finalTime,
       completed: false,
-      date: new Date().toISOString(),
+      date: new Date().toISOString().slice(0, 10),
       alarmEnabled: true,
       preferredMusic: defaultUploadedSong?.name || '',
       customAlarmAudioName: defaultUploadedSong?.name,
@@ -322,6 +330,24 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const getEdenHabitSuggestions = async (layer: Layer) => {
     setIsGeneratingHabit(true);
     try {
+      const templatePool = getRecommendedEdenTemplates({
+        tasks,
+        layerId: layer.id,
+        limit: 30,
+      });
+
+      const cursor = habitSuggestionCursorRef.current[layer.id] % Math.max(1, templatePool.length);
+      habitSuggestionCursorRef.current[layer.id] += 1;
+      const rotatedTemplates = templatePool.length > 0
+        ? [...templatePool.slice(cursor), ...templatePool.slice(0, cursor)]
+        : [];
+
+      const templateSuggestions = rotatedTemplates.slice(0, 8).map((template) => ({
+        name: template.name,
+        description: `${template.category.replace(/-/g, ' ')} • ${template.repeat} • ${template.time}`,
+        duration: Math.max(5, Number(template.estimatedDuration || 20)),
+      }));
+
       const suggestions = await getEdenInsight(
         `For someone building a ${layer.name} layer habit, suggest 5 specific, actionable habits they could implement. Format as JSON array with objects: {name, description, duration (in minutes)}. Be concise.`
       );
@@ -358,9 +384,10 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
           ? normalized.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
           : normalized;
         const parsed = JSON.parse(extracted);
-        setHabitSuggestions(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
+        const parsedSuggestions = Array.isArray(parsed) ? parsed.slice(0, 6) : [];
+        setHabitSuggestions([...templateSuggestions.slice(0, 4), ...parsedSuggestions].slice(0, 10));
       } catch {
-        setHabitSuggestions(fallbackByLayer[layer.id].slice(0, 6));
+        setHabitSuggestions((templateSuggestions.length > 0 ? templateSuggestions : fallbackByLayer[layer.id]).slice(0, 10));
       }
       setShowHabitSuggestions(true);
     } finally {
@@ -384,7 +411,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       repeat: 'once',
       time: '08:00 AM',
       completed: false,
-      date: new Date().toISOString(),
+      date: new Date().toISOString().slice(0, 10),
       alarmEnabled: true,
       preferredMusic: 'Instrumental Warmth',
     });

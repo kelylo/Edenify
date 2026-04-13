@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'prompt',
-        includeAssets: ['icons/pwa-192.png', 'icons/pwa-512.png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
+        includeAssets: ['Mobile icon.png', 'Splash Screen 1.png', 'Desktop Icon (1).png', 'icons/favicon-32.png', 'icons/favicon-16.png'],
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'sw.ts',
@@ -37,13 +37,13 @@ export default defineConfig(({mode}) => {
           ],
           icons: [
             {
-              src: '/icons/pwa-192.png',
+              src: '/Mobile%20icon.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/icons/pwa-512.png',
+              src: '/Mobile%20icon.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
@@ -61,7 +61,7 @@ export default defineConfig(({mode}) => {
               short_name: 'Home',
               description: 'Go to home dashboard',
               url: '/?pwa=true&tab=home',
-              icons: [{ src: '/icons/pwa-192.png', sizes: '192x192', type: 'image/png' }],
+              icons: [{ src: '/Mobile%20icon.png', sizes: '192x192', type: 'image/png' }],
             },
           ],
         },
@@ -73,7 +73,7 @@ export default defineConfig(({mode}) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
-              urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/api/'),
+              urlPattern: ({ request, url }) => request.destination === '' && url.pathname.startsWith('/api/'),
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'edenify-api',

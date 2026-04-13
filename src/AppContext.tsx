@@ -956,16 +956,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const completeBibleDay = async (completed = true) => {
     const today = getLocalDateKey();
-    const yesterday = getYesterdayDateKey();
 
     setBibleReading((prev) => {
       if (completed) {
         if (prev.completed && prev.lastCompletedDate === today) return prev;
-        const nextHighest = Math.max(prev.highestCompletedDay, prev.day);
+
+        const nextDay = Math.min(prev.totalDays, Math.max(prev.day + 1, prev.highestCompletedDay + 1));
+        const nextHighest = Math.max(prev.highestCompletedDay, nextDay);
+        const yesterday = getYesterdayDateKey();
         const nextStreak = prev.lastCompletedDate === yesterday
           ? Math.max(1, Number(prev.currentStreak || 0) + 1)
           : 1;
-        const nextDay = prev.day;
 
         return {
           ...prev,
@@ -977,13 +978,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       }
 
-      const shouldRollbackHighest = prev.day === prev.highestCompletedDay && prev.lastCompletedDate === today;
       return {
         ...prev,
         completed: false,
-        highestCompletedDay: shouldRollbackHighest ? Math.max(0, prev.highestCompletedDay - 1) : prev.highestCompletedDay,
         lastCompletedDate: prev.lastCompletedDate === today ? '' : prev.lastCompletedDate,
-        currentStreak: prev.lastCompletedDate === today ? Math.max(0, Number(prev.currentStreak || 0) - 1) : prev.currentStreak,
       };
     });
   };

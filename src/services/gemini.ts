@@ -1,4 +1,4 @@
-const edenApiTimeoutMs = 15000;
+const edenApiTimeoutMs = 9000;
 
 type ChatHistory = { role: 'user' | 'model'; parts: { text: string }[] }[];
 

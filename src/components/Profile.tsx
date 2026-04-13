@@ -11,6 +11,8 @@ const Profile: React.FC = () => {
   const [bibleReminderDraft, setBibleReminderDraft] = useState('06:30');
   const [bibleReminderStatus, setBibleReminderStatus] = useState('');
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [hasInstallCapability, setHasInstallCapability] = useState(false);
+  const [hasUpdateAvailable, setHasUpdateAvailable] = useState(false);
   const [pwaStatus, setPwaStatus] = useState('');
   const [isStandalone, setIsStandalone] = useState<boolean>(() => window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
 
@@ -44,6 +46,7 @@ const Profile: React.FC = () => {
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallPromptEvent(event as any);
+      setHasInstallCapability(true);
     };
 
     const mediaQuery = window.matchMedia('(display-mode: standalone)');
@@ -55,9 +58,26 @@ const Profile: React.FC = () => {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     mediaQuery.addEventListener('change', updateStandaloneMode);
 
+    const checkForAppUpdate = async () => {
+      if (!('serviceWorker' in navigator)) return;
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const hasWaiting = registrations.some((registration) => Boolean(registration.waiting));
+        setHasUpdateAvailable(hasWaiting);
+      } catch {
+        setHasUpdateAvailable(false);
+      }
+    };
+
+    void checkForAppUpdate();
+    const updateCheckId = window.setInterval(() => {
+      void checkForAppUpdate();
+    }, 15000);
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       mediaQuery.removeEventListener('change', updateStandaloneMode);
+      window.clearInterval(updateCheckId);
     };
   }, []);
 
@@ -241,7 +261,7 @@ const Profile: React.FC = () => {
 
   const handleInstallApp = async () => {
     if (!installPromptEvent) {
-      setPwaStatus('Install prompt is not available yet. Open Edenify in your browser and use Install App from the browser menu.');
+      setPwaStatus('Install prompt is not available right now. Use the browser menu to add Edenify to your home screen.');
       return;
     }
 
@@ -253,6 +273,27 @@ const Profile: React.FC = () => {
       setPwaStatus('Install was dismissed. You can try again anytime.');
     }
     setInstallPromptEvent(null);
+  };
+
+  const handleUpdateApp = async () => {
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        const waitingRegistrations = registrations.filter((registration) => Boolean(registration.waiting));
+        if (waitingRegistrations.length === 0) {
+          setPwaStatus('No update is waiting yet. Try again after the next Render deploy or refresh the page later.');
+          return;
+        }
+        for (const registration of waitingRegistrations) {
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        }
+      }
+      window.location.reload();
+    } catch {
+      window.location.reload();
+    }
   };
 
   const handleUninstallHint = async () => {
@@ -372,6 +413,16 @@ const Profile: React.FC = () => {
 
           <div className="px-4 py-3 rounded-2xl border-t border-outline-variant/25 space-y-3">
             <p className="text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Bible Reminder Schedule</p>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-on-surface">Start Day</span>
+              <input
+                type="date"
+                title="Daily scripture start day"
+                value={user.preferences.readingPlanStartDate || ''}
+                onChange={(e) => updatePreference('readingPlanStartDate', e.target.value)}
+                className="rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm"
+              />
+            </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Reminder Time</span>
               <input
@@ -540,6 +591,14 @@ const Profile: React.FC = () => {
             >
               <Download size={13} />
               {isStandalone ? 'Installed' : 'Install App'}
+            </button>
+            <button
+              type="button"
+              onClick={handleUpdateApp}
+              className="px-3 py-2 rounded-full bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              <Zap size={13} />
+              {hasUpdateAvailable ? 'Update Available' : 'Check for Update'}
             </button>
             <button
               type="button"

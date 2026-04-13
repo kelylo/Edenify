@@ -203,6 +203,8 @@ export const EdenChat: React.FC<EdenChatProps> = ({
         {onClose && (
           <button
             onClick={onClose}
+            aria-label="Close Eden chat"
+            title="Close chat"
             className="p-2 hover:bg-surface-container-low rounded-lg transition-colors text-secondary"
           >
             <X size={18} />
@@ -285,11 +287,11 @@ export const EdenChat: React.FC<EdenChatProps> = ({
               <Loader2 size={16} className="text-primary animate-spin" />
             </div>
             <div className="bg-surface-container-low px-4 py-3 rounded-2xl rounded-bl-none text-sm text-secondary flex items-center gap-2">
-              <span>Eden is thinking</span>
+              <span>Wait for me a second, I am thinking.</span>
               <span className="flex gap-1">
                 <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce" />
-                <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
-                <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce [animation-delay:100ms]" />
+                <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-bounce [animation-delay:200ms]" />
               </span>
             </div>
           </div>

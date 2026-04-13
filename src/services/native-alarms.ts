@@ -2,12 +2,15 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { parseTaskDueDate } from '../lib/utils';
 import { Task, User } from '../types';
+import { EdenAlarm, AndroidAlarmItem } from './android-alarm';
 
 interface NativeAlarmItem {
   id: string;
   title: string;
   body: string;
   dueAt: string;
+  audioDataUrl?: string;
+  audioFileName?: string;
 }
 
 const STORAGE_KEY = 'edenify_native_alarm_ids_v1';
@@ -79,6 +82,8 @@ function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
       title: 'Edenify Alarm',
       body: `${task.name} is due now (${task.time}).`,
       dueAt: dueDate.toISOString(),
+      audioDataUrl: task.customAlarmAudioDataUrl,
+      audioFileName: task.customAlarmAudioName,
     });
   });
 
@@ -137,11 +142,28 @@ async function syncElectronAlarms(items: NativeAlarmItem[]) {
   await window.edenNative?.syncAlarms({ alarms: items });
 }
 
+async function syncAndroidAlarms(items: NativeAlarmItem[]) {
+  const alarms: AndroidAlarmItem[] = items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    body: item.body,
+    dueAt: item.dueAt,
+    audioDataUrl: item.audioDataUrl,
+    audioFileName: item.audioFileName,
+  }));
+
+  await EdenAlarm.syncAlarms({ alarms });
+}
+
 export async function syncNativeTaskAlarms(tasks: Task[], user: User | null) {
   if (!user) return;
 
   const items = buildNativeAlarms(tasks, user);
-  if (items.length === 0) return;
+
+  if (Capacitor.getPlatform() === 'android') {
+    await syncAndroidAlarms(items);
+    return;
+  }
 
   if (isNativeMobileShell()) {
     await syncCapacitorAlarms(items);

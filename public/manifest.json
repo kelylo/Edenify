@@ -1,0 +1,107 @@
+{
+  "name": "Edenify - Focused Life Architecture",
+  "short_name": "Edenify",
+  "description": "A focused life architecture app for spiritual, academic, financial, physical, and general growth.",
+  "start_url": "/?pwa=true",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#964407",
+  "background_color": "#fef9f2",
+  "categories": ["productivity", "lifestyle"],
+  "screenshots": [
+    {
+      "src": "/icons/pwa-192.png",
+      "sizes": "192x192",
+      "form_factor": "narrow",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/pwa-512.png",
+      "sizes": "512x512",
+      "form_factor": "wide",
+      "type": "image/png"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icons/favicon-16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Home Dashboard",
+      "short_name": "Home",
+      "description": "Go to your home dashboard with tasks and reminders",
+      "url": "/?pwa=true&tab=home",
+      "icons": [
+        {
+          "src": "/icons/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Focus Mode",
+      "short_name": "Focus",
+      "description": "Start a focus session with selected task",
+      "url": "/?pwa=true&tab=focus",
+      "icons": [
+        {
+          "src": "/icons/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Bible Reading",
+      "short_name": "Bible",
+      "description": "Daily scripture reading and progress",
+      "url": "/?pwa=true&tab=eden",
+      "icons": [
+        {
+          "src": "/icons/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false,
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "task",
+          "accept": ["text/plain"]
+        }
+      ]
+    }
+  }
+}

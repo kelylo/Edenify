@@ -41,6 +41,11 @@ const Profile: React.FC = () => {
         const registrations = await navigator.serviceWorker.getRegistrations();
         const hasWaiting = registrations.some((registration) => Boolean(registration.waiting));
         setHasUpdateAvailable(hasWaiting);
+        
+        // On mobile, automatically show the update is available
+        if (hasWaiting) {
+          setPwaStatus('✓ Update ready! Tap "Update App" to get the latest features.');
+        }
       } catch {
         setHasUpdateAvailable(false);
       }
@@ -244,19 +249,44 @@ const Profile: React.FC = () => {
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         const waitingRegistrations = registrations.filter((registration) => Boolean(registration.waiting));
+        
         if (waitingRegistrations.length === 0) {
           setPwaStatus('No update is ready yet. Please check again in a moment.');
           return;
         }
+        
+        setPwaStatus('Activating update...');
+        
         for (const registration of waitingRegistrations) {
           if (registration.waiting) {
+            // Tell the new service worker to skip waiting and become active
             registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            
+            // Listen for the controller change
+            let controllerChanged = false;
+            navigator.serviceWorker.oncontrollerchange = () => {
+              controllerChanged = true;
+              setPwaStatus('✓ Update activated! Refreshing app...');
+              window.setTimeout(() => {
+                window.location.reload();
+              }, 800);
+            };
+            
+            // Timeout fallback
+            window.setTimeout(() => {
+              if (!controllerChanged) {
+                window.location.reload();
+              }
+            }, 2500);
           }
         }
       }
-      window.location.reload();
-    } catch {
-      window.location.reload();
+    } catch (error) {
+      console.error('Update failed:', error);
+      setPwaStatus('Update failed. Please try again or refresh manually.');
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 2000);
     }
   };
 

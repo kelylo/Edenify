@@ -128,6 +128,36 @@ const AppContent: React.FC = () => {
   }, [authReady]);
 
   useEffect(() => {
+    // Listen for Service Worker update messages
+    if ('serviceWorker' in navigator) {
+      const handleSwMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'SW_UPDATE_AVAILABLE' || event.data?.type === 'UPDATE_ACTIVATED') {
+          console.log('[App] Service Worker update:', event.data.message);
+          
+          // Show notification banner to user
+          const notification = document.createElement('div');
+          notification.className = 'fixed top-0 left-0 right-0 z-50 bg-emerald-500 text-white px-4 py-3 text-center shadow-lg';
+          notification.innerHTML = `
+            <p class="text-sm font-bold">✓ ${event.data.message}</p>
+            <button onclick="window.location.reload()" class="mt-2 px-3 py-1 bg-white text-emerald-600 rounded font-bold text-xs">Refresh Now</button>
+          `;
+          document.body.appendChild(notification);
+          
+          if (event.data?.type === 'UPDATE_ACTIVATED') {
+            setTimeout(() => window.location.reload(), 2000);
+          }
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     let retryId: number | null = null;
 

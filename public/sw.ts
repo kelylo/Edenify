@@ -11,6 +11,10 @@ declare const self: ServiceWorkerGlobalScope;
 declare const self: any;
 const MANIFEST = (self as any).__WB_MANIFEST || [];
 
+// Service Worker version for cache busting and updates
+const SW_VERSION = Date.now().toString();
+const CACHE_NAME = `edenify-v${Math.floor(Date.now() / 1000)}`;
+
 // Precache manifest entries
 MANIFEST.forEach((entry: any) => {
   // Manifest is auto-injected by Workbox
@@ -165,6 +169,15 @@ self.addEventListener('message', (event) => {
 
   if (type === 'SKIP_WAITING') {
     self.skipWaiting();
+    // Notify all clients that update is ready
+    self.clients.matchAll().then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({
+          type: 'UPDATE_ACTIVATED',
+          message: 'App updated and refreshing...',
+        });
+      });
+    });
   }
 });
 
@@ -177,5 +190,32 @@ self.addEventListener('install', (event) => {
 // Handle activate event
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating Service Worker');
-  event.waitUntil(clients.claim());
+  event.waitUntil(
+    Promise.all([
+      clients.claim(),
+      // Clean up old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name.startsWith('edenify-') && !name.endsWith(CACHE_NAME))
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name);
+              return caches.delete(name);
+            })
+        );
+      }),
+    ])
+  );
+  
+  // Notify clients about update
+  event.waitUntil(
+    self.clients.matchAll().then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({
+          type: 'SW_UPDATE_AVAILABLE',
+          message: 'A new version is available. Please refresh to update.',
+        });
+      });
+    })
+  );
 });

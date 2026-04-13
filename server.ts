@@ -646,6 +646,69 @@ async function getTelegramBotStatus(token: string) {
   }
 }
 
+async function getTelegramWebhookStatus(token: string) {
+  if (!token) {
+    return {
+      ok: false,
+      url: '',
+      pendingUpdateCount: 0,
+      lastErrorMessage: '',
+    };
+  }
+
+  try {
+    const result = await telegramRequest(token, 'getWebhookInfo', {});
+    if (!result?.ok) {
+      return {
+        ok: false,
+        url: '',
+        pendingUpdateCount: 0,
+        lastErrorMessage: String(result?.description || 'Webhook status unavailable.'),
+      };
+    }
+
+    return {
+      ok: true,
+      url: String(result?.result?.url || ''),
+      pendingUpdateCount: Number(result?.result?.pending_update_count || 0),
+      lastErrorMessage: String(result?.result?.last_error_message || ''),
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      url: '',
+      pendingUpdateCount: 0,
+      lastErrorMessage: String(error?.message || 'Webhook status request failed.'),
+    };
+  }
+}
+
+let lastWebhookClearAt = 0;
+async function ensureTelegramPollingMode(token: string) {
+  if (!token) return;
+  const now = Date.now();
+  if (now - lastWebhookClearAt < 60_000) return;
+
+  const webhook = await getTelegramWebhookStatus(token);
+  if (!webhook.ok) return;
+  if (!webhook.url) {
+    lastWebhookClearAt = now;
+    return;
+  }
+
+  try {
+    const cleared = await telegramRequest(token, 'deleteWebhook', { drop_pending_updates: false });
+    if (cleared?.ok) {
+      console.log('[Telegram] Existing webhook detected and cleared so long-polling commands can work.');
+      lastWebhookClearAt = now;
+    } else {
+      console.warn('[Telegram] Could not clear webhook for polling mode:', cleared?.description || 'unknown error');
+    }
+  } catch (error) {
+    console.warn('[Telegram] Webhook clear request failed:', error);
+  }
+}
+
 function resolveTelegramBotTokenConfig(db?: DbShape) {
   const envCandidates = [
     ['TELEGRAM_BOT_TOKEN', process.env.TELEGRAM_BOT_TOKEN],
@@ -1201,6 +1264,7 @@ async function startServer() {
     const token = tokenConfig.token;
     const linkedChats = Object.keys(db.telegram?.byChatId || {}).length;
     const botStatus = await getTelegramBotStatus(token);
+    const webhookStatus = await getTelegramWebhookStatus(token);
     res.json({
       success: true,
       configured: botStatus.configured,
@@ -1208,6 +1272,9 @@ async function startServer() {
       botUsername: botStatus.botUsername,
       tokenError: botStatus.error,
       tokenSource: tokenConfig.source,
+      webhookUrl: webhookStatus.url,
+      webhookPendingUpdates: webhookStatus.pendingUpdateCount,
+      webhookError: webhookStatus.lastErrorMessage,
       linkedChats,
       hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
     });
@@ -1340,6 +1407,7 @@ async function startServer() {
     console.warn('[Telegram] WARNING: No bot token found in environment. Checked: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY');
   } else {
     console.log('[Telegram] Bot token loaded from ' + startupTokenConfig.source + ' (length: ' + startupTokenConfig.token.length + ' chars)');
+    void ensureTelegramPollingMode(startupTokenConfig.token);
   }
   let isPollingTelegram = false;
   let isRunningReminderScheduler = false;
@@ -1352,6 +1420,7 @@ async function startServer() {
       const db = readDb(DB_PATH);
       const token = resolveTelegramBotTokenConfig(db).token;
       if (!token) return;
+      await ensureTelegramPollingMode(token);
       db.telegram = db.telegram || { offset: 0, byChatId: {} };
       if (!canOwnTelegramPoller(db, pollerOwnerId)) {
         return;

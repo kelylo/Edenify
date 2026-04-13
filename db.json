@@ -15,6 +15,7 @@
         "bibleReminderTime": "06:30 AM",
         "bibleReminderAlarm": true,
         "bibleReminderTelegram": true,
+        "revisionDefaultsApplied": false,
         "telegramChatId": "7875504612",
         "customFocusSongName": "",
         "customFocusSongDataUrl": "",
@@ -25,7 +26,8 @@
           "taskReminders": true,
           "dailyScripture": true,
           "streakProtection": false
-        }
+        },
+        "readingPlanStartDate": "2026-04-13"
       }
     },
     {
@@ -42,6 +44,7 @@
         "bibleReminderTime": "06:30 AM",
         "bibleReminderAlarm": true,
         "bibleReminderTelegram": true,
+        "revisionDefaultsApplied": false,
         "telegramChatId": "",
         "customFocusSongName": "",
         "customFocusSongDataUrl": "",
@@ -52,7 +55,8 @@
           "taskReminders": true,
           "dailyScripture": true,
           "streakProtection": false
-        }
+        },
+        "readingPlanStartDate": "2026-04-13"
       }
     }
   ],
@@ -72,6 +76,7 @@
           "bibleReminderTime": "06:30 AM",
           "bibleReminderAlarm": true,
           "bibleReminderTelegram": true,
+          "revisionDefaultsApplied": false,
           "telegramChatId": "7875504612",
           "customFocusSongName": "",
           "customFocusSongDataUrl": "",
@@ -121,7 +126,7 @@
               "count": 1
             }
           ],
-          "readingPlanStartDate": "2026-04-12"
+          "readingPlanStartDate": "2026-04-13"
         },
         "role": "admin"
       },
@@ -235,9 +240,7 @@
           "completed": false,
           "date": "2026-04-12T02:02:01.669Z",
           "alarmEnabled": true,
-          "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 25,
-          "durationStartedAt": "2026-04-12T02:29:19.879Z"
+          "preferredMusic": "Instrumental Warmth"
         },
         {
           "id": "tg-1775960388569-585a4",
@@ -261,9 +264,7 @@
           "completed": false,
           "date": "2026-04-12T02:21:17.325Z",
           "alarmEnabled": true,
-          "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 25,
-          "durationStartedAt": "2026-04-12T02:21:17.325Z"
+          "preferredMusic": "Instrumental Warmth"
         },
         {
           "id": "habit-task-habit-1775960605372",
@@ -275,9 +276,7 @@
           "completed": false,
           "date": "2026-04-12T02:23:25.373Z",
           "alarmEnabled": true,
-          "preferredMusic": "Instrumental Warmth",
-          "estimatedDuration": 12,
-          "durationStartedAt": "2026-04-12T02:23:25.373Z"
+          "preferredMusic": "Instrumental Warmth"
         },
         {
           "id": "tg-1775977923891-d23bb",
@@ -309,8 +308,8 @@
         "day": 1,
         "totalDays": 365,
         "highestCompletedDay": 0,
-        "passage": "John 1; Psalms 1",
-        "text": "Today's reading: John 1; Psalms 1",
+        "passage": "Loading reading plan...",
+        "text": "Loading verses from bible-data.json",
         "completed": false,
         "currentStreak": 0,
         "lastCompletedDate": ""
@@ -332,6 +331,7 @@
           "bibleReminderTime": "06:30 AM",
           "bibleReminderAlarm": true,
           "bibleReminderTelegram": true,
+          "revisionDefaultsApplied": false,
           "telegramChatId": "7875504612",
           "customFocusSongName": "",
           "customFocusSongDataUrl": "",
@@ -343,7 +343,8 @@
             "dailyScripture": true,
             "streakProtection": true
           },
-          "mostRepeatedTasks": []
+          "mostRepeatedTasks": [],
+          "readingPlanStartDate": "2026-04-13"
         },
         "role": "admin"
       },
@@ -421,12 +422,14 @@
       ],
       "journal": [],
       "bibleReading": {
-        "day": 18,
+        "day": 1,
         "totalDays": 400,
-        "highestCompletedDay": 18,
-        "passage": "Genesis 44:2-46:17",
-        "text": "And put my cup, the silver cup, in the sack's mouth of the youngest, and his grain money. And he did according to the word that Joseph had spoken.",
-        "completed": true
+        "highestCompletedDay": 0,
+        "passage": "Loading reading plan...",
+        "text": "Loading verses from bible-data.json",
+        "completed": false,
+        "currentStreak": 0,
+        "lastCompletedDate": ""
       },
       "dailyTaskGoal": 9,
       "preferences": {
@@ -445,7 +448,7 @@
     }
   },
   "telegram": {
-    "offset": 146642203,
+    "offset": 146642240,
     "byChatId": {
       "7875504612": {
         "tasks": [
@@ -582,8 +585,11 @@
       "7875504612|tg-1775991083352-ca0ee|2026-04-12T10:55|due": "2026-04-12T10:59:11.801Z"
     },
     "poller": {
-      "ownerId": "26640-492dcb",
-      "updatedAt": "2026-04-12T11:39:15.138Z"
+      "ownerId": "2176-c14aab",
+      "updatedAt": "2026-04-13T12:48:39.548Z"
     }
+  },
+  "migrations": {
+    "bible-reset-2026-04-13-r1": "2026-04-13T12:31:52.909Z"
   }
 }

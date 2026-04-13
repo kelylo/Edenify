@@ -207,6 +207,10 @@ const Home: React.FC = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   })();
 
+  const reminderTimeoutsRef = useRef<Record<string, number>>({});
+  const alarmTimeoutsRef = useRef<Record<string, number>>({});
+  const triggeredRef = useRef<Set<string>>(new Set());
+  const alarmTriggeredRef = useRef<Set<string>>(new Set());
   const scripturePageRef = useRef<HTMLDivElement | null>(null);
   const reflectionComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const taskPreviewMediaRef = useRef<HTMLAudioElement | null>(null);
@@ -260,6 +264,30 @@ const Home: React.FC = () => {
       };
     }
     return favoriteFocusTrack;
+  };
+
+  const resolveTaskUploadedAlarm = (task: Task) => {
+    if (task.customAlarmAudioDataUrl) {
+      return { dataUrl: task.customAlarmAudioDataUrl, name: task.customAlarmAudioName || task.preferredMusic || 'Uploaded audio' };
+    }
+
+    const preferredName = String(task.preferredMusic || '').trim();
+    if (!preferredName) return getDefaultAlarmFromPreferences();
+
+    const playlistNames = user?.preferences.customFocusPlaylistNames || [];
+    const playlistUrls = user?.preferences.customFocusPlaylistDataUrls || [];
+    const index = playlistNames.findIndex((name) => String(name || '').trim().toLowerCase() === preferredName.toLowerCase());
+    if (index >= 0 && playlistUrls[index]) {
+      return { dataUrl: playlistUrls[index], name: playlistNames[index] };
+    }
+
+    const singleName = String(user?.preferences.customFocusSongName || '').trim();
+    const singleUrl = String(user?.preferences.customFocusSongDataUrl || '').trim();
+    if (singleName && singleUrl && singleName.toLowerCase() === preferredName.toLowerCase()) {
+      return { dataUrl: singleUrl, name: singleName };
+    }
+
+    return getDefaultAlarmFromPreferences();
   };
 
   const [edenTemplatePool, setEdenTemplatePool] = useState<EdenTemplate[]>([]);
@@ -722,6 +750,89 @@ const Home: React.FC = () => {
       stopActiveAlarm();
     };
   }, []);
+
+  useEffect(() => {
+    const clearAllScheduledTimeouts = () => {
+      (Object.values(reminderTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
+      reminderTimeoutsRef.current = {};
+      (Object.values(alarmTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
+      alarmTimeoutsRef.current = {};
+    };
+
+    const getFutureDue = (task: Task, nowMs: number) => {
+      const due = parseTaskDueDate(task);
+      if (!due) return null;
+
+      const reminderDue = new Date(due);
+      if (task.repeat === 'daily' && reminderDue.getTime() <= nowMs) {
+        reminderDue.setDate(reminderDue.getDate() + 1);
+      }
+      if (task.repeat === 'weekly' && reminderDue.getTime() <= nowMs) {
+        reminderDue.setDate(reminderDue.getDate() + 7);
+      }
+      return reminderDue;
+    };
+
+    const triggerReminder = async (task: Task, reminderKey: string) => {
+      if (triggeredRef.current.has(reminderKey)) return;
+      triggeredRef.current.add(reminderKey);
+
+      const layerName = layers.find((layer) => layer.id === task.layerId)?.name || 'General';
+      await pushReminderEvent('Task reminder', `${task.name} from ${layerName} starts in 5 minutes.`, task.id);
+
+      if (user?.preferences.notifications.taskReminders) {
+        await tryBrowserNotification('Edenify Task Reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
+      }
+      setNotificationStatus(`${task.name} from ${layerName} is coming in 5 minutes.`);
+    };
+
+    const triggerAlarm = async (task: Task, alarmKey: string) => {
+      if (alarmTriggeredRef.current.has(alarmKey)) return;
+      alarmTriggeredRef.current.add(alarmKey);
+
+      await pushReminderEvent('Task due now', `${task.name} is due now (${task.time}).`, task.id);
+      setNotificationStatus(`${task.name} is due now.`);
+      setAlarmTask(task);
+      setAlarmOpen(true);
+      const uploaded = resolveTaskUploadedAlarm(task);
+      await playTaskAlarm(task.name, uploaded?.dataUrl);
+    };
+
+    clearAllScheduledTimeouts();
+
+    const now = Date.now();
+    tasks.forEach((task) => {
+      if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
+
+      const reminderDue = getFutureDue(task, now);
+      if (!reminderDue) return;
+
+      const dueMs = reminderDue.getTime();
+      if (dueMs <= now) return;
+
+      const reminderAtMs = dueMs - 5 * 60 * 1000;
+      const delay = reminderAtMs <= now ? 500 : reminderAtMs - now;
+      const reminderKey = `${task.id}|${reminderDue.toISOString().slice(0, 16)}`;
+      const alarmDelay = dueMs <= now ? 500 : dueMs - now;
+      const alarmKey = `${task.id}|alarm|${reminderDue.toISOString().slice(0, 16)}`;
+
+      if (delay > 1000 * 60 * 60 * 26) return;
+
+      if (user?.preferences.notifications.taskReminders) {
+        reminderTimeoutsRef.current[reminderKey] = window.setTimeout(() => {
+          void triggerReminder(task, reminderKey);
+        }, delay);
+      }
+
+      alarmTimeoutsRef.current[alarmKey] = window.setTimeout(() => {
+        void triggerAlarm(task, alarmKey);
+      }, alarmDelay);
+    });
+
+    return () => {
+      clearAllScheduledTimeouts();
+    };
+  }, [tasks, layers, user?.preferences.notifications.taskReminders, user?.preferences.customFocusPlaylistNames, user?.preferences.customFocusPlaylistDataUrls, user?.preferences.customFocusSongName, user?.preferences.customFocusSongDataUrl]);
 
   useEffect(() => {
     const askOnce = async () => {

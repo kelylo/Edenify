@@ -2368,19 +2368,61 @@ export async function suggestTaskWithGemini(input: {
 }) {
   const quickLocal = !needsComplexReasoning(input.intent || '') && (input.intent || '').trim().length < 120;
 
+  const nextNearTime = () => {
+    const now = new Date();
+    const near = new Date(now.getTime() + 20 * 60 * 1000);
+    const minutes = near.getMinutes();
+    near.setMinutes(minutes + (5 - (minutes % 5 || 5))); // round up to next 5-minute mark
+    const h24 = near.getHours();
+    const mm = String(near.getMinutes()).padStart(2, '0');
+    const period = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${mm} ${period}`;
+  };
+
   if (quickLocal) {
     const layer = input.layer.toLowerCase();
-    const fallbackByLayer: Record<string, string> = {
-      spiritual: 'Morning prayer and scripture reflection',
-      academic: 'Deep study sprint with recall review',
-      financial: 'Track expenses and adjust budget line',
-      physical: 'Exercise session and whole-food meal prep',
-      general: 'Plan top priorities and clear workspace',
+    const fallbackByLayer: Record<string, string[]> = {
+      spiritual: [
+        'Pray and journal one scripture insight',
+        'Read one psalm and write one application',
+        '10-minute gratitude and intercession prayer',
+      ],
+      academic: [
+        'Deep study sprint with active recall',
+        'Review lecture notes and summarize key points',
+        'Solve practice questions for one weak topic',
+      ],
+      financial: [
+        'Track today expenses and categorize spending',
+        'Review budget and cut one non-essential item',
+        'Update savings plan and next contribution',
+      ],
+      physical: [
+        '20-minute workout and hydration checkpoint',
+        'Prepare one high-protein meal',
+        'Stretch and mobility reset session',
+      ],
+      general: [
+        'Plan top 3 priorities for today',
+        'Clear workspace and remove distractions',
+        'Time-block one focused work session',
+      ],
     };
 
+    const options = fallbackByLayer[layer] || ['Complete one high-impact task'];
+    const intentSeed = String(input.intent || '').trim().toLowerCase();
+    const seed = Math.abs(
+      Array.from(intentSeed || `${Date.now()}`).reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0)
+    );
+    const picked = options[seed % options.length];
+    const suggestedTime = input.preferredTime && String(input.preferredTime).trim().length > 0
+      ? input.preferredTime
+      : nextNearTime();
+
     return {
-      name: fallbackByLayer[layer] || 'Complete one high-impact task',
-      time: input.preferredTime || '08:00 AM',
+      name: picked,
+      time: suggestedTime,
       preferredMusic: input.userPreferences?.favoriteMusicName || 'Instrumental Warmth',
     };
   }

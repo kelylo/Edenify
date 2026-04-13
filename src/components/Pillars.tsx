@@ -325,15 +325,42 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
       const suggestions = await getEdenInsight(
         `For someone building a ${layer.name} layer habit, suggest 5 specific, actionable habits they could implement. Format as JSON array with objects: {name, description, duration (in minutes)}. Be concise.`
       );
+      const fallbackByLayer: Record<LayerId, Array<{ name: string; description: string; duration: number }>> = {
+        spiritual: [
+          { name: 'Morning prayer block', description: 'Begin with focused prayer and one scripture.', duration: 12 },
+          { name: 'Scripture reflection', description: 'Read and note one practical application.', duration: 15 },
+          { name: 'Evening gratitude journal', description: 'Write three gratitude lines before sleep.', duration: 10 },
+        ],
+        academic: [
+          { name: 'Active recall sprint', description: 'Recall key concepts without notes.', duration: 25 },
+          { name: 'Practice problem set', description: 'Solve targeted questions in one weak area.', duration: 30 },
+          { name: 'Lecture review', description: 'Summarize one lecture into key points.', duration: 20 },
+        ],
+        financial: [
+          { name: 'Expense tracking check', description: 'Record all purchases and categories.', duration: 10 },
+          { name: 'Budget review', description: 'Adjust one budget line and next action.', duration: 15 },
+          { name: 'Savings transfer habit', description: 'Move a fixed amount to savings.', duration: 8 },
+        ],
+        physical: [
+          { name: 'Mobility routine', description: 'Joint mobility and stretch routine.', duration: 15 },
+          { name: 'Bodyweight circuit', description: 'Short strength session for consistency.', duration: 20 },
+          { name: 'Hydration checkpoint', description: 'Track and complete hydration target.', duration: 5 },
+        ],
+        general: [
+          { name: 'Top 3 planning', description: 'Define three priorities for the day.', duration: 10 },
+          { name: 'Desk reset', description: 'Clear workspace before deep work.', duration: 8 },
+          { name: 'End-of-day review', description: 'Review wins and plan tomorrow.', duration: 12 },
+        ],
+      };
       try {
-        const parsed = JSON.parse(suggestions);
+        const normalized = String(suggestions || '').trim();
+        const extracted = normalized.includes('```')
+          ? normalized.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
+          : normalized;
+        const parsed = JSON.parse(extracted);
         setHabitSuggestions(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
       } catch {
-        setHabitSuggestions([
-          { name: 'Daily Reflection', description: 'Spend 10 minutes reflecting on progress', duration: 10 },
-          { name: 'Practice Session', description: 'Dedicated practice time for skill improvement', duration: 15 },
-          { name: 'Review & Plan', description: 'Review today and plan tomorrow', duration: 12 },
-        ]);
+        setHabitSuggestions(fallbackByLayer[layer.id].slice(0, 6));
       }
       setShowHabitSuggestions(true);
     } finally {

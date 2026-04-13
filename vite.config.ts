@@ -12,7 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icons/*'],
+        includeAssets: ['icons/*', 'Mobile icon.png'],
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'sw.ts',
@@ -28,20 +28,14 @@ export default defineConfig(({mode}) => {
           orientation: 'portrait',
           icons: [
             {
-              src: '/icons/pwa-192.png',
+              src: '/Mobile%20icon.png',
               sizes: '192x192',
               type: 'image/png',
             },
             {
-              src: '/icons/pwa-512.png',
+              src: '/Mobile%20icon.png',
               sizes: '512x512',
               type: 'image/png',
-            },
-            {
-              src: '/icons/pwa-512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any maskable',
             },
           ],
         },

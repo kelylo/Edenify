@@ -55,7 +55,6 @@ interface DbShape {
   users: Array<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>;
   data: Record<string, any>;
   sessions?: Record<string, { userId: string; createdAt: string }>;
-  migrations?: Record<string, string>;
   telegram?: {
     offset?: number;
     byChatId?: Record<string, TelegramStoreItem>;
@@ -108,7 +107,6 @@ const defaultUserPreferences = {
     streakProtection: false,
   },
 };
-const BIBLE_RESET_MIGRATION_KEY = 'bible-reset-2026-04-13-r1';
 
 function normalizeUser(user: Partial<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>) {
   return {
@@ -152,73 +150,6 @@ function readDb(dbPath: string): DbShape {
 
 function writeDb(dbPath: string, db: DbShape) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-}
-
-function getLocalDateKey(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function applyBibleResetMigration(dbPath: string) {
-  const db = readDb(dbPath);
-  db.migrations = db.migrations || {};
-  if (db.migrations[BIBLE_RESET_MIGRATION_KEY]) return;
-
-  const today = getLocalDateKey();
-  const userIds = new Set<string>();
-
-  (db.users || []).forEach((user) => {
-    const normalizedId = normalizeUserKey(user.id || user.email);
-    if (normalizedId) userIds.add(normalizedId);
-    user.preferences = {
-      ...defaultUserPreferences,
-      ...(user.preferences || {}),
-      readingPlanStartDate: today,
-      notifications: {
-        ...defaultUserPreferences.notifications,
-        ...(user.preferences?.notifications || {}),
-      },
-    };
-  });
-
-  Object.entries(db.data || {}).forEach(([userId, state]) => {
-    const normalizedId = normalizeUserKey(userId);
-    if (normalizedId) userIds.add(normalizedId);
-    const current = (state && typeof state === 'object') ? state : {};
-    const nextUserPrefs = {
-      ...defaultUserPreferences,
-      ...(current.user?.preferences || {}),
-      readingPlanStartDate: today,
-      notifications: {
-        ...defaultUserPreferences.notifications,
-        ...(current.user?.preferences?.notifications || {}),
-      },
-    };
-
-    db.data[userId] = {
-      ...current,
-      user: {
-        ...(current.user || {}),
-        preferences: nextUserPrefs,
-      },
-      bibleReading: {
-        day: 1,
-        totalDays: Number(current?.bibleReading?.totalDays || 365),
-        highestCompletedDay: 0,
-        passage: 'Loading reading plan...',
-        text: 'Loading verses from bible-data.json',
-        completed: false,
-        currentStreak: 0,
-        lastCompletedDate: '',
-      },
-    };
-  });
-
-  db.migrations[BIBLE_RESET_MIGRATION_KEY] = new Date().toISOString();
-  writeDb(dbPath, db);
-  console.log(`[Bible Migration] Reset reading progress for ${userIds.size} user(s) to Day 1.`);
 }
 
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
@@ -938,7 +869,6 @@ async function startServer() {
   if (!fs.existsSync(DB_PATH)) {
     fs.writeFileSync(DB_PATH, JSON.stringify({ users: [], data: {}, sessions: {}, telegram: { offset: 0, byChatId: {} } }));
   }
-  applyBibleResetMigration(DB_PATH);
 
   // API routes
   app.post('/api/eden/insight', async (req, res) => {

@@ -36,8 +36,7 @@ interface AppState {
 
 const AppContext = createContext<AppState | undefined>(undefined);
 const RESET_VERSION = 'edenify-reset-2026-04-13-b2';
-const BIBLE_RESET_VERSION = 'edenify-bible-reset-2026-04-13-r1';
-const MAX_PERSISTED_DATA_URL_LENGTH = 450_000;
+const MAX_PERSISTED_DATA_URL_LENGTH = 4_500_000;
 const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const DEFAULT_REVISION_HABIT_ID = 'default-academic-revision-habit';
@@ -244,6 +243,12 @@ const mergeCloudStates = (supabaseState: any | null, backendState: any | null) =
 
   const preferredState = scoreCloudState(backendState) >= scoreCloudState(supabaseState) ? backendState : supabaseState;
   const secondaryState = preferredState === backendState ? supabaseState : backendState;
+  const chooseArray = <T,>(a: T[] | undefined, b: T[] | undefined, fallback: T[] = []) => {
+    const safeA = Array.isArray(a) ? a : [];
+    const safeB = Array.isArray(b) ? b : [];
+    if (safeA.length === 0 && safeB.length === 0) return fallback;
+    return safeA.length >= safeB.length ? safeA : safeB;
+  };
 
   return {
     user: normalizeUser({
@@ -258,15 +263,15 @@ const mergeCloudStates = (supabaseState: any | null, backendState: any | null) =
         },
       },
     }),
-    layers: secondaryState?.layers || preferredState.layers || [],
-    habits: secondaryState?.habits || preferredState.habits || [],
+    layers: chooseArray(secondaryState?.layers, preferredState?.layers),
+    habits: chooseArray(secondaryState?.habits, preferredState?.habits),
     tasks: mergeTasksByIdentity(
       Array.isArray(supabaseState.tasks) ? supabaseState.tasks : [],
       Array.isArray(backendState.tasks) ? backendState.tasks : [],
       new Set<string>(),
       true
     ),
-    journal: secondaryState?.journal || preferredState.journal || [],
+    journal: chooseArray(secondaryState?.journal, preferredState?.journal),
     bibleReading: normalizeBibleReading(secondaryState?.bibleReading || preferredState.bibleReading || null),
     dailyTaskGoal: Number(secondaryState?.dailyTaskGoal ?? preferredState.dailyTaskGoal ?? 3),
   };
@@ -274,7 +279,6 @@ const mergeCloudStates = (supabaseState: any | null, backendState: any | null) =
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
-  const getBibleResetKey = (accountKey: string) => `edenify_bible_reset_${accountKey}`;
 
   // Cache management for session persistence
   const cacheUser = (user: User | null) => {
@@ -414,34 +418,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const accountKey = getAccountKey(user);
     deletedTaskTombstonesRef.current = loadTaskDeletionTombstones(accountKey);
     recentlyDeletedTaskIdsRef.current = new Set(Object.keys(deletedTaskTombstonesRef.current));
-  }, [user?.id, user?.email]);
-
-  useEffect(() => {
-    const accountKey = getAccountKey(user);
-    if (!accountKey) return;
-
-    const markerKey = getBibleResetKey(accountKey);
-    if (localStorage.getItem(markerKey) === BIBLE_RESET_VERSION) return;
-
-    const today = getLocalDateKey();
-
-    setBibleReading((prev) => ({
-      ...INITIAL_BIBLE_READING,
-      totalDays: prev.totalDays || INITIAL_BIBLE_READING.totalDays,
-    }));
-
-    setUser((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        preferences: {
-          ...prev.preferences,
-          readingPlanStartDate: today,
-        },
-      };
-    });
-
-    localStorage.setItem(markerKey, BIBLE_RESET_VERSION);
   }, [user?.id, user?.email]);
 
   useEffect(() => {
@@ -650,8 +626,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Save to localStorage on change
   useEffect(() => {
     const accountKey = getAccountKey(user);
-    const localCacheUser = user;
-    const localCacheTasks = tasks;
+    const localCacheUser = sanitizeUserForPersistence(user);
+    const localCacheTasks = tasks.map(sanitizeTaskForPersistence);
     const localCacheStatePayload = {
       user: localCacheUser,
       layers,
@@ -661,11 +637,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bibleReading,
       dailyTaskGoal,
     };
+    const cloudTasks = tasks.map(sanitizeTaskForPersistence).map((task) => ({
+      ...task,
+      customAlarmAudioDataUrl: undefined,
+      customAlarmAudioName: undefined,
+    }));
     const cloudStatePayload = {
-      user,
+      user: sanitizeUserForPersistence(user),
       layers,
       habits,
-      tasks,
+      tasks: cloudTasks,
       journal,
       bibleReading,
       dailyTaskGoal,
@@ -675,7 +656,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Keep browser cache without persisted user identity.
       localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...localCacheStatePayload, user: null }));
     } catch (error) {
-      console.warn('Local cache save skipped (likely storage quota reached):', error);
+      try {
+        const degradedPayload = {
+          ...localCacheStatePayload,
+          tasks: localCacheTasks.map((task) => ({
+            ...task,
+            customAlarmAudioDataUrl: undefined,
+            customAlarmAudioName: undefined,
+          })),
+        };
+        localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...degradedPayload, user: null }));
+      } catch {
+        console.warn('Local cache save skipped (likely storage quota reached):', error);
+      }
     }
 
     if (accountKey) {

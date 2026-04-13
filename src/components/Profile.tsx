@@ -8,6 +8,8 @@ const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
   const [telegramStatus, setTelegramStatus] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
+  const [botTokenDraft, setBotTokenDraft] = useState('');
+  const [savingBotToken, setSavingBotToken] = useState(false);
   const [bibleReminderDraft, setBibleReminderDraft] = useState('06:30');
   const [bibleReminderStatus, setBibleReminderStatus] = useState('');
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
@@ -205,7 +207,8 @@ const Profile: React.FC = () => {
           }),
         }).catch(() => null);
 
-        setTelegramStatus('Telegram chat ID saved, but the server bot token is missing. Add TELEGRAM_BOT_TOKEN on Render/local server to send Telegram messages.');
+        const sourceHint = statusData?.tokenSource ? ` Current source: ${statusData.tokenSource}.` : '';
+        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint} Add TELEGRAM_BOT_TOKEN on Render/local server, or save fallback token below if you are admin.`);
         return;
       }
 
@@ -259,6 +262,35 @@ const Profile: React.FC = () => {
     }
   };
 
+  const saveFallbackBotToken = async (tokenOverride?: string) => {
+    setSavingBotToken(true);
+    setTelegramStatus('Saving server bot token...');
+    try {
+      const response = await fetch('/api/telegram/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: (tokenOverride ?? botTokenDraft).trim() }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        setTelegramStatus(data?.error || 'Could not save server bot token.');
+        return;
+      }
+
+      setTelegramStatus(data?.cleared ? 'Server fallback bot token removed.' : 'Server fallback bot token saved. You can now test Telegram connection again.');
+      if (!data?.cleared) {
+        setBotTokenDraft('');
+      }
+    } catch {
+      setTelegramStatus('Network error while saving server bot token.');
+    } finally {
+      setSavingBotToken(false);
+    }
+  };
+
   const handleInstallApp = async () => {
     if (!installPromptEvent) {
       setPwaStatus('Install prompt is not available right now. Use the browser menu to add Edenify to your home screen.');
@@ -281,7 +313,7 @@ const Profile: React.FC = () => {
         const registrations = await navigator.serviceWorker.getRegistrations();
         const waitingRegistrations = registrations.filter((registration) => Boolean(registration.waiting));
         if (waitingRegistrations.length === 0) {
-          setPwaStatus('No update is waiting yet. Try again after the next Render deploy or refresh the page later.');
+          setPwaStatus('No update is ready yet. Please check again in a moment.');
           return;
         }
         for (const registration of waitingRegistrations) {
@@ -310,6 +342,24 @@ const Profile: React.FC = () => {
     } catch {
       setPwaStatus('Could not clear local app cache. You can still uninstall from your device app settings.');
     }
+  };
+
+  const appControlMode: 'install' | 'update' | 'uninstall' = hasUpdateAvailable
+    ? 'update'
+    : isStandalone
+      ? 'uninstall'
+      : 'install';
+
+  const handlePrimaryAppControl = async () => {
+    if (appControlMode === 'update') {
+      await handleUpdateApp();
+      return;
+    }
+    if (appControlMode === 'uninstall') {
+      await handleUninstallHint();
+      return;
+    }
+    await handleInstallApp();
   };
 
   const stats = [
@@ -553,6 +603,41 @@ const Profile: React.FC = () => {
             {telegramStatus && <p className="text-xs text-secondary">{telegramStatus}</p>}
           </div>
 
+          {user.role === 'admin' && (
+            <div className="mt-2 rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
+              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Admin Bot Token Fallback</p>
+              <p className="text-xs text-secondary">Use this only if server env is missing. Env value is still preferred when available.</p>
+              <input
+                type="password"
+                value={botTokenDraft}
+                onChange={(e) => setBotTokenDraft(e.target.value)}
+                placeholder="Paste bot token (123456:ABC...)"
+                className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={saveFallbackBotToken}
+                  disabled={savingBotToken}
+                  className="px-3 py-2 rounded-full bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-[0.14em] disabled:opacity-70"
+                >
+                  {savingBotToken ? 'Saving...' : 'Save Fallback Token'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBotTokenDraft('');
+                    void saveFallbackBotToken('');
+                  }}
+                  disabled={savingBotToken}
+                  className="px-3 py-2 rounded-full bg-surface-container-lowest border border-outline-variant/45 text-secondary text-[11px] font-bold uppercase tracking-[0.14em] disabled:opacity-70"
+                >
+                  Clear Fallback
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-2 rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
             <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Bot Commands</p>
             <p className="text-xs text-secondary">/set, /delete, /edit or /modify, /tasks, /chatid, /defaults, /cancel</p>
@@ -586,27 +671,14 @@ const Profile: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleInstallApp}
-              className="px-3 py-2 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1"
+              onClick={() => { void handlePrimaryAppControl(); }}
+              className={cn(
+                'px-3 py-2 rounded-full text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1',
+                appControlMode === 'update' ? 'bg-emerald-600' : appControlMode === 'uninstall' ? 'bg-slate-600' : 'bg-primary'
+              )}
             >
-              <Download size={13} />
-              {isStandalone ? 'Installed' : 'Install App'}
-            </button>
-            <button
-              type="button"
-              onClick={handleUpdateApp}
-              className="px-3 py-2 rounded-full bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1 disabled:opacity-50"
-            >
-              <Zap size={13} />
-              {hasUpdateAvailable ? 'Update Available' : 'Check for Update'}
-            </button>
-            <button
-              type="button"
-              onClick={handleUninstallHint}
-              className="px-3 py-2 rounded-full bg-surface-container-lowest text-secondary border border-outline-variant/45 text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1"
-            >
-              <Trash2 size={13} />
-              Uninstall Help
+              {appControlMode === 'update' ? <Zap size={13} /> : appControlMode === 'uninstall' ? <Trash2 size={13} /> : <Download size={13} />}
+              {appControlMode === 'update' ? 'Update App' : appControlMode === 'uninstall' ? 'Uninstall App' : 'Install App'}
             </button>
           </div>
           {pwaStatus && <p className="text-xs text-secondary">{pwaStatus}</p>}

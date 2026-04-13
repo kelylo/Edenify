@@ -56,6 +56,7 @@ interface DbShape {
   data: Record<string, any>;
   sessions?: Record<string, { userId: string; createdAt: string }>;
   telegram?: {
+    botToken?: string;
     offset?: number;
     byChatId?: Record<string, TelegramStoreItem>;
     reminders?: Record<string, string>;
@@ -136,6 +137,13 @@ function resolveSessionUserId(db: DbShape, cookieHeader?: string) {
   if (!sessionId) return '';
   const session = db.sessions?.[sessionId];
   return normalizeUserKey(session?.userId || '');
+}
+
+function isSessionAdmin(db: DbShape, cookieHeader?: string) {
+  const sessionUserId = resolveSessionUserId(db, cookieHeader);
+  if (!sessionUserId) return false;
+  const user = db.users.find((item) => normalizeUserKey(item.id) === sessionUserId);
+  return user?.role === 'admin';
 }
 
 function readDb(dbPath: string): DbShape {
@@ -646,31 +654,41 @@ async function getTelegramBotStatus(token: string) {
   }
 }
 
-function resolveTelegramBotToken() {
-  const candidates = [
-    process.env.TELEGRAM_BOT_TOKEN,
-    process.env.TELEGRAM_BOT_TOKEN_1,
-    process.env.TELEGRAM_BOT_TOKEN_PRIMARY,
-  ]
-    .map((value) => (value || '').trim())
-    .filter(Boolean);
+function resolveTelegramBotTokenConfig(db?: DbShape) {
+  const envCandidates = [
+    ['TELEGRAM_BOT_TOKEN', process.env.TELEGRAM_BOT_TOKEN],
+    ['TELEGRAM_BOT_TOKEN_1', process.env.TELEGRAM_BOT_TOKEN_1],
+    ['TELEGRAM_BOT_TOKEN_PRIMARY', process.env.TELEGRAM_BOT_TOKEN_PRIMARY],
+  ] as const;
 
-  const token = candidates[0] || '';
-  
-  if (!token) {
-    console.warn('[Telegram] WARNING: No bot token found in env. Checked: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY');
-  } else {
-    console.log('[Telegram] Bot token loaded (length: ' + token.length + ' chars)');
+  for (const [key, value] of envCandidates) {
+    const token = (value || '').trim();
+    if (token) {
+      return {
+        token,
+        source: `env:${key}`,
+      };
+    }
   }
-  
-  return token;
+
+  const dbToken = (db?.telegram?.botToken || '').trim();
+  if (dbToken) {
+    return {
+      token: dbToken,
+      source: 'db:telegram.botToken',
+    };
+  }
+
+  return {
+    token: '',
+    source: '',
+  };
 }
 
 async function processBackgroundTaskReminders(dbPath: string) {
-  const token = resolveTelegramBotToken();
-  if (!token) return;
-
   const db = readDb(dbPath);
+  const token = resolveTelegramBotTokenConfig(db).token;
+  if (!token) return;
   db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
   db.telegram.reminders = db.telegram.reminders || {};
 
@@ -1146,7 +1164,9 @@ async function startServer() {
 
   app.post('/api/telegram/notify', async (req, res) => {
     try {
-      const token = resolveTelegramBotToken();
+      const db = readDb(DB_PATH);
+      const tokenConfig = resolveTelegramBotTokenConfig(db);
+      const token = tokenConfig.token;
       const { chatId, message } = req.body as { chatId?: string; message?: string };
       const normalizedChatId = (chatId || '').trim().replace(/[^0-9-]/g, '');
 
@@ -1154,7 +1174,8 @@ async function startServer() {
         console.error('Telegram bot token is not configured. Set TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_1) in environment.');
         res.status(400).json({
           success: false,
-          error: 'Telegram integration not configured. Please set TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_1) in server environment.',
+          error: 'Telegram integration not configured. Set TELEGRAM_BOT_TOKEN in server environment or save a fallback token from admin Profile settings.',
+          tokenSource: tokenConfig.source,
         });
         return;
       }
@@ -1191,8 +1212,9 @@ async function startServer() {
   });
 
   app.get('/api/telegram/status', async (req, res) => {
-    const token = resolveTelegramBotToken();
     const db = readDb(DB_PATH);
+    const tokenConfig = resolveTelegramBotTokenConfig(db);
+    const token = tokenConfig.token;
     const linkedChats = Object.keys(db.telegram?.byChatId || {}).length;
     const botStatus = await getTelegramBotStatus(token);
     res.json({
@@ -1201,9 +1223,37 @@ async function startServer() {
       tokenValid: botStatus.tokenValid,
       botUsername: botStatus.botUsername,
       tokenError: botStatus.error,
+      tokenSource: tokenConfig.source,
       linkedChats,
       hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
     });
+  });
+
+  app.post('/api/telegram/token', (req, res) => {
+    const db = readDb(DB_PATH);
+    if (!isSessionAdmin(db, req.headers.cookie)) {
+      res.status(403).json({ success: false, error: 'Only admin can update server Telegram token.' });
+      return;
+    }
+
+    const token = String(req.body?.token || '').trim();
+    if (!token) {
+      db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
+      delete db.telegram.botToken;
+      writeDb(DB_PATH, db);
+      res.json({ success: true, cleared: true });
+      return;
+    }
+
+    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
+      res.status(400).json({ success: false, error: 'Invalid Telegram bot token format.' });
+      return;
+    }
+
+    db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
+    db.telegram.botToken = token;
+    writeDb(DB_PATH, db);
+    res.json({ success: true });
   });
 
   app.post('/api/telegram/link', (req, res) => {
@@ -1328,17 +1378,23 @@ async function startServer() {
     });
   });
 
-  const token = resolveTelegramBotToken();
+  const startupTokenConfig = resolveTelegramBotTokenConfig(readDb(DB_PATH));
+  if (!startupTokenConfig.token) {
+    console.warn('[Telegram] WARNING: No bot token found in env/db. Checked env: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY, plus db.telegram.botToken');
+  } else {
+    console.log('[Telegram] Bot token loaded from ' + startupTokenConfig.source + ' (length: ' + startupTokenConfig.token.length + ' chars)');
+  }
   let isPollingTelegram = false;
   let isRunningReminderScheduler = false;
   const pollerOwnerId = `${process.pid}-${Math.random().toString(16).slice(2, 8)}`;
   const pollTelegram = async () => {
-    if (!token) return;
     if (isPollingTelegram) return;
     isPollingTelegram = true;
 
     try {
       const db = readDb(DB_PATH);
+      const token = resolveTelegramBotTokenConfig(db).token;
+      if (!token) return;
       db.telegram = db.telegram || { offset: 0, byChatId: {} };
       if (!canOwnTelegramPoller(db, pollerOwnerId)) {
         return;
@@ -1853,13 +1909,14 @@ async function startServer() {
     }
   };
 
-  if (token) {
-    const runTelegramReminderScheduler = async () => {
-      if (isRunningReminderScheduler) return;
-      isRunningReminderScheduler = true;
+  const runTelegramReminderScheduler = async () => {
+    if (isRunningReminderScheduler) return;
+    isRunningReminderScheduler = true;
 
-      try {
-        const db = readDb(DB_PATH);
+    try {
+      const db = readDb(DB_PATH);
+      const token = resolveTelegramBotTokenConfig(db).token;
+      if (!token) return;
         db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
         db.telegram.byChatId = db.telegram.byChatId || {};
         db.telegram.reminders = db.telegram.reminders || {};
@@ -1978,27 +2035,26 @@ async function startServer() {
           didChange = true;
         }
 
-        if (didChange) {
-          writeDb(DB_PATH, db);
-        }
-      } catch (error) {
-        console.error('Telegram reminder scheduler failed:', error);
-      } finally {
-        isRunningReminderScheduler = false;
+      if (didChange) {
+        writeDb(DB_PATH, db);
       }
-    };
+    } catch (error) {
+      console.error('Telegram reminder scheduler failed:', error);
+    } finally {
+      isRunningReminderScheduler = false;
+    }
+  };
 
-    setInterval(() => {
-      pollTelegram();
-    }, 3500);
-
-    setInterval(() => {
-      runTelegramReminderScheduler();
-    }, 30000);
-
+  setInterval(() => {
     pollTelegram();
+  }, 3500);
+
+  setInterval(() => {
     runTelegramReminderScheduler();
-  }
+  }, 30000);
+
+  pollTelegram();
+  runTelegramReminderScheduler();
 
   app.get('/api/user/reminder-check', async (req, res) => {
     try {

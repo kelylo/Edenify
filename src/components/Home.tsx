@@ -6,7 +6,7 @@ import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskSche
 import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
 import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync } from '../services/notifications';
-import { playTaskAlarm, playBibleReminderAlarm } from '../services/alarm-playback';
+import { playTaskAlarm, playBibleReminderAlarm, stopAlarm as stopPlaybackAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
 import { LayerId, Task } from '../types';
@@ -207,14 +207,6 @@ const Home: React.FC = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   })();
 
-  const reminderTimeoutsRef = useRef<Record<string, number>>({});
-  const alarmTimeoutsRef = useRef<Record<string, number>>({});
-  const triggeredRef = useRef<Set<string>>(new Set());
-  const alarmTriggeredRef = useRef<Set<string>>(new Set());
-  const alarmIntervalRef = useRef<number | null>(null);
-  const alarmAutoOffRef = useRef<number | null>(null);
-  const alarmAudioRef = useRef<AudioContext | null>(null);
-  const alarmMediaRef = useRef<HTMLAudioElement | null>(null);
   const scripturePageRef = useRef<HTMLDivElement | null>(null);
   const reflectionComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const taskPreviewMediaRef = useRef<HTMLAudioElement | null>(null);
@@ -331,23 +323,7 @@ const Home: React.FC = () => {
   }, [tasks, user?.id]);
 
   const stopActiveAlarm = () => {
-    if (alarmIntervalRef.current) {
-      window.clearInterval(alarmIntervalRef.current);
-      alarmIntervalRef.current = null;
-    }
-    if (alarmAutoOffRef.current) {
-      window.clearTimeout(alarmAutoOffRef.current);
-      alarmAutoOffRef.current = null;
-    }
-    if (alarmAudioRef.current) {
-      alarmAudioRef.current.close();
-      alarmAudioRef.current = null;
-    }
-    if (alarmMediaRef.current) {
-      alarmMediaRef.current.pause();
-      alarmMediaRef.current.currentTime = 0;
-      alarmMediaRef.current = null;
-    }
+    stopPlaybackAlarm();
     setAlarmOpen(false);
     setAlarmTask(null);
   };
@@ -422,18 +398,16 @@ const Home: React.FC = () => {
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
 
-    // Play alarm sound
+    const taskAudio = taskId ? tasks.find((task) => task.id === taskId)?.customAlarmAudioDataUrl : undefined;
+    const defaultAudio = getDefaultAlarmFromPreferences()?.dataUrl;
+    const selectedAudio = taskAudio || defaultAudio;
+
+    // Play alarm sound (uploaded audio only)
     try {
       if (title.includes('📖') || title.includes('Bible')) {
-        // Bible reminder
-        await playBibleReminderAlarm();
-      } else if (taskId) {
-        // Task reminder - get custom audio if available
-        const task = tasks.find(t => t.id === taskId);
-        await playTaskAlarm(task?.name || title, task?.customAlarmAudioDataUrl);
+        await playBibleReminderAlarm(selectedAudio);
       } else {
-        // Generic reminder
-        await playTaskAlarm(title);
+        await playTaskAlarm(title, selectedAudio);
       }
     } catch (error) {
       console.warn('[Reminder] Alarm playback failed:', error);
@@ -482,9 +456,9 @@ const Home: React.FC = () => {
     // Listen for Service Worker messages (including alarm playback signals)
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type === 'PLAY_ALARM') {
-        const customUrl = event.data?.data?.customAudioDataUrl;
+        const customUrl = event.data?.data?.customAudioDataUrl || getDefaultAlarmFromPreferences()?.dataUrl;
         if (event.data?.data?.isBibleReminder) {
-          playBibleReminderAlarm().catch(err => console.warn('[Alarm] SW Bible reminder failed:', err));
+          playBibleReminderAlarm(customUrl).catch(err => console.warn('[Alarm] SW Bible reminder failed:', err));
         } else {
           playTaskAlarm(event.data?.data?.taskName || 'Task', customUrl).catch(err => console.warn('[Alarm] SW task alarm failed:', err));
         }
@@ -550,42 +524,6 @@ const Home: React.FC = () => {
     }
 
     setIsTaskPreviewPlaying(false);
-  };
-
-  const playSynthPreview = (notes: number[], stepMs: number, type: OscillatorType, gainValue: number) => {
-    stopTaskPreview();
-
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-
-    const ctx = new AudioCtx();
-    taskPreviewAudioRef.current = ctx;
-    setIsTaskPreviewPlaying(true);
-
-    const start = ctx.currentTime + 0.02;
-    notes.forEach((frequency, index) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const t0 = start + (index * stepMs) / 1000;
-      const t1 = t0 + Math.max(0.08, (stepMs - 20) / 1000);
-
-      osc.type = type;
-      osc.frequency.setValueAtTime(frequency, t0);
-
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(gainValue, t0 + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t1);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t1 + 0.01);
-    });
-
-    const totalDuration = notes.length * stepMs + 240;
-    taskPreviewEndRef.current = window.setTimeout(() => {
-      stopTaskPreview();
-    }, totalDuration);
   };
 
   const previewUploadedReminder = () => {
@@ -780,208 +718,10 @@ const Home: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const clearAllScheduledTimeouts = () => {
-      (Object.values(reminderTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
-      reminderTimeoutsRef.current = {};
-      (Object.values(alarmTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
-      alarmTimeoutsRef.current = {};
-    };
-
-    const stopAlarm = () => {
+    return () => {
       stopActiveAlarm();
     };
-
-    const resolveTaskUploadedAlarm = (task: Task) => {
-      if (task.customAlarmAudioDataUrl) {
-        return { dataUrl: task.customAlarmAudioDataUrl, name: task.customAlarmAudioName || task.preferredMusic || 'Uploaded audio' };
-      }
-
-      const preferredName = String(task.preferredMusic || '').trim();
-      if (!preferredName) return null;
-
-      const playlistNames = user?.preferences.customFocusPlaylistNames || [];
-      const playlistUrls = user?.preferences.customFocusPlaylistDataUrls || [];
-      const index = playlistNames.findIndex((name) => String(name || '').trim().toLowerCase() === preferredName.toLowerCase());
-      if (index >= 0 && playlistUrls[index]) {
-        return { dataUrl: playlistUrls[index], name: playlistNames[index] };
-      }
-
-      const singleName = String(user?.preferences.customFocusSongName || '').trim();
-      const singleUrl = String(user?.preferences.customFocusSongDataUrl || '').trim();
-      if (singleName && singleUrl && singleName.toLowerCase() === preferredName.toLowerCase()) {
-        return { dataUrl: singleUrl, name: singleName };
-      }
-
-      return null;
-    };
-
-    const playAggressivePulse = (task: Task) => {
-      const startSynthAlarm = () => {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (!AudioCtx) return;
-
-        if (!alarmAudioRef.current) {
-          alarmAudioRef.current = new AudioCtx();
-        }
-
-        const ctx = alarmAudioRef.current;
-        void ctx.resume().catch(() => {});
-
-        const burst = () => {
-          const now = ctx.currentTime;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'sawtooth';
-          osc.frequency.value = 920;
-          gain.gain.setValueAtTime(0.0001, now);
-          gain.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start(now);
-          osc.stop(now + 0.36);
-        };
-
-        burst();
-        alarmIntervalRef.current = window.setInterval(burst, 700);
-        alarmAutoOffRef.current = window.setTimeout(() => {
-          stopAlarm();
-        }, 60000);
-      };
-
-      const uploaded = resolveTaskUploadedAlarm(task);
-      if (uploaded?.dataUrl) {
-        const media = new Audio(uploaded.dataUrl);
-        media.loop = false;
-        media.volume = 1;
-        media.onended = () => {
-          if (alarmMediaRef.current === media) {
-            alarmMediaRef.current = null;
-          }
-        };
-        media.play().catch(() => {
-          startSynthAlarm();
-        });
-        alarmMediaRef.current = media;
-        return;
-      }
-      startSynthAlarm();
-    };
-
-    const triggerReminder = async (task: Task, reminderKey: string) => {
-      if (triggeredRef.current.has(reminderKey)) return;
-      triggeredRef.current.add(reminderKey);
-
-      const layerName = layers.find((layer) => layer.id === task.layerId)?.name || 'General';
-      pushReminderEvent('Task reminder', `${task.name} from ${layerName} starts in 5 minutes.`, task.id);
-
-      if (user?.preferences.notifications.taskReminders) {
-        await tryBrowserNotification('Edenify Task Reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
-      }
-      setNotificationStatus(`${task.name} from ${layerName} is coming in 5 minutes.`);
-    };
-
-    const triggerAlarm = (task: Task, alarmKey: string) => {
-      if (alarmTriggeredRef.current.has(alarmKey)) return;
-      alarmTriggeredRef.current.add(alarmKey);
-
-      void pushReminderEvent('Task due now', `${task.name} is due now (${task.time}).`, task.id);
-      setNotificationStatus(`${task.name} is due now.`);
-      setAlarmTask(task);
-      setAlarmOpen(true);
-      playAggressivePulse(task);
-    };
-
-    clearAllScheduledTimeouts();
-
-    const now = Date.now();
-    const getFutureDue = (task: Task, nowMs: number) => {
-      const due = parseTaskDueDate(task);
-      if (!due) return null;
-
-      const reminderDue = new Date(due);
-      if (task.repeat === 'daily' && reminderDue.getTime() <= nowMs) {
-        reminderDue.setDate(reminderDue.getDate() + 1);
-      }
-      if (task.repeat === 'weekly' && reminderDue.getTime() <= nowMs) {
-        reminderDue.setDate(reminderDue.getDate() + 7);
-      }
-      return reminderDue;
-    };
-
-    tasks.forEach((task) => {
-      if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
-
-      const reminderDue = getFutureDue(task, now);
-      if (!reminderDue) return;
-
-      const dueMs = reminderDue.getTime();
-      if (dueMs <= now) return;
-
-      const reminderAtMs = dueMs - 5 * 60 * 1000;
-      const delay = reminderAtMs <= now ? 500 : reminderAtMs - now;
-      const reminderKey = `${task.id}|${reminderDue.toISOString().slice(0, 16)}`;
-      const alarmDelay = dueMs <= now ? 500 : dueMs - now;
-      const alarmKey = `${task.id}|alarm|${reminderDue.toISOString().slice(0, 16)}`;
-
-      if (delay > 1000 * 60 * 60 * 26) return;
-
-      if (user?.preferences.notifications.taskReminders) {
-        reminderTimeoutsRef.current[reminderKey] = window.setTimeout(() => {
-          triggerReminder(task, reminderKey);
-        }, delay);
-      }
-
-      alarmTimeoutsRef.current[alarmKey] = window.setTimeout(() => {
-        triggerAlarm(task, alarmKey);
-      }, alarmDelay);
-    });
-
-    // Interval catch-up for throttled/background tabs so reminders still fire once app is visible again.
-    const heartbeatId = window.setInterval(() => {
-      const nowMs = Date.now();
-      tasks.forEach((task) => {
-        if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
-        const dueDate = getFutureDue(task, nowMs);
-        if (!dueDate) return;
-
-        const dueMs = dueDate.getTime();
-        const reminderAt = dueMs - 5 * 60 * 1000;
-        const reminderKey = `${task.id}|${dueDate.toISOString().slice(0, 16)}`;
-        const alarmKey = `${task.id}|alarm|${dueDate.toISOString().slice(0, 16)}`;
-
-        if (nowMs >= reminderAt && nowMs <= reminderAt + 90_000) {
-          void triggerReminder(task, reminderKey);
-        }
-
-        if (nowMs >= dueMs && nowMs <= dueMs + 90_000) {
-          triggerAlarm(task, alarmKey);
-        }
-      });
-    }, 20_000);
-
-    return () => {
-      clearAllScheduledTimeouts();
-      window.clearInterval(heartbeatId);
-      if (alarmIntervalRef.current) {
-        window.clearInterval(alarmIntervalRef.current);
-        alarmIntervalRef.current = null;
-      }
-      if (alarmAutoOffRef.current) {
-        window.clearTimeout(alarmAutoOffRef.current);
-        alarmAutoOffRef.current = null;
-      }
-      if (alarmAudioRef.current) {
-        alarmAudioRef.current.close();
-        alarmAudioRef.current = null;
-      }
-      if (alarmMediaRef.current) {
-        alarmMediaRef.current.pause();
-        alarmMediaRef.current.currentTime = 0;
-        alarmMediaRef.current = null;
-      }
-    };
-  }, [tasks, layers, user?.preferences.notifications.taskReminders]);
+  }, []);
 
   useEffect(() => {
     const askOnce = async () => {
@@ -1032,34 +772,7 @@ const Home: React.FC = () => {
 
           void pushReminderEvent('Academic revision reminder', detail, revisionTask.id);
           setNotificationStatus(subjects.length ? `Tomorrow: ${subjects.join(', ')}` : 'Revision block: no classes tomorrow.');
-          setAlarmTask(revisionTask);
-          setAlarmOpen(true);
-
-          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioCtx) {
-            const audio = new AudioCtx();
-            const nowT = audio.currentTime;
-
-            [880, 1100, 1320].forEach((frequency, index) => {
-              const osc = audio.createOscillator();
-              const gain = audio.createGain();
-              const start = nowT + index * 0.15;
-              const end = start + 0.12;
-              osc.type = 'triangle';
-              osc.frequency.setValueAtTime(frequency, start);
-              gain.gain.setValueAtTime(0.0001, start);
-              gain.gain.exponentialRampToValueAtTime(0.12, start + 0.02);
-              gain.gain.exponentialRampToValueAtTime(0.0001, end);
-              osc.connect(gain);
-              gain.connect(audio.destination);
-              osc.start(start);
-              osc.stop(end);
-            });
-
-            window.setTimeout(() => {
-              void audio.close().catch(() => {});
-            }, 900);
-          }
+          void playTaskAlarm(revisionTask.name, revisionTask.customAlarmAudioDataUrl || getDefaultAlarmFromPreferences()?.dataUrl);
         }
 
         scheduleNextReminder();
@@ -1158,21 +871,8 @@ const Home: React.FC = () => {
 
         await tryBrowserNotification('Edenify Bible Reading', `Day ${bibleReading.day}: ${bibleReading.passage}`);
 
-        // Check current user preferences at callback time
         if (user?.preferences.bibleReminderAlarm) {
-          setAlarmTask({
-            id: `bible-reminder-${Date.now()}`,
-            name: `Bible Reading Day ${bibleReading.day}`,
-            layerId: 'spiritual',
-            priority: 'B',
-            repeat: 'daily',
-            time: user.preferences.bibleReminderTime || '06:30 AM',
-            completed: false,
-            date: new Date().toISOString(),
-            alarmEnabled: true,
-            preferredMusic: 'Instrumental Warmth',
-          });
-          setAlarmOpen(true);
+          await playBibleReminderAlarm(getDefaultAlarmFromPreferences()?.dataUrl);
         }
       } catch (err) {
         console.error('[Bible Reminder] Error during execution:', err);
@@ -2197,6 +1897,20 @@ const Home: React.FC = () => {
                       placeholder="Write one clear task"
                       className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
                     />
+                    {realtimeTemplateSuggestions.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {realtimeTemplateSuggestions.map((template, index) => (
+                          <button
+                            key={`${template.layerId}-${template.name}-rt-${index}`}
+                            type="button"
+                            onClick={() => applyTemplateDraft(template)}
+                            className="px-2.5 py-1.5 rounded-full border border-outline-variant/35 bg-surface-container-lowest text-[10px] font-bold uppercase tracking-[0.1em] text-secondary hover:text-primary hover:border-primary/40"
+                          >
+                            {template.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

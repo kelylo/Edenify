@@ -13,7 +13,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
-import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
 import com.edenify.app.MainActivity;
 import com.edenify.app.R;
@@ -89,11 +88,11 @@ public class AlarmPlaybackService extends Service {
             });
 
             Uri source = storage.resolveAudioUri(record);
-            if (source != null) {
-                mediaPlayer.setDataSource(this, source);
-            } else {
-                mediaPlayer.setDataSource(this, Settings.System.DEFAULT_ALARM_ALERT_URI);
+            if (source == null) {
+                stopSelf();
+                return;
             }
+            mediaPlayer.setDataSource(this, source);
 
             mediaPlayer.setLooping(false);
             mediaPlayer.prepare();

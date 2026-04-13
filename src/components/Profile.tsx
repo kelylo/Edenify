@@ -8,8 +8,6 @@ const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
   const [telegramStatus, setTelegramStatus] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
-  const [botTokenDraft, setBotTokenDraft] = useState('');
-  const [savingBotToken, setSavingBotToken] = useState(false);
   const [bibleReminderDraft, setBibleReminderDraft] = useState('06:30');
   const [bibleReminderStatus, setBibleReminderStatus] = useState('');
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
@@ -208,7 +206,7 @@ const Profile: React.FC = () => {
         }).catch(() => null);
 
         const sourceHint = statusData?.tokenSource ? ` Current source: ${statusData.tokenSource}.` : '';
-        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint} Add TELEGRAM_BOT_TOKEN on Render/local server, or save fallback token below if you are admin.`);
+        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint} Add TELEGRAM_BOT_TOKEN on Render/local server.`);
         return;
       }
 
@@ -259,35 +257,6 @@ const Profile: React.FC = () => {
       setTelegramStatus('Network error while connecting Telegram.');
     } finally {
       setTestingTelegram(false);
-    }
-  };
-
-  const saveFallbackBotToken = async (tokenOverride?: string) => {
-    setSavingBotToken(true);
-    setTelegramStatus('Saving server bot token...');
-    try {
-      const response = await fetch('/api/telegram/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token: (tokenOverride ?? botTokenDraft).trim() }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.success) {
-        setTelegramStatus(data?.error || 'Could not save server bot token.');
-        return;
-      }
-
-      setTelegramStatus(data?.cleared ? 'Server fallback bot token removed.' : 'Server fallback bot token saved. You can now test Telegram connection again.');
-      if (!data?.cleared) {
-        setBotTokenDraft('');
-      }
-    } catch {
-      setTelegramStatus('Network error while saving server bot token.');
-    } finally {
-      setSavingBotToken(false);
     }
   };
 
@@ -602,41 +571,6 @@ const Profile: React.FC = () => {
             </button>
             {telegramStatus && <p className="text-xs text-secondary">{telegramStatus}</p>}
           </div>
-
-          {user.role === 'admin' && (
-            <div className="mt-2 rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
-              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Admin Bot Token Fallback</p>
-              <p className="text-xs text-secondary">Use this only if server env is missing. Env value is still preferred when available.</p>
-              <input
-                type="password"
-                value={botTokenDraft}
-                onChange={(e) => setBotTokenDraft(e.target.value)}
-                placeholder="Paste bot token (123456:ABC...)"
-                className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm"
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={saveFallbackBotToken}
-                  disabled={savingBotToken}
-                  className="px-3 py-2 rounded-full bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-[0.14em] disabled:opacity-70"
-                >
-                  {savingBotToken ? 'Saving...' : 'Save Fallback Token'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBotTokenDraft('');
-                    void saveFallbackBotToken('');
-                  }}
-                  disabled={savingBotToken}
-                  className="px-3 py-2 rounded-full bg-surface-container-lowest border border-outline-variant/45 text-secondary text-[11px] font-bold uppercase tracking-[0.14em] disabled:opacity-70"
-                >
-                  Clear Fallback
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="mt-2 rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
             <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Bot Commands</p>

@@ -55,8 +55,8 @@ interface DbShape {
   users: Array<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>;
   data: Record<string, any>;
   sessions?: Record<string, { userId: string; createdAt: string }>;
+  migrations?: Record<string, string>;
   telegram?: {
-    botToken?: string;
     offset?: number;
     byChatId?: Record<string, TelegramStoreItem>;
     reminders?: Record<string, string>;
@@ -108,6 +108,7 @@ const defaultUserPreferences = {
     streakProtection: false,
   },
 };
+const BIBLE_RESET_MIGRATION_KEY = 'bible-reset-2026-04-13-r1';
 
 function normalizeUser(user: Partial<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>) {
   return {
@@ -139,13 +140,6 @@ function resolveSessionUserId(db: DbShape, cookieHeader?: string) {
   return normalizeUserKey(session?.userId || '');
 }
 
-function isSessionAdmin(db: DbShape, cookieHeader?: string) {
-  const sessionUserId = resolveSessionUserId(db, cookieHeader);
-  if (!sessionUserId) return false;
-  const user = db.users.find((item) => normalizeUserKey(item.id) === sessionUserId);
-  return user?.role === 'admin';
-}
-
 function readDb(dbPath: string): DbShape {
   const raw = fs.readFileSync(dbPath, 'utf-8');
   const db = JSON.parse(raw) as DbShape;
@@ -158,6 +152,73 @@ function readDb(dbPath: string): DbShape {
 
 function writeDb(dbPath: string, db: DbShape) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+}
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function applyBibleResetMigration(dbPath: string) {
+  const db = readDb(dbPath);
+  db.migrations = db.migrations || {};
+  if (db.migrations[BIBLE_RESET_MIGRATION_KEY]) return;
+
+  const today = getLocalDateKey();
+  const userIds = new Set<string>();
+
+  (db.users || []).forEach((user) => {
+    const normalizedId = normalizeUserKey(user.id || user.email);
+    if (normalizedId) userIds.add(normalizedId);
+    user.preferences = {
+      ...defaultUserPreferences,
+      ...(user.preferences || {}),
+      readingPlanStartDate: today,
+      notifications: {
+        ...defaultUserPreferences.notifications,
+        ...(user.preferences?.notifications || {}),
+      },
+    };
+  });
+
+  Object.entries(db.data || {}).forEach(([userId, state]) => {
+    const normalizedId = normalizeUserKey(userId);
+    if (normalizedId) userIds.add(normalizedId);
+    const current = (state && typeof state === 'object') ? state : {};
+    const nextUserPrefs = {
+      ...defaultUserPreferences,
+      ...(current.user?.preferences || {}),
+      readingPlanStartDate: today,
+      notifications: {
+        ...defaultUserPreferences.notifications,
+        ...(current.user?.preferences?.notifications || {}),
+      },
+    };
+
+    db.data[userId] = {
+      ...current,
+      user: {
+        ...(current.user || {}),
+        preferences: nextUserPrefs,
+      },
+      bibleReading: {
+        day: 1,
+        totalDays: Number(current?.bibleReading?.totalDays || 365),
+        highestCompletedDay: 0,
+        passage: 'Loading reading plan...',
+        text: 'Loading verses from bible-data.json',
+        completed: false,
+        currentStreak: 0,
+        lastCompletedDate: '',
+      },
+    };
+  });
+
+  db.migrations[BIBLE_RESET_MIGRATION_KEY] = new Date().toISOString();
+  writeDb(dbPath, db);
+  console.log(`[Bible Migration] Reset reading progress for ${userIds.size} user(s) to Day 1.`);
 }
 
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
@@ -671,14 +732,6 @@ function resolveTelegramBotTokenConfig(db?: DbShape) {
     }
   }
 
-  const dbToken = (db?.telegram?.botToken || '').trim();
-  if (dbToken) {
-    return {
-      token: dbToken,
-      source: 'db:telegram.botToken',
-    };
-  }
-
   return {
     token: '',
     source: '',
@@ -885,6 +938,7 @@ async function startServer() {
   if (!fs.existsSync(DB_PATH)) {
     fs.writeFileSync(DB_PATH, JSON.stringify({ users: [], data: {}, sessions: {}, telegram: { offset: 0, byChatId: {} } }));
   }
+  applyBibleResetMigration(DB_PATH);
 
   // API routes
   app.post('/api/eden/insight', async (req, res) => {
@@ -1174,7 +1228,7 @@ async function startServer() {
         console.error('Telegram bot token is not configured. Set TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKEN_1) in environment.');
         res.status(400).json({
           success: false,
-          error: 'Telegram integration not configured. Set TELEGRAM_BOT_TOKEN in server environment or save a fallback token from admin Profile settings.',
+          error: 'Telegram integration not configured. Set TELEGRAM_BOT_TOKEN in server environment.',
           tokenSource: tokenConfig.source,
         });
         return;
@@ -1227,33 +1281,6 @@ async function startServer() {
       linkedChats,
       hasReminders: Boolean(db.telegram?.reminders && Object.keys(db.telegram.reminders).length > 0),
     });
-  });
-
-  app.post('/api/telegram/token', (req, res) => {
-    const db = readDb(DB_PATH);
-    if (!isSessionAdmin(db, req.headers.cookie)) {
-      res.status(403).json({ success: false, error: 'Only admin can update server Telegram token.' });
-      return;
-    }
-
-    const token = String(req.body?.token || '').trim();
-    if (!token) {
-      db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
-      delete db.telegram.botToken;
-      writeDb(DB_PATH, db);
-      res.json({ success: true, cleared: true });
-      return;
-    }
-
-    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
-      res.status(400).json({ success: false, error: 'Invalid Telegram bot token format.' });
-      return;
-    }
-
-    db.telegram = db.telegram || { offset: 0, byChatId: {}, reminders: {} };
-    db.telegram.botToken = token;
-    writeDb(DB_PATH, db);
-    res.json({ success: true });
   });
 
   app.post('/api/telegram/link', (req, res) => {
@@ -1380,7 +1407,7 @@ async function startServer() {
 
   const startupTokenConfig = resolveTelegramBotTokenConfig(readDb(DB_PATH));
   if (!startupTokenConfig.token) {
-    console.warn('[Telegram] WARNING: No bot token found in env/db. Checked env: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY, plus db.telegram.botToken');
+    console.warn('[Telegram] WARNING: No bot token found in environment. Checked: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_TOKEN_1, TELEGRAM_BOT_TOKEN_PRIMARY');
   } else {
     console.log('[Telegram] Bot token loaded from ' + startupTokenConfig.source + ' (length: ' + startupTokenConfig.token.length + ' chars)');
   }

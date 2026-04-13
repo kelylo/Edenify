@@ -51,6 +51,17 @@ function getFutureDue(task: Task, nowMs: number) {
 function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
   const nowMs = Date.now();
   const items: NativeAlarmItem[] = [];
+  const defaultUploadedAudio = (() => {
+    const names = user.preferences.customFocusPlaylistNames || [];
+    const urls = user.preferences.customFocusPlaylistDataUrls || [];
+    if (names[0] && urls[0]) {
+      return { name: names[0], dataUrl: urls[0] };
+    }
+    if (user.preferences.customFocusSongName && user.preferences.customFocusSongDataUrl) {
+      return { name: user.preferences.customFocusSongName, dataUrl: user.preferences.customFocusSongDataUrl };
+    }
+    return null;
+  })();
 
   tasks.forEach((task) => {
     if (task.completed || task.alarmEnabled === false) return;
@@ -77,14 +88,18 @@ function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
       });
     }
 
-    items.push({
-      id: `${task.id}|due|${dueDate.toISOString().slice(0, 16)}`,
-      title: 'Edenify Alarm',
-      body: `${task.name} is due now (${task.time}).`,
-      dueAt: dueDate.toISOString(),
-      audioDataUrl: task.customAlarmAudioDataUrl,
-      audioFileName: task.customAlarmAudioName,
-    });
+    const audioDataUrl = task.customAlarmAudioDataUrl || defaultUploadedAudio?.dataUrl;
+    const audioFileName = task.customAlarmAudioName || defaultUploadedAudio?.name;
+    if (audioDataUrl) {
+      items.push({
+        id: `${task.id}|due|${dueDate.toISOString().slice(0, 16)}`,
+        title: 'Edenify Alarm',
+        body: `${task.name} is due now (${task.time}).`,
+        dueAt: dueDate.toISOString(),
+        audioDataUrl,
+        audioFileName,
+      });
+    }
   });
 
   return items;

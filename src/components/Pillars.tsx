@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
-import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2, MessageCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Circle, WandSparkles, Loader2 } from 'lucide-react';
 import { cn, formatXP, getProgress } from '../lib/utils';
 import { Habit, Layer, LayerId } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { getEdenInsight } from '../services/gemini';
 import { BibleReadingUI } from './BibleReadingUI';
-import { EdenChat } from './EdenChat';
 
 const iconByLayer: Record<LayerId, string> = {
   spiritual: 'auto_awesome',
@@ -178,7 +177,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
   const [bibleReadingToday, setBibleReadingToday] = useState(false);
-  const [showEdenChat, setShowEdenChat] = useState(false);
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -566,13 +564,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                   <section className="mb-8">
                     <div className="flex items-center justify-between mb-6">
                       <h2 className="text-2xl font-serif italic text-on-surface">Daily Scripture</h2>
-                      <button
-                        onClick={() => setShowEdenChat(!showEdenChat)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.12em] hover:bg-primary/90 transition-colors"
-                      >
-                        <MessageCircle size={16} />
-                        Ask Eden
-                      </button>
                     </div>
 
                     <BibleReadingUI
@@ -582,15 +573,6 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                       isProgressionEnforced={true}
                     />
                   </section>
-
-                  {showEdenChat && (
-                    <section className="mb-8 h-96">
-                      <EdenChat
-                        context="User is reading daily scriptures for spiritual growth and discipline"
-                        onClose={() => setShowEdenChat(false)}
-                      />
-                    </section>
-                  )}
 
                   <section className="mb-6 relative overflow-hidden rounded-[2rem] border border-outline-variant/25 bg-surface-container-low p-5 sm:p-7">
                     <div className={cn('absolute top-0 left-0 w-full h-0.5', layerColorClasses[activeLayer.id].stripe)} />

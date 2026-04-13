@@ -3,6 +3,7 @@ import { useApp } from '../AppContext';
 import { Bell, Shield, LogOut, Award, Zap, Target, Sparkles, Download, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { registerBibleReminderSync, unregisterBibleReminderSync } from '../services/notifications';
+import AndroidDiagnostics from './AndroidDiagnostics';
 
 const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
@@ -494,38 +495,81 @@ const Profile: React.FC = () => {
       <section className="space-y-4">
         <h2 className={sectionTitleClass}>Integrations</h2>
         <div className={panelClass}>
-          <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
-          <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Telegram Bot Connection</p>
-          <p className="text-xs text-secondary">
-            Open Telegram, talk to your bot, copy your numeric chat ID, then paste it here to receive task notifications.
-          </p>
+          <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-4">
+            <div className="space-y-2">
+              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">
+                🤖 Telegram Bot Setup (3 Steps)
+              </p>
+              <div className="space-y-3 text-xs text-secondary bg-surface-container-low rounded-xl p-3">
+                <div className="space-y-1">
+                  <p className="font-bold text-on-surface">Step 1: Find Your Chat ID</p>
+                  <ol className="list-decimal list-inside space-y-1 ml-1">
+                    <li>Open Telegram app</li>
+                    <li>Search for and start a chat with your bot (name in Settings)</li>
+                    <li>Send <code className="bg-surface-container-lowest px-1 rounded text-xs">/chatid</code> to get your ID</li>
+                    <li>Copy the numeric ID shown (e.g., 123456789 or -1001234567890)</li>
+                  </ol>
+                </div>
+                <hr className="border-outline-variant/25" />
+                <div className="space-y-1">
+                  <p className="font-bold text-on-surface">Step 2: Paste Your Chat ID Below</p>
+                  <p>This links your Telegram to receive task reminders and Bible readings here.</p>
+                </div>
+                <hr className="border-outline-variant/25" />
+                <div className="space-y-1">
+                  <p className="font-bold text-on-surface">Step 3: Test Connection</p>
+                  <p>Click "Test Connection" below. You should get a confirmation message in Telegram.</p>
+                </div>
+              </div>
+            </div>
 
-          <input
-            value={user.preferences.telegramChatId || ''}
-            onChange={(e) => updatePreference('telegramChatId', e.target.value)}
-            placeholder="Paste Telegram chat ID"
-            className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm"
-          />
+            <input
+              value={user.preferences.telegramChatId || ''}
+              onChange={(e) => updatePreference('telegramChatId', e.target.value)}
+              placeholder="Paste your Telegram chat ID here"
+              className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm"
+            />
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={testTelegramConnection}
-              disabled={testingTelegram}
-              className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-70"
-            >
-              {testingTelegram ? 'Testing...' : 'Test Connection'}
-            </button>
-            {telegramStatus && <p className="text-xs text-secondary">{telegramStatus}</p>}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={testTelegramConnection}
+                disabled={testingTelegram}
+                className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-70 hover:bg-primary-dark transition-colors"
+              >
+                {testingTelegram ? 'Testing...' : 'Test Connection'}
+              </button>
+              {telegramStatus && (
+                <p className={cn(
+                  'text-xs',
+                  telegramStatus.includes('successfully')
+                    ? 'text-emerald-600'
+                    : telegramStatus.includes('missing') || telegramStatus.includes('invalid')
+                    ? 'text-amber-600'
+                    : 'text-secondary'
+                )}>
+                  {telegramStatus}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
+              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">📝 Available Commands</p>
+              <div className="text-xs text-secondary space-y-1">
+                <p><strong>/set</strong> - Create a new task</p>
+                <p><strong>/tasks</strong> - See all your tasks</p>
+                <p><strong>/edit, /modify</strong> - Update a task</p>
+                <p><strong>/delete</strong> - Remove a task</p>
+                <p><strong>/defaults</strong> - Set default task settings</p>
+                <p><strong>/chatid</strong> - Get your chat ID</p>
+                <p><strong>/cancel</strong> - Stop current operation</p>
+                <p className="text-[9px] italic pt-2">Tasks created in Telegram sync automatically to your app!</p>
+              </div>
+            </div>
           </div>
-
-          <div className="mt-2 rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
-            <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">Bot Commands</p>
-            <p className="text-xs text-secondary">/set, /delete, /edit or /modify, /tasks, /chatid, /defaults, /cancel</p>
-            <p className="text-xs text-secondary">Tasks created/edited/deleted in bot will sync to your app when chat ID is connected.</p>
-          </div>
-        </div>
         </div>
       </section>
+
+      <AndroidDiagnostics />
 
       <section className="space-y-4">
         <h2 className={sectionTitleClass}>Account</h2>

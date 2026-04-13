@@ -225,6 +225,52 @@ const saveTaskDeletionTombstones = (accountKey: string, tombstones: Record<strin
   }
 };
 
+const scoreCloudState = (state: any) => {
+  if (!state || typeof state !== 'object') return -1;
+  const taskCount = Array.isArray(state.tasks) ? state.tasks.length : 0;
+  const habitCount = Array.isArray(state.habits) ? state.habits.length : 0;
+  const journalCount = Array.isArray(state.journal) ? state.journal.length : 0;
+  const hasUser = Boolean(state.user?.id || state.user?.email || state.user?.preferences);
+  const hasBible = Boolean(state.bibleReading?.passage || state.bibleReading?.day);
+  const hasGoal = Number.isFinite(Number(state.dailyTaskGoal));
+  return taskCount * 10 + habitCount * 4 + journalCount * 2 + (hasUser ? 3 : 0) + (hasBible ? 2 : 0) + (hasGoal ? 1 : 0);
+};
+
+const mergeCloudStates = (supabaseState: any | null, backendState: any | null) => {
+  if (!supabaseState && !backendState) return null;
+  if (!supabaseState) return backendState;
+  if (!backendState) return supabaseState;
+
+  const preferredState = scoreCloudState(backendState) >= scoreCloudState(supabaseState) ? backendState : supabaseState;
+  const secondaryState = preferredState === backendState ? supabaseState : backendState;
+
+  return {
+    user: normalizeUser({
+      ...(supabaseState.user || {}),
+      ...(backendState.user || {}),
+      preferences: {
+        ...(supabaseState.user?.preferences || {}),
+        ...(backendState.user?.preferences || {}),
+        notifications: {
+          ...(supabaseState.user?.preferences?.notifications || {}),
+          ...(backendState.user?.preferences?.notifications || {}),
+        },
+      },
+    }),
+    layers: secondaryState?.layers || preferredState.layers || [],
+    habits: secondaryState?.habits || preferredState.habits || [],
+    tasks: mergeTasksByIdentity(
+      Array.isArray(supabaseState.tasks) ? supabaseState.tasks : [],
+      Array.isArray(backendState.tasks) ? backendState.tasks : [],
+      new Set<string>(),
+      true
+    ),
+    journal: secondaryState?.journal || preferredState.journal || [],
+    bibleReading: normalizeBibleReading(secondaryState?.bibleReading || preferredState.bibleReading || null),
+    dailyTaskGoal: Number(secondaryState?.dailyTaskGoal ?? preferredState.dailyTaskGoal ?? 3),
+  };
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
 
@@ -550,7 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         withTimeout(loadBackendUserState(accountKey), 2500),
       ]);
 
-      const remoteState = supabaseState || backendState;
+      const remoteState = mergeCloudStates(supabaseState, backendState);
       if (remoteState) {
         applyRemoteState(remoteState);
       }

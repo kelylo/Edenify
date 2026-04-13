@@ -47,9 +47,8 @@ public final class AlarmScheduler {
         PendingIntent trigger = createTriggerIntent(context, record.id, PendingIntent.FLAG_UPDATE_CURRENT);
         if (trigger == null) return;
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(when, trigger);
-            alarmManager.setAlarmClock(info, trigger);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, trigger);
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, when, trigger);
         }

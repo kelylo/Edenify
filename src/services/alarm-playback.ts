@@ -24,6 +24,7 @@ class AlarmManager {
   private oscillators: OscillatorNode[] = [];
   private gainNode: GainNode | null = null;
   private isPlaying = false;
+  private activeSource: AudioBufferSourceNode | null = null;
 
   async playAlarm(config: AlarmConfig): Promise<void> {
     // Try mobile first (Capacitor)
@@ -75,7 +76,7 @@ class AlarmManager {
       }
 
       this.isPlaying = true;
-      const duration = config.duration || 5000; // 5s default
+      const duration = config.duration || 5000; // 5s default for built-in tones
       const volume = config.volume ?? 0.3;
       const startTime = this.audioContext.currentTime;
       const endTime = startTime + (duration / 1000);
@@ -102,7 +103,7 @@ class AlarmManager {
       this.gainNode.gain.exponentialRampToValueAtTime(0.01, endTime);
 
       // Cleanup after playing
-      setTimeout(() => {
+      window.setTimeout(() => {
         this.stopAlarm();
       }, duration + 100);
     } catch (error) {
@@ -124,6 +125,15 @@ class AlarmManager {
       });
       this.oscillators = [];
 
+      if (this.activeSource) {
+        try {
+          this.activeSource.stop();
+        } catch {
+          // Already stopped
+        }
+        this.activeSource = null;
+      }
+
       if (this.gainNode) {
         this.gainNode.gain.setValueAtTime(0, this.audioContext?.currentTime || 0);
       }
@@ -134,7 +144,7 @@ class AlarmManager {
     this.isPlaying = false;
   }
 
-  async playCustomAlarm(dataUrl: string, duration = 5000): Promise<void> {
+  async playCustomAlarm(dataUrl: string): Promise<void> {
     if (!dataUrl) return;
 
     try {
@@ -151,6 +161,7 @@ class AlarmManager {
       this.isPlaying = true;
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
+      this.activeSource = source;
 
       // Route through gain for volume control
       if (!this.gainNode) {
@@ -161,10 +172,12 @@ class AlarmManager {
       source.connect(this.gainNode);
       source.start(0);
 
-      setTimeout(() => {
-        source.stop();
+      source.onended = () => {
         this.isPlaying = false;
-      }, Math.min(duration, audioBuffer.duration * 1000));
+        if (this.activeSource === source) {
+          this.activeSource = null;
+        }
+      };
     } catch (error) {
       console.warn('[Alarm] Custom audio playback failed:', error);
       this.isPlaying = false;
@@ -187,7 +200,7 @@ export async function playTaskAlarm(taskName: string, customAudioUrl?: string): 
 
   if (customAudioUrl) {
     // Play custom uploaded audio
-    await manager.playCustomAlarm(customAudioUrl, 8000);
+    await manager.playCustomAlarm(customAudioUrl);
   } else {
     // Play builtin tone
     await manager.playAlarm({

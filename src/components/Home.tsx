@@ -852,15 +852,17 @@ const Home: React.FC = () => {
       const uploaded = resolveTaskUploadedAlarm(task);
       if (uploaded?.dataUrl) {
         const media = new Audio(uploaded.dataUrl);
-        media.loop = true;
+        media.loop = false;
         media.volume = 1;
+        media.onended = () => {
+          if (alarmMediaRef.current === media) {
+            alarmMediaRef.current = null;
+          }
+        };
         media.play().catch(() => {
           startSynthAlarm();
         });
         alarmMediaRef.current = media;
-        alarmAutoOffRef.current = window.setTimeout(() => {
-          stopAlarm();
-        }, 60000);
         return;
       }
       startSynthAlarm();

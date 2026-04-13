@@ -901,13 +901,14 @@ export const getTodaySmartTemplates = (
   const hour = now.getHours();
 
   // Morning (5-11): Spiritual, Physical, Planning
-  // Midday (12-16): Academic, Financial, General maintenance
-  // Evening (17-22): Reflection, light tasks, connection
-  // Night (23-4): Wind-down, low energy
+  // Afternoon (12-16): Academic, Financial, General maintenance
+  // Evening (17-21): Reflection, light tasks, connection
+  // Night (22-4): Wind-down, spiritual, low energy
 
   let targetLayers: LayerId[] = [];
   if (hour >= 5 && hour < 12) targetLayers = ['spiritual', 'physical', 'general'];
   else if (hour >= 12 && hour < 17) targetLayers = ['academic', 'financial', 'general'];
+  else if (hour >= 17 && hour < 22) targetLayers = ['general', 'spiritual', 'academic'];
   else targetLayers = ['spiritual', 'general'];
 
   const recommendations: EdenTemplate[] = [];

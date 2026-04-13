@@ -48,6 +48,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type TaskFlowMode = 'create' | 'delete';
+type QuickTimeSlot = 'morning' | 'afternoon' | 'evening' | 'night';
 interface TaskFlowState {
   mode: TaskFlowMode;
   step: 'name' | 'time' | 'repeat' | 'layer' | 'priority' | 'confirm' | 'select';
@@ -73,6 +74,83 @@ const INTRO_MESSAGE =
 
 const defaultPreferredMusic = 'Instrumental Warmth';
 const DRAFT_INPUT_STORAGE_KEY = 'eden.chat.draft.v1';
+
+const QUICK_SUGGESTIONS: Record<QuickTimeSlot, Array<{ text: string; layer?: LayerId }>> = {
+  morning: [
+    { text: 'wake up without snooze', layer: 'physical' },
+    { text: 'morning prayer 5 minutes', layer: 'spiritual' },
+    { text: 'read bible one chapter', layer: 'spiritual' },
+    { text: 'plan top 3 tasks today', layer: 'general' },
+    { text: "review today's lectures before class", layer: 'academic' },
+    { text: 'drink water before coffee', layer: 'physical' },
+  ],
+  afternoon: [
+    { text: 'deep study 45 minutes no phone', layer: 'academic' },
+    { text: 'solve 5 hard problems daily', layer: 'academic' },
+    { text: 'use timer 45 minute focus block', layer: 'general' },
+    { text: 'stand up and reset every hour', layer: 'physical' },
+    { text: 'track daily wins checklist', layer: 'general' },
+    { text: 'practice coding 30 minutes', layer: 'academic' },
+  ],
+  evening: [
+    { text: 'review formulas before sleep', layer: 'academic' },
+    { text: 'daily reflection 3 lines', layer: 'general' },
+    { text: 'short gratitude prayer night', layer: 'spiritual' },
+    { text: 'prepare bag night before', layer: 'general' },
+    { text: 'sleep at same time daily', layer: 'physical' },
+    { text: 'write daily reflection 3 lines', layer: 'spiritual' },
+  ],
+  night: [
+    { text: 'review goals morning and night', layer: 'general' },
+    { text: 'pray before starting work', layer: 'spiritual' },
+    { text: 'visualize finishing tasks today', layer: 'general' },
+    { text: 'prepare bag night before', layer: 'general' },
+    { text: 'sleep at same time daily', layer: 'physical' },
+    { text: 'short gratitude prayer night', layer: 'spiritual' },
+  ],
+};
+
+const TIME_SLOT_KEYWORDS: Record<QuickTimeSlot, RegExp> = {
+  morning: /\b(morning|wake|prayer|class|lecture|breakfast|snooze)\b/i,
+  afternoon: /\b(afternoon|study|problem|focus|coding|work|class|lecture)\b/i,
+  evening: /\b(evening|sleep|night|reflection|review|journal|quiet)\b/i,
+  night: /\b(night|sleep|rest|prepare|go to bed|before bed)\b/i,
+};
+
+const getQuickTimeSlot = (date = new Date()): QuickTimeSlot => {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 22) return 'evening';
+  return 'night';
+};
+
+const inferLayerFromText = (text: string): LayerId | null => {
+  const lower = text.toLowerCase();
+  if (/\b(pray|bible|scripture|verse|god)\b/.test(lower)) return 'spiritual';
+  if (/\b(study|lecture|exam|class|problem|coding|code|lecture|academic)\b/.test(lower)) return 'academic';
+  if (/\b(money|budget|save|spend|finance|financial)\b/.test(lower)) return 'financial';
+  if (/\b(gym|pushups|walk|run|stretch|sleep|water|body)\b/.test(lower)) return 'physical';
+  return null;
+};
+
+const buildQuickSuggestions = (input: string, currentLayer?: LayerId | null) => {
+  const slot = getQuickTimeSlot();
+  const layerHint = currentLayer || inferLayerFromText(input);
+  const pool = QUICK_SUGGESTIONS[slot];
+
+  const ranked = pool
+    .map((item, index) => ({
+      ...item,
+      score:
+        (item.layer && item.layer === layerHint ? 20 : 0) +
+        (TIME_SLOT_KEYWORDS[slot].test(item.text) ? 10 : 0) -
+        index,
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return ranked.slice(0, 5);
+};
 
 const formatTimeDisplay = (time: string) => {
   const m = time.match(/^([0-1]?\d|2[0-3]):([0-5]\d)$/);
@@ -306,29 +384,35 @@ const Eden: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!input.trim() || input.length < 3) {
-      setSuggestions([]);
-      return;
-    }
+    const normalized = input.trim().toLowerCase();
+    const currentLayer = taskFlow?.draft?.layerId || inferLayerFromText(input) || (agentProfile?.lastActiveLayer as LayerId | undefined) || null;
 
-    const lower = input.toLowerCase();
-    const list: Suggestion[] = [];
+    const quickSuggestions = buildQuickSuggestions(input, currentLayer);
+    const list: Suggestion[] = quickSuggestions.map((item, index) => ({
+      id: `quick-${item.text}-${index}`,
+      text: item.text,
+      icon: item.layer === 'spiritual' ? <BookOpen size={14} /> : item.layer === 'academic' ? <Layers size={14} /> : item.layer === 'physical' ? <Repeat size={14} /> : <Sparkles size={14} />,
+      action: () => {
+        setInput(item.text);
+        textAreaRef.current?.focus();
+      },
+    }));
 
-    if (/\b(create|add|new)\b.*\btask\b/.test(lower)) {
-      list.push({ id: 'create-task', text: 'Create a new task', icon: <Plus size={14} />, action: () => startTaskCreation() });
+    if (/\b(create|add|new)\b.*\btask\b/.test(normalized)) {
+      list.unshift({ id: 'create-task', text: 'Create a new task', icon: <Plus size={14} />, action: () => startTaskCreation() });
     }
-    if (/\b(list|show|view)\b.*\btasks?\b/.test(lower) || /^tasks?$/.test(lower.trim())) {
-      list.push({ id: 'list-tasks', text: 'Show my tasks', icon: <CheckCircle2 size={14} />, action: () => handleQuickCommand('tasks') });
+    if (/\b(list|show|view)\b.*\btasks?\b/.test(normalized) || /^tasks?$/.test(normalized)) {
+      list.unshift({ id: 'list-tasks', text: 'Show my tasks', icon: <CheckCircle2 size={14} />, action: () => handleQuickCommand('tasks') });
     }
-    if (/\b(bible|verse|reading|scripture)\b/.test(lower)) {
-      list.push({ id: 'bible-reading', text: 'Get today reading', icon: <BookOpen size={14} />, action: () => handleQuickCommand('bible') });
+    if (/\b(bible|verse|reading|scripture)\b/.test(normalized)) {
+      list.unshift({ id: 'bible-reading', text: 'Get today reading', icon: <BookOpen size={14} />, action: () => handleQuickCommand('bible') });
     }
-    if (/\b(habit|daily|routine)\b/.test(lower)) {
-      list.push({ id: 'create-habit', text: 'Create daily habit', icon: <Repeat size={14} />, action: () => setInput('create habit ') });
+    if (/\b(habit|daily|routine)\b/.test(normalized)) {
+      list.unshift({ id: 'create-habit', text: 'Create daily habit', icon: <Repeat size={14} />, action: () => setInput('create habit ') });
     }
 
     setSuggestions(list.slice(0, 5));
-  }, [input]);
+  }, [input, taskFlow?.draft?.layerId, agentProfile?.lastActiveLayer]);
 
   const pushUndo = useCallback((action: UndoAction) => {
     setUndoStack((prev) => [action, ...prev].slice(0, 20));

@@ -365,6 +365,13 @@ const mergeUserWithMediaFallback = (previous: User, remote: any): User => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
+  const getLastAccountKey = () => {
+    try {
+      return String(localStorage.getItem('edenify_last_account_key') || '').trim().toLowerCase();
+    } catch {
+      return '';
+    }
+  };
 
   // Cache management for session persistence
   const cacheUser = (user: User | null) => {
@@ -372,8 +379,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem('edenify_cached_user');
       return;
     }
+
+    const accountKey = getAccountKey(user);
+    if (accountKey) {
+      try {
+        localStorage.setItem('edenify_last_account_key', accountKey);
+      } catch {
+        // Ignore account-key cache failures.
+      }
+    }
+
+    const lightUser: User = {
+      ...user,
+      avatar: String(user.avatar || '').startsWith('data:') ? '' : user.avatar,
+      preferences: {
+        ...user.preferences,
+        customFocusSongDataUrl: '',
+        customFocusPlaylistDataUrls: [],
+      },
+    };
+
     try {
-      localStorage.setItem('edenify_cached_user', JSON.stringify(user));
+      localStorage.setItem('edenify_cached_user', JSON.stringify(lightUser));
     } catch (error) {
       console.warn('Failed to cache user session:', error);
     }
@@ -399,6 +426,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [bibleReading, setBibleReading] = useState<BibleReading>(INITIAL_BIBLE_READING);
   const [dailyTaskGoal, setDailyTaskGoalState] = useState<number>(9);
   const [cloudSyncReady, setCloudSyncReady] = useState(false);
+  const [localRestoreReady, setLocalRestoreReady] = useState(false);
   const applyingTelegramSyncRef = useRef(false);
   const lastTelegramTasksHashRef = useRef('');
   const hasCompletedInitialCloudSyncRef = useRef(false);
@@ -474,6 +502,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
+    setLocalRestoreReady(false);
+  }, [user?.id, user?.email]);
+
+  useEffect(() => {
     const accountKey = getAccountKey(user);
     if (!accountKey) return;
 
@@ -534,6 +566,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (error) {
       console.warn('Failed to restore account-scoped local state:', error);
+    } finally {
+      setLocalRestoreReady(true);
     }
   }, [user?.id, user?.email, cloudSyncReady]);
 
@@ -542,7 +576,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (getAccountKey(user)) return;
 
     try {
-      const saved = localStorage.getItem('edenify_state_guest');
+      const fallbackAccountKey = getLastAccountKey();
+      const preferredKey = fallbackAccountKey ? `edenify_state_${fallbackAccountKey}` : 'edenify_state_guest';
+      const saved = localStorage.getItem(preferredKey) || localStorage.getItem('edenify_state_guest');
       if (!saved) return;
       const parsed = JSON.parse(saved);
 
@@ -571,6 +607,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (error) {
       console.warn('Failed to restore guest local state:', error);
+    } finally {
+      setLocalRestoreReady(true);
     }
   }, [authReady, user?.id, user?.email]);
 
@@ -791,6 +829,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Save to localStorage on change
   useEffect(() => {
+    if (!authReady) return;
+    if (!localRestoreReady) return;
+
     const accountKey = getAccountKey(user);
     const localCacheUser = user
       ? {
@@ -868,7 +909,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       syncState();
     }
-  }, [user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal, cloudSyncReady]);
+  }, [authReady, localRestoreReady, user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal, cloudSyncReady]);
 
   useEffect(() => {
     const chatId = user?.preferences.telegramChatId?.trim();

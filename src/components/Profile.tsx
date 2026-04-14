@@ -195,7 +195,10 @@ const Profile: React.FC = () => {
         }).catch(() => null);
 
         const sourceHint = statusData?.tokenSource ? ` Current source: ${statusData.tokenSource}.` : '';
-        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint} Add TELEGRAM_BOT_TOKEN on Render/local server.`);
+        const localHint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? ' Local server is running without TELEGRAM_BOT_TOKEN. Add it to .env.local and restart npm run dev.'
+          : ' Add TELEGRAM_BOT_TOKEN in Render environment variables and redeploy.';
+        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint}${localHint}`);
         return;
       }
 

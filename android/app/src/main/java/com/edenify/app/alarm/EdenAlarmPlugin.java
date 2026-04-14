@@ -6,6 +6,11 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import android.app.AlarmManager;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -84,5 +89,41 @@ public class EdenAlarmPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("ok", true);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getAlarmCapabilities(PluginCall call) {
+        boolean canScheduleExactAlarms = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            AlarmManager alarmManager = (AlarmManager) getContext().getSystemService(android.content.Context.ALARM_SERVICE);
+            canScheduleExactAlarms = alarmManager != null && alarmManager.canScheduleExactAlarms();
+        }
+
+        JSObject result = new JSObject();
+        result.put("canScheduleExactAlarms", canScheduleExactAlarms);
+        result.put("platform", "android");
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openAlarmSettings(PluginCall call) {
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+        } else {
+            intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+        }
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getContext().startActivity(intent);
+            JSObject result = new JSObject();
+            result.put("ok", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Could not open alarm settings: " + error.getMessage());
+        }
     }
 }

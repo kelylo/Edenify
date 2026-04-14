@@ -394,23 +394,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Skip loading from localStorage until cloud sync completes.
     if (!cloudSyncReady) {
       return;
-    }
 
-    try {
-      const saved = localStorage.getItem(`edenify_state_${accountKey}`);
-      if (!saved) return;
-      const parsed = JSON.parse(saved);
-      // Only apply if we have no data (cloud was offline/unavailable)
-      if (parsed.layers && layers === INITIAL_LAYERS) setLayers(parsed.layers);
-      if (parsed.habits && habits === INITIAL_HABITS) setHabits(parsed.habits);
-      if (parsed.tasks && tasks === INITIAL_TASKS) setTasks(parsed.tasks);
-      if (parsed.journal && journal.length === 0) setJournal(parsed.journal);
+      if (Array.isArray(parsed.layers) && parsed.layers.length > 0) {
+        setLayers((prev) => (prev.length >= parsed.layers.length ? prev : parsed.layers));
+      }
+
+      if (Array.isArray(parsed.habits) && parsed.habits.length > 0) {
+        setHabits((prev) => (prev.length >= parsed.habits.length ? prev : parsed.habits));
+      }
+
+      if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+        const blockedTaskIds = new Set([
+          ...Array.from(recentlyDeletedTaskIdsRef.current),
+          ...Object.keys(deletedTaskTombstonesRef.current),
+        ]);
+        setTasks((prev) => mergeTasksByIdentity(prev, parsed.tasks, blockedTaskIds, true));
+      }
+
+      if (Array.isArray(parsed.journal) && parsed.journal.length > 0) {
+        setJournal((prev) => (prev.length >= parsed.journal.length ? prev : parsed.journal));
+      }
+
+      if (parsed.bibleReading) {
+        setBibleReading((prev) => normalizeBibleReading(parsed.bibleReading || prev));
+      }
+
+      if (Number.isFinite(Number(parsed.dailyTaskGoal))) {
+        setDailyTaskGoalState(Number(parsed.dailyTaskGoal));
+      }
+
+      const savedPrefs = parsed?.user?.preferences;
+      if (savedPrefs && user) {
+        setUser((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            preferences: {
+              ...prev.preferences,
+              ...savedPrefs,
+              notifications: {
+                ...prev.preferences.notifications,
+                ...(savedPrefs.notifications || {}),
+              },
+            },
+          };
+        });
+      }
+      const currentSnapshot = {
+        user,
+        layers,
+  }, [user?.id, user?.email, cloudSyncReady]);
+        tasks,
+        journal,
+        bibleReading,
+        dailyTaskGoal,
+      };
+
+      const parsedScore = scoreCloudState(parsed);
+      const currentScore = scoreCloudState(currentSnapshot);
+
+      // Prefer richer local cache when remote/bootstrap state is sparse.
+      if (parsedScore <= currentScore) return;
+
+      if (Array.isArray(parsed.layers)) setLayers(parsed.layers);
+      if (Array.isArray(parsed.habits)) setHabits(parsed.habits);
+      if (Array.isArray(parsed.tasks)) setTasks(parsed.tasks);
+      if (Array.isArray(parsed.journal)) setJournal(parsed.journal);
       if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
-      if (parsed.dailyTaskGoal) setDailyTaskGoalState(parsed.dailyTaskGoal);
+      if (Number.isFinite(Number(parsed.dailyTaskGoal))) setDailyTaskGoalState(Number(parsed.dailyTaskGoal));
     } catch (error) {
       console.warn('Failed to restore account-scoped local state:', error);
     }
-  }, [user?.id, user?.email, cloudSyncReady]);
+  }, [user?.id, user?.email, cloudSyncReady, layers, habits, tasks, journal, bibleReading, dailyTaskGoal]);
 
   useEffect(() => {
     const accountKey = getAccountKey(user);
@@ -630,8 +685,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Save to localStorage on change
   useEffect(() => {
     const accountKey = getAccountKey(user);
-    const localCacheUser = sanitizeUserForPersistence(user);
-    const localCacheTasks = tasks.map(sanitizeTaskForPersistence);
+    const localCacheUser = user
+      ? {
+          id: '',
+          email: '',
+          name: user.name,
+          avatar: user.avatar,
+          preferences: user.preferences,
+        }
+      : null;
+    const localCacheTasks = tasks;
     const localCacheStatePayload = {
       user: localCacheUser,
       layers,
@@ -657,8 +720,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     try {
-      // Keep browser cache without persisted user identity.
-      localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...localCacheStatePayload, user: null }));
+      // Keep browser cache without persisted user identity (but keep user preferences).
+      localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify(localCacheStatePayload));
     } catch (error) {
       try {
         const degradedPayload = {
@@ -668,8 +731,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customAlarmAudioDataUrl: undefined,
             customAlarmAudioName: undefined,
           })),
+          user: sanitizeUserForPersistence(user)
+            ? {
+                id: '',
+                email: '',
+                name: user?.name,
+                avatar: user?.avatar,
+                preferences: sanitizeUserForPersistence(user)?.preferences,
+              }
+            : null,
         };
-        localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify({ ...degradedPayload, user: null }));
+        localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify(degradedPayload));
       } catch {
         console.warn('Local cache save skipped (likely storage quota reached):', error);
       }

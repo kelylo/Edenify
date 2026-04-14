@@ -90,16 +90,14 @@ function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
 
     const audioDataUrl = task.customAlarmAudioDataUrl || defaultUploadedAudio?.dataUrl;
     const audioFileName = task.customAlarmAudioName || defaultUploadedAudio?.name;
-    if (audioDataUrl) {
-      items.push({
-        id: `${task.id}|due|${dueDate.toISOString().slice(0, 16)}`,
-        title: 'Edenify Alarm',
-        body: `${task.name} is due now (${task.time}).`,
-        dueAt: dueDate.toISOString(),
-        audioDataUrl,
-        audioFileName,
-      });
-    }
+    items.push({
+      id: `${task.id}|due|${dueDate.toISOString().slice(0, 16)}`,
+      title: 'Edenify Alarm',
+      body: `${task.name} is due now (${task.time}).`,
+      dueAt: dueDate.toISOString(),
+      audioDataUrl,
+      audioFileName,
+    });
   });
 
   return items;
@@ -158,6 +156,8 @@ async function syncElectronAlarms(items: NativeAlarmItem[]) {
 }
 
 async function syncAndroidAlarms(items: NativeAlarmItem[]) {
+  await LocalNotifications.requestPermissions().catch(() => undefined);
+
   const alarms: AndroidAlarmItem[] = items.map((item) => ({
     id: item.id,
     title: item.title,

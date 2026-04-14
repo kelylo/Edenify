@@ -730,6 +730,24 @@ async function ensureTelegramPollingMode(token: string) {
 }
 
 function resolveTelegramBotTokenConfig(db?: DbShape) {
+  const tokenKeys = ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_TOKEN_1', 'TELEGRAM_BOT_TOKEN_PRIMARY'] as const;
+
+  const readEnvFileToken = (filePath: string) => {
+    try {
+      if (!fs.existsSync(filePath)) return null;
+      const parsed = dotenv.parse(fs.readFileSync(filePath));
+      for (const key of tokenKeys) {
+        const value = String(parsed[key] || '').trim();
+        if (value) {
+          return { token: value, source: `file:${path.basename(filePath)}:${key}` };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const envCandidates = [
     ['TELEGRAM_BOT_TOKEN', process.env.TELEGRAM_BOT_TOKEN],
     ['TELEGRAM_BOT_TOKEN_1', process.env.TELEGRAM_BOT_TOKEN_1],
@@ -745,6 +763,12 @@ function resolveTelegramBotTokenConfig(db?: DbShape) {
       };
     }
   }
+
+  const localEnvToken = readEnvFileToken(path.join(process.cwd(), '.env.local'));
+  if (localEnvToken) return localEnvToken;
+
+  const envToken = readEnvFileToken(path.join(process.cwd(), '.env'));
+  if (envToken) return envToken;
 
   return {
     token: '',

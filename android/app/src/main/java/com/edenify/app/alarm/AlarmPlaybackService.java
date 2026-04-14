@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
@@ -54,6 +55,7 @@ public class AlarmPlaybackService extends Service {
 
         activeAlarmId = record.id;
         startForeground(NOTIFICATION_ID, buildNotification(record));
+        openFullScreenAlarm(record);
         startPlayback(storage, record);
         return START_STICKY;
     }
@@ -89,12 +91,18 @@ public class AlarmPlaybackService extends Service {
 
             Uri source = storage.resolveAudioUri(record);
             if (source == null) {
+                source = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            }
+            if (source == null) {
+                source = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+            if (source == null) {
                 stopSelf();
                 return;
             }
             mediaPlayer.setDataSource(this, source);
 
-            mediaPlayer.setLooping(false);
+            mediaPlayer.setLooping(true);
             mediaPlayer.prepare();
             mediaPlayer.start();
         } catch (IOException | IllegalStateException error) {
@@ -117,6 +125,7 @@ public class AlarmPlaybackService extends Service {
         );
 
         PendingIntent stopIntent = AlarmScheduler.createStopIntent(this, record.id);
+        PendingIntent fullScreenIntent = createFullScreenIntent(record);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -130,9 +139,38 @@ public class AlarmPlaybackService extends Service {
             .setAutoCancel(false)
             .setSilent(true)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopIntent)
+            .setFullScreenIntent(fullScreenIntent, true)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(record.body));
 
         return builder.build();
+    }
+
+    private PendingIntent createFullScreenIntent(AlarmRecord record) {
+        Intent fullScreen = new Intent(this, AlarmFullscreenActivity.class);
+        fullScreen.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        fullScreen.putExtra(AlarmScheduler.EXTRA_ALARM_ID, record.id);
+        fullScreen.putExtra("alarmTitle", record.title);
+        fullScreen.putExtra("alarmBody", record.body);
+
+        return PendingIntent.getActivity(
+            this,
+            (record.id + "-fullscreen").hashCode(),
+            fullScreen,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+
+    private void openFullScreenAlarm(AlarmRecord record) {
+        Intent fullScreen = new Intent(this, AlarmFullscreenActivity.class);
+        fullScreen.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        fullScreen.putExtra(AlarmScheduler.EXTRA_ALARM_ID, record.id);
+        fullScreen.putExtra("alarmTitle", record.title);
+        fullScreen.putExtra("alarmBody", record.body);
+        try {
+            startActivity(fullScreen);
+        } catch (Exception ignored) {
+            // Full-screen launch can be restricted by OEM policy; notification intent remains as fallback.
+        }
     }
 
     private void createChannel() {

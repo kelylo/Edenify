@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { AlertTriangle, CheckCircle, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { EdenAlarm } from '../services/android-alarm';
 
 const DEVICE_BRAND_INSTRUCTIONS: Record<string, { name: string; steps: string[] }> = {
   samsung: {
@@ -65,6 +66,7 @@ const AndroidDiagnostics: React.FC = () => {
   const [isAndroid, setIsAndroid] = useState(false);
   const [deviceBrand, setDeviceBrand] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
+  const [canScheduleExactAlarm, setCanScheduleExactAlarm] = useState<boolean | null>(null);
 
   useEffect(() => {
     const detectDevice = () => {
@@ -93,6 +95,21 @@ const AndroidDiagnostics: React.FC = () => {
     detectDevice();
   }, []);
 
+  useEffect(() => {
+    if (!isAndroid || Capacitor.getPlatform() !== 'android') return;
+
+    const loadCapabilities = async () => {
+      try {
+        const capabilities = await EdenAlarm.getAlarmCapabilities();
+        setCanScheduleExactAlarm(Boolean(capabilities?.canScheduleExactAlarms));
+      } catch {
+        setCanScheduleExactAlarm(null);
+      }
+    };
+
+    void loadCapabilities();
+  }, [isAndroid]);
+
   if (!isAndroid) return null;
 
   const brandInstructions = deviceBrand ? DEVICE_BRAND_INSTRUCTIONS[deviceBrand] : null;
@@ -116,22 +133,28 @@ const AndroidDiagnostics: React.FC = () => {
 
           <button
             type="button"
-            onClick={() => {
-              try {
-                // Request to open app settings
-                if ((window as any).open) {
-                  // For web-based access
-                  (window as any).open('android-app://com.android.settings/', '_system');
+            onClick={async () => {
+              if (Capacitor.getPlatform() === 'android') {
+                try {
+                  await EdenAlarm.openAlarmSettings();
+                  return;
+                } catch {
+                  // Fall through to manual guidance.
                 }
-              } catch (error) {
-                // Fallback: user will need to manually open settings
-                alert('Please open Settings > Apps > Edenify > Battery > Don\'t optimize (or similar on your device)');
               }
+
+              alert('Please open Settings > Apps > Edenify > Alarms & reminders / Battery > Allow exact alarms and Don\'t optimize.');
             }}
             className="w-full px-4 py-2 rounded-full bg-warning text-on-surface text-xs font-bold uppercase tracking-[0.14em] hover:bg-warning-dark transition-colors"
           >
-            Open Device Settings
+            Open Alarm Settings
           </button>
+
+          {canScheduleExactAlarm !== null && (
+            <p className="text-xs text-secondary">
+              Exact alarm permission: <strong className={canScheduleExactAlarm ? 'text-emerald-500' : 'text-warning'}>{canScheduleExactAlarm ? 'Allowed' : 'Not allowed yet'}</strong>
+            </p>
+          )}
 
           {brandInstructions && (
             <div className="space-y-2">

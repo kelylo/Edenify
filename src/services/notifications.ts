@@ -201,21 +201,28 @@ export const registerBibleReminderSync = async (): Promise<void> => {
       console.log('[Notifications] Registered periodic Bible reminder sync');
     }
 
-    // Register periodic background sync for future SW instances
-    if ('serviceWorker' in navigator && 'periodicSync' in navigator.serviceWorker.ready) {
+    // Register background sync / periodic sync on the resolved service worker registration.
+    if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.ready;
+
       if ('periodicSync' in registration) {
         try {
           await (registration as any).periodicSync.register('bible-reminder-sync', {
             minInterval: 15 * 60 * 1000, // 15 minutes
           });
           console.log('[Notifications] Periodic background sync registered');
+          return;
         } catch (error) {
           console.warn('[Notifications] Periodic sync registration failed:', error);
-          // Fallback: use Web Push API if available
-          if ('pushManager' in registration) {
-            console.log('[Notifications] Falling back to Web Push');
-          }
+        }
+      }
+
+      if ('sync' in registration) {
+        try {
+          await (registration as any).sync.register('bible-reminder-sync');
+          console.log('[Notifications] One-shot background sync registered');
+        } catch (error) {
+          console.warn('[Notifications] Background sync registration failed:', error);
         }
       }
     }
@@ -230,14 +237,24 @@ export const registerBibleReminderSync = async (): Promise<void> => {
  */
 export const unregisterBibleReminderSync = async (): Promise<void> => {
   try {
-    if ('serviceWorker' in navigator && 'periodicSync' in navigator.serviceWorker.ready) {
+    if ('serviceWorker' in navigator) {
       const registration = await navigator.serviceWorker.ready;
+
       if ('periodicSync' in registration) {
         try {
           await (registration as any).periodicSync.unregister('bible-reminder-sync');
-          console.log('[Notifications] Periodic background sync unregistered');
+          console.log('[Notifications] Periodic sync unregistered');
         } catch (error) {
           console.warn('[Notifications] Periodic sync unregistration failed:', error);
+        }
+      }
+
+      if ('sync' in registration) {
+        try {
+          await (registration as any).sync.unregister('bible-reminder-sync');
+          console.log('[Notifications] One-shot background sync unregistered');
+        } catch (error) {
+          console.warn('[Notifications] Background sync unregistration failed:', error);
         }
       }
     }

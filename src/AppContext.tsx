@@ -35,7 +35,6 @@ interface AppState {
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
-const RESET_VERSION = 'edenify-reset-2026-04-14-global-fresh-start-v1';
 const MAX_PERSISTED_DATA_URL_LENGTH = 4_500_000;
 const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
@@ -365,28 +364,6 @@ const mergeUserWithMediaFallback = (previous: User, remote: any): User => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
-  const clearLocalEdenifyState = () => {
-    try {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i);
-        if (!key) continue;
-        if (
-          key === 'edenify_cached_user' ||
-          key === 'edenify_last_account_key' ||
-          key === 'edenify_state_guest' ||
-          key === 'edenify_reset_version' ||
-          key.startsWith('edenify_state_') ||
-          key.startsWith('edenify_deleted_tasks_')
-        ) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach((key) => localStorage.removeItem(key));
-    } catch (error) {
-      console.warn('Failed to clear local Edenify state:', error);
-    }
-  };
   const getLastAccountKey = () => {
     try {
       return String(localStorage.getItem('edenify_last_account_key') || '').trim().toLowerCase();
@@ -526,14 +503,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const restore = async () => {
       try {
-        const resetMarker = localStorage.getItem('edenify_reset_version');
-        if (resetMarker !== RESET_VERSION) {
-          clearLocalEdenifyState();
-          localStorage.setItem('edenify_reset_version', RESET_VERSION);
-          setUserState(null);
-          cacheUser(null);
-        }
-
         // Step 1: Try to restore from cached user first (enables offline session persistence)
         const cachedUser = getCachedUser();
         if (cachedUser) {
@@ -549,7 +518,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (!cachedUser) {
           // Only clear user if there's no cache to fall back on
           setUserState(null);
-          cacheUser(null);
         }
 
         // Don't load guest state yet - let cloud sync initialize first.

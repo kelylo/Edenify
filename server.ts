@@ -79,6 +79,7 @@ const defaultTelegramDefaults: TelegramDefaults = {
   priority: 'C',
   time: '08:00',
 };
+const GLOBAL_SESSION_RESET_VERSION = 'edenify-session-reset-2026-04-14-v1';
 
 type UserPreferencesShape = Partial<{
   focusAlarmSound: string;
@@ -985,6 +986,26 @@ async function startServer() {
   const DB_PATH = path.join(process.cwd(), 'db.json');
   if (!fs.existsSync(DB_PATH)) {
     fs.writeFileSync(DB_PATH, JSON.stringify({ users: [], data: {}, sessions: {}, telegram: { offset: 0, byChatId: {} } }));
+  }
+
+  // One-time global logout: invalidate all existing sessions (including admin) after deployment.
+  try {
+    const db = readDb(DB_PATH);
+    db.data = db.data || {};
+    const systemState = db.data.__system || {};
+
+    if (systemState.globalSessionResetVersion !== GLOBAL_SESSION_RESET_VERSION) {
+      db.sessions = {};
+      db.data.__system = {
+        ...systemState,
+        globalSessionResetVersion: GLOBAL_SESSION_RESET_VERSION,
+        globalSessionResetAt: new Date().toISOString(),
+      };
+      writeDb(DB_PATH, db);
+      console.log('[Auth] Global session reset applied:', GLOBAL_SESSION_RESET_VERSION);
+    }
+  } catch (error) {
+    console.warn('[Auth] Could not apply global session reset marker:', error);
   }
 
   // API routes

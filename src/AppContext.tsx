@@ -41,6 +41,7 @@ const DAILY_BIBLE_TASK_ID = 'daily-bible-reading-task';
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const DEFAULT_REVISION_HABIT_ID = 'default-academic-revision-habit';
 const DEFAULT_REVISION_TIME = '19:00';
+const MEDIA_FALLBACK_FIELDS = ['customFocusSongDataUrl', 'customFocusPlaylistDataUrls'] as const;
 
 const getLocalDateKey = (date = new Date()) => {
   const year = date.getFullYear();
@@ -111,6 +112,48 @@ const sanitizeUserForPersistence = (baseUser: User | null): User | null => {
     preferences: nextPreferences,
   };
 };
+
+const stripHeavyMediaFromUser = (baseUser: User | null): User | null => {
+  if (!baseUser) return null;
+
+  const nextUser = sanitizeUserForPersistence(baseUser) || baseUser;
+  const nextAvatar = String(nextUser.avatar || '');
+
+  return {
+    ...nextUser,
+    avatar: nextAvatar.startsWith('data:') ? '' : nextAvatar,
+    preferences: {
+      ...nextUser.preferences,
+      customFocusSongDataUrl: '',
+      customFocusPlaylistDataUrls: [],
+    },
+  };
+};
+
+const stripHeavyMediaFromTasks = (rawTasks: Task[]): Task[] =>
+  rawTasks.map((task) => ({
+    ...sanitizeTaskForPersistence(task),
+    customAlarmAudioDataUrl: undefined,
+    customAlarmAudioName: undefined,
+  }));
+
+const buildEssentialStatePayload = (
+  baseUser: User | null,
+  layers: Layer[],
+  habits: Habit[],
+  tasks: Task[],
+  journal: JournalEntry[],
+  bibleReading: BibleReading,
+  dailyTaskGoal: number
+) => ({
+  user: stripHeavyMediaFromUser(baseUser),
+  layers,
+  habits,
+  tasks: stripHeavyMediaFromTasks(tasks),
+  journal,
+  bibleReading,
+  dailyTaskGoal,
+});
 
 const normalizeUser = (user: User): User => ({
   ...INITIAL_USER,
@@ -274,6 +317,49 @@ const mergeCloudStates = (supabaseState: any | null, backendState: any | null) =
     journal: chooseArray(secondaryState?.journal, preferredState?.journal),
     bibleReading: normalizeBibleReading(secondaryState?.bibleReading || preferredState.bibleReading || null),
     dailyTaskGoal: Number(secondaryState?.dailyTaskGoal ?? preferredState.dailyTaskGoal ?? 3),
+  };
+};
+
+const mergeUserWithMediaFallback = (previous: User, remote: any): User => {
+  const normalized = normalizeUser({
+    ...previous,
+    ...(remote || {}),
+    preferences: {
+      ...(previous.preferences || {}),
+      ...(remote?.preferences || {}),
+      notifications: {
+        ...(previous.preferences?.notifications || {}),
+        ...(remote?.preferences?.notifications || {}),
+      },
+    },
+  } as User);
+
+  const remotePrefs = remote?.preferences || {};
+  const mergedPrefs = { ...normalized.preferences };
+
+  for (const field of MEDIA_FALLBACK_FIELDS) {
+    const remoteValue = remotePrefs[field];
+    const previousValue = previous.preferences?.[field];
+    const remoteEmpty = Array.isArray(remoteValue)
+      ? remoteValue.length === 0
+      : String(remoteValue || '').trim().length === 0;
+    const previousHasValue = Array.isArray(previousValue)
+      ? previousValue.length > 0
+      : String(previousValue || '').trim().length > 0;
+
+    if (remoteEmpty && previousHasValue) {
+      (mergedPrefs as any)[field] = previousValue;
+    }
+  }
+
+  const remoteAvatar = String(remote?.avatar || '').trim();
+  const previousAvatar = String(previous.avatar || '').trim();
+  const shouldKeepPreviousAvatar = previousAvatar.length > 0 && (remoteAvatar.length === 0 || remoteAvatar === previousAvatar);
+
+  return {
+    ...normalized,
+    avatar: shouldKeepPreviousAvatar ? previousAvatar : normalized.avatar,
+    preferences: mergedPrefs,
   };
 };
 
@@ -651,7 +737,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteState.user) {
         setUser((prev) => {
           if (!prev) return normalizeUser(remoteState.user);
-          return normalizeUser({ ...prev, ...remoteState.user });
+          return mergeUserWithMediaFallback(prev, remoteState.user);
         });
       }
       if (remoteState.layers) setLayers(remoteState.layers);
@@ -725,11 +811,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bibleReading,
       dailyTaskGoal,
     };
-    const cloudTasks = tasks.map(sanitizeTaskForPersistence).map((task) => ({
-      ...task,
-      customAlarmAudioDataUrl: undefined,
-      customAlarmAudioName: undefined,
-    }));
+    const cloudTasks = stripHeavyMediaFromTasks(tasks);
     const cloudStatePayload = {
       user: sanitizeUserForPersistence(user),
       layers,
@@ -747,11 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const degradedPayload = {
           ...localCacheStatePayload,
-          tasks: localCacheTasks.map((task) => ({
-            ...task,
-            customAlarmAudioDataUrl: undefined,
-            customAlarmAudioName: undefined,
-          })),
+          tasks: stripHeavyMediaFromTasks(localCacheTasks),
           user: sanitizeUserForPersistence(user)
             ? {
                 id: '',
@@ -764,7 +842,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify(degradedPayload));
       } catch {
-        console.warn('Local cache save skipped (likely storage quota reached):', error);
+        try {
+          const essentialPayload = buildEssentialStatePayload(user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal);
+          localStorage.setItem(accountKey ? `edenify_state_${accountKey}` : 'edenify_state_guest', JSON.stringify(essentialPayload));
+        } catch {
+          console.warn('Local cache save skipped (likely storage quota reached):', error);
+        }
       }
     }
 
@@ -774,11 +857,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (applyingCloudStateRef.current) return;
 
         const supabaseSaved = await saveUserState(accountKey, cloudStatePayload);
-        if (!supabaseSaved) {
-          const backendSaved = await saveBackendUserState(accountKey, cloudStatePayload);
-          if (backendSaved) {
-            lastCloudStateHashRef.current = JSON.stringify(cloudStatePayload);
-          }
+        const backendSaved = await saveBackendUserState(accountKey, cloudStatePayload);
+
+        if (!supabaseSaved && !backendSaved) {
           return;
         }
 

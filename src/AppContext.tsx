@@ -432,9 +432,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const hasCompletedInitialCloudSyncRef = useRef(false);
   const applyingCloudStateRef = useRef(false);
   const lastCloudStateHashRef = useRef('');
+  const isCloudPullingRef = useRef(false);
   const recentlyDeletedTaskIdsRef = useRef<Set<string>>(new Set());
   const deletedTaskTombstonesRef = useRef<Record<string, number>>({});
   const deletionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const pullCloudState = async (accountKey: string) => {
+    if (!accountKey || isCloudPullingRef.current) return;
+    isCloudPullingRef.current = true;
+
+    try {
+      const [supabaseState, backendState] = await Promise.all([
+        withTimeout(loadUserState(accountKey), 2500),
+        withTimeout(loadBackendUserState(accountKey), 2500),
+      ]);
+
+      const remoteState = mergeCloudStates(supabaseState, backendState);
+      if (!remoteState) return;
+
+      const remoteHash = JSON.stringify(remoteState || {});
+      if (remoteHash === lastCloudStateHashRef.current) return;
+
+      applyingCloudStateRef.current = true;
+
+      if (remoteState.user) {
+        setUser((prev) => {
+          if (!prev) return normalizeUser(remoteState.user);
+          return mergeUserWithMediaFallback(prev, remoteState.user);
+        });
+      }
+
+      if (remoteState.layers) setLayers(remoteState.layers);
+      if (remoteState.habits) setHabits(remoteState.habits);
+      if (remoteState.tasks) {
+        const blockedTaskIds = new Set([
+          ...Array.from(recentlyDeletedTaskIdsRef.current),
+          ...Object.keys(deletedTaskTombstonesRef.current),
+        ]);
+        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, blockedTaskIds, false));
+      }
+      if (remoteState.journal) setJournal(remoteState.journal);
+      if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
+      if (remoteState.dailyTaskGoal) setDailyTaskGoalState(remoteState.dailyTaskGoal);
+
+      lastCloudStateHashRef.current = remoteHash;
+      window.setTimeout(() => {
+        applyingCloudStateRef.current = false;
+      }, 0);
+    } finally {
+      isCloudPullingRef.current = false;
+    }
+  };
 
   // Wrapper for setUser that also caches on localStorage (supports both value and function updates)
   const setUser = (nextUser: User | null | ((prev: User | null) => User | null)) => {
@@ -766,52 +814,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     let cancelled = false;
 
-    const applyRemoteState = (remoteState: any) => {
-      const remoteHash = JSON.stringify(remoteState || {});
-      if (remoteHash === lastCloudStateHashRef.current) return;
-
-      applyingCloudStateRef.current = true;
-
-      if (remoteState.user) {
-        setUser((prev) => {
-          if (!prev) return normalizeUser(remoteState.user);
-          return mergeUserWithMediaFallback(prev, remoteState.user);
-        });
-      }
-      if (remoteState.layers) setLayers(remoteState.layers);
-      if (remoteState.habits) setHabits(remoteState.habits);
-      if (remoteState.tasks) {
-        const blockedTaskIds = new Set([
-          ...Array.from(recentlyDeletedTaskIdsRef.current),
-          ...Object.keys(deletedTaskTombstonesRef.current),
-        ]);
-        setTasks((prev) => mergeTasksByIdentity(prev, remoteState.tasks, blockedTaskIds, false));
-      }
-      if (remoteState.journal) setJournal(remoteState.journal);
-      if (remoteState.bibleReading) setBibleReading(normalizeBibleReading(remoteState.bibleReading));
-      if (remoteState.dailyTaskGoal) setDailyTaskGoalState(remoteState.dailyTaskGoal);
-
-      lastCloudStateHashRef.current = remoteHash;
-      window.setTimeout(() => {
-        applyingCloudStateRef.current = false;
-      }, 0);
-    };
-
-    const pullFromCloud = async () => {
-      const [supabaseState, backendState] = await Promise.all([
-        withTimeout(loadUserState(accountKey), 2500),
-        withTimeout(loadBackendUserState(accountKey), 2500),
-      ]);
-
-      const remoteState = mergeCloudStates(supabaseState, backendState);
-      if (remoteState) {
-        applyRemoteState(remoteState);
-      }
-    };
-
     const bootstrap = async () => {
       try {
-        await pullFromCloud();
+        await pullCloudState(accountKey);
       } finally {
         if (!cancelled) {
           hasCompletedInitialCloudSyncRef.current = true;
@@ -826,6 +831,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cancelled = true;
     };
   }, [user?.email, user?.id]);
+
+  useEffect(() => {
+    const accountKey = getAccountKey(user);
+    if (!accountKey || !cloudSyncReady) return;
+
+    const refresh = () => {
+      void pullCloudState(accountKey);
+    };
+
+    const visibilityListener = () => {
+      if (document.visibilityState !== 'visible') return;
+      refresh();
+    };
+
+    const intervalId = window.setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', visibilityListener);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', visibilityListener);
+    };
+  }, [user?.id, user?.email, cloudSyncReady]);
 
   // Save to localStorage on change
   useEffect(() => {
@@ -987,6 +1014,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     pushTasks();
   }, [tasks, user?.email, user?.id, user?.preferences.telegramChatId]);
+
+  useEffect(() => {
+    const chatId = user?.preferences.telegramChatId?.trim();
+    const accountKey = getAccountKey(user);
+    if (!chatId || !accountKey) return;
+
+    const linkTelegram = async () => {
+      try {
+        await fetch('/api/telegram/link', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatId,
+            userId: accountKey,
+          }),
+        });
+      } catch (error) {
+        console.warn('Telegram auto-link failed:', error);
+      }
+    };
+
+    void linkTelegram();
+  }, [user?.id, user?.email, user?.preferences.telegramChatId]);
 
   useEffect(() => {
     void syncNativeTaskAlarms(tasks, user);

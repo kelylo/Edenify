@@ -394,6 +394,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Skip loading from localStorage until cloud sync completes.
     if (!cloudSyncReady) {
       return;
+    }
+
+    try {
+      const saved = localStorage.getItem(`edenify_state_${accountKey}`);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
 
       if (Array.isArray(parsed.layers) && parsed.layers.length > 0) {
         setLayers((prev) => (prev.length >= parsed.layers.length ? prev : parsed.layers));
@@ -440,9 +446,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         });
       }
-      const currentSnapshot = {
-        user,
-        layers,
+    } catch (error) {
+      console.warn('Failed to restore account-scoped local state:', error);
+    }
   }, [user?.id, user?.email, cloudSyncReady]);
 
   useEffect(() => {
@@ -481,28 +487,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to restore guest local state:', error);
     }
   }, [authReady, user?.id, user?.email]);
-        tasks,
-        journal,
-        bibleReading,
-        dailyTaskGoal,
-      };
-
-      const parsedScore = scoreCloudState(parsed);
-      const currentScore = scoreCloudState(currentSnapshot);
-
-      // Prefer richer local cache when remote/bootstrap state is sparse.
-      if (parsedScore <= currentScore) return;
-
-      if (Array.isArray(parsed.layers)) setLayers(parsed.layers);
-      if (Array.isArray(parsed.habits)) setHabits(parsed.habits);
-      if (Array.isArray(parsed.tasks)) setTasks(parsed.tasks);
-      if (Array.isArray(parsed.journal)) setJournal(parsed.journal);
-      if (parsed.bibleReading) setBibleReading(normalizeBibleReading(parsed.bibleReading));
-      if (Number.isFinite(Number(parsed.dailyTaskGoal))) setDailyTaskGoalState(Number(parsed.dailyTaskGoal));
-    } catch (error) {
-      console.warn('Failed to restore account-scoped local state:', error);
-    }
-  }, [user?.id, user?.email, cloudSyncReady, layers, habits, tasks, journal, bibleReading, dailyTaskGoal]);
 
   useEffect(() => {
     const accountKey = getAccountKey(user);

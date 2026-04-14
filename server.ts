@@ -236,6 +236,22 @@ function createSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function buildSessionCookie(req: express.Request, sessionId: string) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').toLowerCase();
+  const isSecure = req.secure || forwardedProto.includes('https');
+  const parts = [
+    `edenify_session=${encodeURIComponent(sessionId)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${60 * 60 * 24 * 30}`,
+  ];
+  if (isSecure) {
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
+
 function normalizeChatId(value?: string) {
   return (value || '').trim().replace(/[^0-9-]/g, '');
 }
@@ -1089,7 +1105,7 @@ async function startServer() {
       db.sessions = db.sessions || {};
       db.sessions[sessionId] = { userId: admin.id, createdAt: new Date().toISOString() };
       writeDb(DB_PATH, db);
-      res.setHeader('Set-Cookie', `edenify_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax`);
+      res.setHeader('Set-Cookie', buildSessionCookie(req, sessionId));
       res.json({ success: true, user: normalizeUser(admin) });
       return;
     }
@@ -1121,7 +1137,7 @@ async function startServer() {
     db.sessions = db.sessions || {};
     db.sessions[sessionId] = { userId: account.id, createdAt: new Date().toISOString() };
     writeDb(DB_PATH, db);
-    res.setHeader('Set-Cookie', `edenify_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax`);
+    res.setHeader('Set-Cookie', buildSessionCookie(req, sessionId));
     res.json({ success: true, user: normalizeUser(account) });
   });
 
@@ -1157,7 +1173,7 @@ async function startServer() {
     db.sessions = db.sessions || {};
     db.sessions[sessionId] = { userId: nextUser.id, createdAt: new Date().toISOString() };
     writeDb(DB_PATH, db);
-    res.setHeader('Set-Cookie', `edenify_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax`);
+    res.setHeader('Set-Cookie', buildSessionCookie(req, sessionId));
     res.json({ success: true, user: nextUser });
   });
 

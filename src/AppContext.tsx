@@ -444,6 +444,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         user,
         layers,
   }, [user?.id, user?.email, cloudSyncReady]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (getAccountKey(user)) return;
+
+    try {
+      const saved = localStorage.getItem('edenify_state_guest');
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+
+      if (Array.isArray(parsed.layers) && parsed.layers.length > 0) {
+        setLayers((prev) => (prev.length >= parsed.layers.length ? prev : parsed.layers));
+      }
+
+      if (Array.isArray(parsed.habits) && parsed.habits.length > 0) {
+        setHabits((prev) => (prev.length >= parsed.habits.length ? prev : parsed.habits));
+      }
+
+      if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+        setTasks((prev) => mergeTasksByIdentity(prev, parsed.tasks, new Set<string>(), true));
+      }
+
+      if (Array.isArray(parsed.journal) && parsed.journal.length > 0) {
+        setJournal((prev) => (prev.length >= parsed.journal.length ? prev : parsed.journal));
+      }
+
+      if (parsed.bibleReading) {
+        setBibleReading((prev) => normalizeBibleReading(parsed.bibleReading || prev));
+      }
+
+      if (Number.isFinite(Number(parsed.dailyTaskGoal))) {
+        setDailyTaskGoalState(Number(parsed.dailyTaskGoal));
+      }
+    } catch (error) {
+      console.warn('Failed to restore guest local state:', error);
+    }
+  }, [authReady, user?.id, user?.email]);
         tasks,
         journal,
         bibleReading,

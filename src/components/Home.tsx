@@ -666,6 +666,17 @@ const Home: React.FC = () => {
       });
 
       if (telegramChatId) {
+        await fetch('/api/telegram/link', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chatId: telegramChatId,
+            userId: (user?.email || user?.id || '').trim().toLowerCase(),
+          }),
+        }).catch(() => null);
+
         const tasksResponse = await fetch(`/api/telegram/tasks/${encodeURIComponent(telegramChatId)}`);
         const tasksData = await tasksResponse.json();
         if (!tasksResponse.ok || !tasksData?.success) {
@@ -688,7 +699,7 @@ const Home: React.FC = () => {
     } finally {
       setOpsChecking(false);
     }
-  }, [telegramChatId]);
+  }, [telegramChatId, user?.email, user?.id]);
 
   const runSystemCheck = async () => {
     await pushReminderEvent('System check', 'Reminder channels are alive and this event is synchronized across your feed.');

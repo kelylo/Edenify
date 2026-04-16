@@ -92,12 +92,8 @@ const hideBootSplash = () => {
   }, 260);
 };
 
-if (document.readyState === 'complete' || document.readyState === 'interactive') {
+if (document.readyState === 'complete') {
   hideBootSplash();
 } else {
-  document.addEventListener('DOMContentLoaded', hideBootSplash, { once: true });
   window.addEventListener('load', hideBootSplash, { once: true });
 }
-
-// Fallback: ensure stalled third-party assets cannot block the app shell forever.
-window.setTimeout(hideBootSplash, 1800);

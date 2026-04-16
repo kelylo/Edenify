@@ -50,7 +50,7 @@ Features:
 **Section:** Next to Priority Card
 
 Features:
-- Day counter: "Day X of 365"
+- Day counter: "Day X of 400"
 - Scripture passage reference (e.g., "Genesis 12-15")
 - Preview text (line-clamped to 2 lines)
 - Status badge: "In Progress" or "Completed"
@@ -275,7 +275,7 @@ Features:
 ### Scripture Journey
 - Click card to open full scripture modal
 - Mark as complete while reading
-- Progress tracking (day X of 365)
+- Progress tracking (day X of 400)
 - Next day button after completion
 
 ### Insight Generation

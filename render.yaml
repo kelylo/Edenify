@@ -32,7 +32,9 @@ services:
     schedule: "*/10 * * * *"
     buildCommand: npm install
     startCommand: >-
-      node -e "const url=(process.env.KEEPALIVE_URL||'').trim(); if(!url){console.log('KEEPALIVE_URL not set, skipping ping.'); process.exit(0);} fetch(url,{method:'GET'}).then(r=>{console.log('keepalive status',r.status); process.exit(r.ok?0:1);}).catch(e=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
+      node -e "const raw=(process.env.KEEPALIVE_URL||process.env.APP_URL||'').trim(); if(!raw){console.error('Set KEEPALIVE_URL (for example: https://your-app.onrender.com)'); process.exit(1);} const base=raw.replace(/\/+$/,''); const targets=[`${base}/api/health`,`${base}/api/user/reminder-check`]; Promise.all(targets.map(async (url)=>{const res=await fetch(url,{method:'GET'}); console.log('keepalive',url,res.status); if(!res.ok) throw new Error(`${url} -> ${res.status}`);})).then(()=>process.exit(0)).catch((e)=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
     envVars:
       - key: KEEPALIVE_URL
+        sync: false
+      - key: APP_URL
         sync: false

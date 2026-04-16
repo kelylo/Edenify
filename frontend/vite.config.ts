@@ -114,7 +114,7 @@ export default defineConfig(({mode}) => {
     define: {
       'process.env.SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || ''),
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || ''),
-      __EDEN_API_BASE__: JSON.stringify(env.VITE_API_BASE_URL || ''),
+      __EDEN_API_BASE__: JSON.stringify(env.VITE_API_BASE_URL || env.VITE_BACKEND_URL || ''),
     },
     resolve: {
       alias: {

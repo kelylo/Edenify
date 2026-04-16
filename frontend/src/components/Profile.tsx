@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '');
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../AppContext';
 import { Bell, Shield, LogOut, Award, Zap, Target, Sparkles, Download, Trash2 } from 'lucide-react';

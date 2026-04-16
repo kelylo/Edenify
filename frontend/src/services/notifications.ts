@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '');
 /**
  * Cross-platform notification service
  * Sends task reminders to system notifications and Telegram
@@ -62,8 +62,6 @@ export const sendSystemNotification = async (payload: NotificationPayload): Prom
           icon: payload.icon || '/edenify-logo.png',
           badge: '/edenify-logo.png',
           tag: payload.tag || 'default',
-          renotify: true,
-          vibrate: [240, 120, 240],
           requireInteraction: false,
           data: { url: targetUrl, taskId: payload.taskId || null },
         });

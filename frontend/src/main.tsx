@@ -4,7 +4,7 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
-const apiBase = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+const apiBase = String(import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '').trim().replace(/\/+$/, '');
 
 if (apiBase) {
   const nativeFetch = window.fetch.bind(window);

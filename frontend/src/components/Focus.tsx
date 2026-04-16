@@ -300,8 +300,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
     <div ref={focusPageRef} className="min-h-screen bg-surface overflow-y-auto no-scrollbar pb-24">
       {isFocusFullscreen && (
         <div
-          className="fixed left-0 right-0 z-40 px-3 pointer-events-none"
-          style={{ top: 'env(safe-area-inset-top)' }}
+          className="fixed left-0 right-0 z-40 px-3 pointer-events-none focus-safe-top"
         >
           <div className="max-w-7xl mx-auto pt-2 flex items-center justify-between pointer-events-auto">
             <button
@@ -325,7 +324,7 @@ const Focus: React.FC<FocusProps> = ({ user, setUser, onClose }) => {
       )}
 
       <div className="sticky top-0 z-10 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/25">
-        <div className="min-h-[62px] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between" style={{ paddingTop: 'max(0.25rem, env(safe-area-inset-top))' }}>
+        <div className="min-h-[62px] px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex items-center justify-between focus-safe-padding">
           <button aria-label="Close focus page" title="Back" onClick={closeFocusView} className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
             <ArrowLeft size={18} />
           </button>

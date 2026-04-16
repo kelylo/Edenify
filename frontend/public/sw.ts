@@ -43,8 +43,6 @@ self.addEventListener('push', (event) => {
     icon: '/edenify-logo.png',
     badge: '/edenify-logo.png',
     tag: data.tag || 'edenify-reminder',
-    renotify: true,
-    vibrate: [240, 120, 240],
     requireInteraction: false,
     data: data.data || { url: '/', isReminder: true, shouldPlayAlarm: true },
   };
@@ -133,8 +131,6 @@ async function checkBackgroundReminder(): Promise<void> {
         icon: '/edenify-logo.png',
         badge: '/edenify-logo.png',
         tag: data.reminder.tag || 'edenify-reminder',
-        renotify: true,
-        vibrate: [240, 120, 240, 120, 240],
         requireInteraction: true,
         data: { 
           url: data.reminder.taskId ? `/?tab=home&taskId=${encodeURIComponent(String(data.reminder.taskId))}` : '/?tab=home', 

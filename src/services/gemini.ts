@@ -29,11 +29,10 @@ const appKnowledge = [
   'Eden chat can create, edit, complete, delete, and list tasks from natural language.',
   'Task lifecycle: reminder at T-5m, alarm at T, habit-linked tasks reset daily at midnight.',
   'Home shows progress rings, scripture, focus entry, and today tasks.',
-  'Profile has notifications, Bible reminder, Telegram linking, and avatar settings.',
+  'Profile has notification preferences, Bible reminder settings, and avatar settings.',
   'Layers screen has habits, guide cards, and suggestions that can become tasks.',
   'Focus supports ambient sounds and completion alarm selection/upload.',
   'Bible reading plan spans 400 days with local progression fallback.',
-  'Telegram commands: /set, /delete, /edit, /tasks, /chatid, /defaults, /cancel.',
   'Local responses should handle most interactions instantly; Gemini is for deep reasoning only.',
 ];
 

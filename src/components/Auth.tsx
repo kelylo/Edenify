@@ -33,7 +33,6 @@ const Auth: React.FC = () => {
         shortBreakDuration: 5,
         longBreakDuration: 15,
         focusSound: 'Rain Forest',
-        telegramChatId: '',
         customFocusSongName: '',
         customFocusSongDataUrl: '',
         notifications: {
@@ -331,7 +330,7 @@ const Auth: React.FC = () => {
                   <Mail className="absolute left-4 text-[#6b5a4a] group-focus-within:text-[#d4a86a] transition-colors" size={18} />
                   <input
                     type="email"
-                    placeholder="Email or Telegram"
+                    placeholder="Email address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-transparent border-0 border-b-2 border-[#6b5a4a] focus:border-[#d4a86a] focus:ring-0 text-[#f8f3ec] pl-12 py-4 placeholder-[#6b5a4a] transition-colors focus:outline-none"

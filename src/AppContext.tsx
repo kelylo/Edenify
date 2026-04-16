@@ -426,8 +426,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [dailyTaskGoal, setDailyTaskGoalState] = useState<number>(9);
   const [cloudSyncReady, setCloudSyncReady] = useState(false);
   const [localRestoreReady, setLocalRestoreReady] = useState(false);
-  const applyingTelegramSyncRef = useRef(false);
-  const lastTelegramTasksHashRef = useRef('');
   const hasCompletedInitialCloudSyncRef = useRef(false);
   const applyingCloudStateRef = useRef(false);
   const lastCloudStateHashRef = useRef('');
@@ -930,108 +928,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncState();
     }
   }, [authReady, localRestoreReady, user, layers, habits, tasks, journal, bibleReading, dailyTaskGoal, cloudSyncReady]);
-
-  useEffect(() => {
-    const chatId = user?.preferences.telegramChatId?.trim();
-    if (!chatId) return;
-
-    const pullTasks = async () => {
-      try {
-        const response = await fetch(`/api/telegram/tasks/${encodeURIComponent(chatId)}`);
-        const data = await response.json();
-        if (!response.ok || !data?.success || !Array.isArray(data.tasks)) return;
-
-        const nextHash = JSON.stringify(data.tasks);
-        if (nextHash === lastTelegramTasksHashRef.current) return;
-
-        applyingTelegramSyncRef.current = true;
-        const blockedTaskIds = new Set([
-          ...Array.from(recentlyDeletedTaskIdsRef.current),
-          ...Object.keys(deletedTaskTombstonesRef.current),
-        ]);
-        setTasks((prev) => mergeTasksByIdentity(prev, data.tasks, blockedTaskIds, true));
-        lastTelegramTasksHashRef.current = nextHash;
-      } catch (error) {
-        console.warn('Telegram task pull failed:', error);
-      }
-    };
-
-    pullTasks();
-  }, [user?.preferences.telegramChatId]);
-
-  useEffect(() => {
-    const chatId = user?.preferences.telegramChatId?.trim();
-    if (!chatId) return;
-
-    if (applyingTelegramSyncRef.current) {
-      applyingTelegramSyncRef.current = false;
-      return;
-    }
-
-    const pushTasks = async () => {
-      try {
-        const payloadHash = JSON.stringify(tasks);
-        if (payloadHash === lastTelegramTasksHashRef.current) return;
-
-        // Local app state is authoritative on edits/toggles/deletes to prevent task resurrection.
-        const mergedTasks = tasks;
-        const mergedHash = payloadHash;
-
-        await fetch(`/api/telegram/tasks/${encodeURIComponent(chatId)}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: getAccountKey(user),
-            tasks: mergedTasks,
-          }),
-        });
-
-        await fetch('/api/telegram/link', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId,
-            userId: getAccountKey(user),
-          }),
-        });
-
-        lastTelegramTasksHashRef.current = mergedHash;
-      } catch (error) {
-        console.warn('Telegram task push failed:', error);
-      }
-    };
-
-    pushTasks();
-  }, [tasks, user?.email, user?.id, user?.preferences.telegramChatId]);
-
-  useEffect(() => {
-    const chatId = user?.preferences.telegramChatId?.trim();
-    const accountKey = getAccountKey(user);
-    if (!chatId || !accountKey) return;
-
-    const linkTelegram = async () => {
-      try {
-        await fetch('/api/telegram/link', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId,
-            userId: accountKey,
-          }),
-        });
-      } catch (error) {
-        console.warn('Telegram auto-link failed:', error);
-      }
-    };
-
-    void linkTelegram();
-  }, [user?.id, user?.email, user?.preferences.telegramChatId]);
 
   useEffect(() => {
     void syncNativeTaskAlarms(tasks, user);

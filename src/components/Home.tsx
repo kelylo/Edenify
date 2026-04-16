@@ -14,7 +14,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
 import { BibleReadingUI } from './BibleReadingUI';
 
-const TELEGRAM_COMMANDS = ['/set', '/delete', '/edit', '/tasks', '/chatid', '/defaults', '/cancel'];
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const ACADEMIC_TIMETABLE: Record<number, string[]> = {
   0: [],
@@ -198,8 +197,6 @@ const Home: React.FC = () => {
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
-  const [telegramOpsStatus, setTelegramOpsStatus] = useState<{ configured: boolean; linkedChats: number; hasReminders: boolean } | null>(null);
-  const [telegramRemoteTaskCount, setTelegramRemoteTaskCount] = useState<number | null>(null);
   const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
@@ -256,12 +253,17 @@ const Home: React.FC = () => {
       return;
     }
 
-    const versesToRead = activeScripturePage.length > 0
-      ? activeScripturePage
+    const flattenedPassage = scripturePages.flat();
+    const versesToRead = flattenedPassage.length > 0
+      ? flattenedPassage
           .map((verse) => `${verse.bookName} ${verse.chapter}:${verse.verse}. ${verse.text}`)
           .join(' ')
-      : bibleReading.text;
-    const textToRead = `${activeScriptureLabel}. ${versesToRead}`.trim();
+      : activeScripturePage.length > 0
+        ? activeScripturePage
+            .map((verse) => `${verse.bookName} ${verse.chapter}:${verse.verse}. ${verse.text}`)
+            .join(' ')
+        : bibleReading.text;
+    const textToRead = `${bibleReading.passage}. ${versesToRead}`.trim();
 
     if (!textToRead) {
       setNotificationStatus('No scripture text is available to read aloud yet.');
@@ -285,7 +287,7 @@ const Home: React.FC = () => {
     scriptureSpeechRef.current = utterance;
     setIsReadingScriptureAloud(true);
     window.speechSynthesis.speak(utterance);
-  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, stopScriptureReading]);
+  }, [activeScripturePage, bibleReading.passage, bibleReading.text, scripturePages, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];
@@ -539,8 +541,8 @@ const Home: React.FC = () => {
     setReminderFeed((prev) => [item, ...prev].slice(0, 20));
     setToastReminder({ id: item.id, title, detail });
 
-    // Send cross-channel notifications (system only - Telegram handled by backend)
-    if (areNotificationsEnabled() || user?.preferences.telegramChatId) {
+    // Send reminder notification through available local channels.
+    if (areNotificationsEnabled()) {
       try {
         const results = await sendCrossChannelNotification(
           {
@@ -549,15 +551,14 @@ const Home: React.FC = () => {
             icon: '/edenify-logo.png',
             tag: `reminder-${item.id}`,
             taskId,
-          },
-          user?.preferences.telegramChatId
+          }
         );
         console.log('[Reminder] Notification results:', results);
       } catch (error) {
         console.warn('[Reminder] Failed to send notifications:', error);
       }
     } else {
-      console.debug('[Reminder] Skipped notifications - not enabled and no telegram');
+      console.debug('[Reminder] Skipped notifications - not enabled');
     }
   };
 
@@ -738,7 +739,6 @@ const Home: React.FC = () => {
       : notificationPermissionState === 'default'
         ? 'Pending'
         : 'Unsupported';
-  const telegramChatId = user?.preferences.telegramChatId?.trim() || '';
   const alarmReadyCount = useMemo(() => {
     return tasks.filter((task) => {
       if (isTaskCompletedForToday(task)) return false;
@@ -746,45 +746,15 @@ const Home: React.FC = () => {
       return Boolean(parseTaskDueDate(task));
     }).length;
   }, [tasks]);
-  const syncDrift = telegramRemoteTaskCount === null ? null : Math.abs(telegramRemoteTaskCount - tasks.length);
 
   const refreshOperationalStatus = useCallback(async (withFeedback: boolean) => {
     setOpsChecking(true);
     setOpsCheckError('');
 
     try {
-      const statusResponse = await fetch('/api/telegram/status');
-      const statusData = await statusResponse.json();
-      if (!statusResponse.ok || !statusData?.success) {
-        throw new Error(statusData?.error || 'Telegram service status is unavailable.');
-      }
-
-      setTelegramOpsStatus({
-        configured: Boolean(statusData.configured),
-        linkedChats: Number(statusData.linkedChats || 0),
-        hasReminders: Boolean(statusData.hasReminders),
-      });
-
-      if (telegramChatId) {
-        await fetch('/api/telegram/link', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId: telegramChatId,
-            userId: (user?.email || user?.id || '').trim().toLowerCase(),
-          }),
-        }).catch(() => null);
-
-        const tasksResponse = await fetch(`/api/telegram/tasks/${encodeURIComponent(telegramChatId)}`);
-        const tasksData = await tasksResponse.json();
-        if (!tasksResponse.ok || !tasksData?.success) {
-          throw new Error(tasksData?.error || 'Telegram task mirror is unavailable.');
-        }
-        setTelegramRemoteTaskCount(Array.isArray(tasksData.tasks) ? tasksData.tasks.length : 0);
-      } else {
-        setTelegramRemoteTaskCount(null);
+      const health = await fetch('/api/health', { cache: 'no-store' });
+      if (!health.ok) {
+        throw new Error('Backend health check is unavailable.');
       }
 
       setOpsLastCheckedAt(new Date().toISOString());
@@ -799,10 +769,10 @@ const Home: React.FC = () => {
     } finally {
       setOpsChecking(false);
     }
-  }, [telegramChatId, user?.email, user?.id]);
+  }, []);
 
   const runSystemCheck = async () => {
-    await pushReminderEvent('System check', 'Reminder channels are alive and this event is synchronized across your feed.');
+    await pushReminderEvent('System check', 'Reminder channels are alive.');
     void refreshOperationalStatus(true);
   };
 

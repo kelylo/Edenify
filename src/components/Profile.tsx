@@ -28,10 +28,8 @@ const toTimeInputValue = (value: string) => {
 
 const Profile: React.FC = () => {
   const { user, setUser, stats: appStats, layers } = useApp();
-  const [telegramStatus, setTelegramStatus] = useState('');
-  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
-  const [hasInstallCapability, setHasInstallCapability] = useState(false);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState(false);
   const [pwaStatus, setPwaStatus] = useState('');
   const [isStandalone, setIsStandalone] = useState<boolean>(() => window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
@@ -44,7 +42,6 @@ const Profile: React.FC = () => {
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setInstallPromptEvent(event as any);
-      setHasInstallCapability(true);
     };
 
     const mediaQuery = window.matchMedia('(display-mode: standalone)');
@@ -62,11 +59,6 @@ const Profile: React.FC = () => {
         const registrations = await navigator.serviceWorker.getRegistrations();
         const hasWaiting = registrations.some((registration) => Boolean(registration.waiting));
         setHasUpdateAvailable(hasWaiting);
-        
-        // On mobile, automatically show the update is available
-        if (hasWaiting) {
-          setPwaStatus('✓ Update ready! Tap "Update App" to get the latest features.');
-        }
       } catch {
         setHasUpdateAvailable(false);
       }
@@ -133,122 +125,20 @@ const Profile: React.FC = () => {
   const handleAvatarUpload = async (file?: File | null) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      setTelegramStatus('Please upload a valid image file.');
+      setStatusMessage('Please upload a valid image file.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setTelegramStatus('Image is too large. Use a file under 5MB.');
+      setStatusMessage('Image is too large. Use a file under 5MB.');
       return;
     }
 
     try {
       const dataUrl = await readFileAsDataUrl(file);
       setUser({ ...user, avatar: dataUrl });
-      setTelegramStatus('Profile image updated.');
+      setStatusMessage('Profile image updated.');
     } catch {
-      setTelegramStatus('Could not upload profile image.');
-    }
-  };
-
-  const testTelegramConnection = async () => {
-    const chatId = (user.preferences.telegramChatId || '').trim();
-    const accountKey = (user.email || user.id || '').trim().toLowerCase();
-    const normalizedChatId = chatId.replace(/[^0-9-]/g, '');
-
-    if (normalizedChatId !== chatId) {
-      updatePreference('telegramChatId', normalizedChatId);
-    }
-
-    const validChatId = /^-?\d{6,20}$/.test(normalizedChatId);
-
-    if (!validChatId) {
-      setTelegramStatus('Telegram chat ID must be numeric (example: 123456789 or -1001234567890).');
-      return;
-    }
-
-    if (!chatId) {
-      setTelegramStatus('Please paste your Telegram chat ID first.');
-      return;
-    }
-
-    setTestingTelegram(true);
-    setTelegramStatus('Checking bot status...');
-
-    try {
-      const statusResponse = await fetch('/api/telegram/status');
-      const statusData = await statusResponse.json();
-      if (!statusResponse.ok || !statusData?.success) {
-        setTelegramStatus(statusData?.error || 'Could not reach Telegram service status.');
-        return;
-      }
-
-      if (!statusData?.configured) {
-        await fetch('/api/telegram/link', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId: normalizedChatId,
-            userId: accountKey,
-          }),
-        }).catch(() => null);
-
-        const sourceHint = statusData?.tokenSource ? ` Current source: ${statusData.tokenSource}.` : '';
-        const localHint = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? ' Local server is running without TELEGRAM_BOT_TOKEN. Add it to .env.local and restart npm run dev.'
-          : ' Add TELEGRAM_BOT_TOKEN in Render environment variables and redeploy.';
-        setTelegramStatus(`Telegram chat ID saved, but the server bot token is missing.${sourceHint}${localHint}`);
-        return;
-      }
-
-      if (!statusData?.tokenValid) {
-        setTelegramStatus(statusData?.tokenError || 'Telegram token is invalid (Unauthorized). Check bot token in server environment.');
-        return;
-      }
-
-      setTelegramStatus('Sending test message...');
-
-      const response = await fetch('/api/telegram/notify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chatId: normalizedChatId,
-          message: 'Edenify is connected. You will now receive task reminders here.',
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data?.success) {
-        setTelegramStatus(data?.error || 'Could not connect Telegram.');
-        return;
-      }
-
-      const linkResponse = await fetch('/api/telegram/link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chatId: normalizedChatId,
-          userId: accountKey,
-        }),
-      });
-
-      const linkData = await linkResponse.json().catch(() => ({}));
-      if (!linkResponse.ok || !linkData?.success) {
-        setTelegramStatus(linkData?.error || 'Test message sent, but chat linking failed.');
-        return;
-      }
-
-      const botName = statusData?.botUsername ? `@${statusData.botUsername}` : 'your bot';
-      setTelegramStatus(`Telegram connected successfully with ${botName}. Commands should now work.`);
-    } catch (error) {
-      setTelegramStatus('Network error while connecting Telegram.');
-    } finally {
-      setTestingTelegram(false);
+      setStatusMessage('Could not upload profile image.');
     }
   };
 
@@ -273,30 +163,26 @@ const Profile: React.FC = () => {
       if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         const waitingRegistrations = registrations.filter((registration) => Boolean(registration.waiting));
-        
+
         if (waitingRegistrations.length === 0) {
           setPwaStatus('No update is ready yet. Please check again in a moment.');
           return;
         }
-        
+
         setPwaStatus('Activating update...');
-        
+
         for (const registration of waitingRegistrations) {
           if (registration.waiting) {
-            // Tell the new service worker to skip waiting and become active
             registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-            
-            // Listen for the controller change
             let controllerChanged = false;
             navigator.serviceWorker.oncontrollerchange = () => {
               controllerChanged = true;
-              setPwaStatus('✓ Update activated! Refreshing app...');
+              setPwaStatus('Update activated. Refreshing app...');
               window.setTimeout(() => {
                 window.location.reload();
               }, 800);
             };
-            
-            // Timeout fallback
+
             window.setTimeout(() => {
               if (!controllerChanged) {
                 window.location.reload();
@@ -375,20 +261,12 @@ const Profile: React.FC = () => {
         <div className="mb-3">
           <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] cursor-pointer">
             Upload Image
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleAvatarUpload(e.target.files?.[0])}
-            />
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleAvatarUpload(e.target.files?.[0])} />
           </label>
         </div>
         <h1 className="text-5xl font-serif italic text-on-surface">{user.name}</h1>
         <p className="text-sm text-secondary mt-1">{user.email}</p>
-        <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-surface-container-lowest/80 px-4 py-2 border border-white/50">
-          <Sparkles size={14} className="text-primary" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">Level {level} • Champion</span>
-        </div>
+        {statusMessage && <p className="mt-3 text-xs text-secondary">{statusMessage}</p>}
       </section>
 
       <section className="grid grid-cols-3 gap-3">
@@ -424,28 +302,12 @@ const Profile: React.FC = () => {
                     : 'bg-surface-container-low border-outline-variant/60'
                 )}
               >
-                <span
-                  className={cn(
-                    'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
-                    user.preferences.notifications[key] ? 'translate-x-7' : 'translate-x-1'
-                  )}
-                >
+                <span className={cn('absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center', user.preferences.notifications[key] ? 'translate-x-7' : 'translate-x-1')}>
                   <span className={cn('h-2 w-2 rounded-full', user.preferences.notifications[key] ? 'bg-primary' : 'bg-outline')} />
                 </span>
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            onClick={() => document.getElementById('profile-integrations')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            className="w-full px-4 py-3 rounded-2xl flex items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-3">
-              <Sparkles size={16} className="text-secondary" />
-              <span className="text-sm text-on-surface">Telegram Bot</span>
-            </div>
-            <span className="material-symbols-outlined text-outline-variant text-[18px]">chevron_right</span>
-          </button>
 
           <div className="px-4 py-3 rounded-2xl border-t border-outline-variant/25 space-y-3">
             <p className="text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Bible Reminder Schedule</p>
@@ -469,7 +331,6 @@ const Profile: React.FC = () => {
                 className="rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm"
               />
             </div>
-            <p className="text-xs text-on-surface-variant">This reminder time is personal to your account and syncs to backend reminders.</p>
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-on-surface">Alarm Ring</span>
               <button
@@ -482,35 +343,8 @@ const Profile: React.FC = () => {
                     : 'bg-surface-container-low border-outline-variant/60'
                 )}
               >
-                <span
-                  className={cn(
-                    'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
-                    user.preferences.bibleReminderAlarm ? 'translate-x-7' : 'translate-x-1'
-                  )}
-                >
+                <span className={cn('absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center', user.preferences.bibleReminderAlarm ? 'translate-x-7' : 'translate-x-1')}>
                   <span className={cn('h-2 w-2 rounded-full', user.preferences.bibleReminderAlarm ? 'bg-primary' : 'bg-outline')} />
-                </span>
-              </button>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-on-surface">Telegram Message</span>
-              <button
-                aria-label="Toggle Bible reminder telegram"
-                onClick={() => updatePreference('bibleReminderTelegram', !user.preferences.bibleReminderTelegram)}
-                className={cn(
-                  'h-8 w-14 rounded-full relative transition-all duration-300 border',
-                  user.preferences.bibleReminderTelegram
-                    ? 'bg-gradient-to-r from-primary to-primary-container border-primary/40 shadow-[0_8px_20px_rgba(150,68,7,0.25)]'
-                    : 'bg-surface-container-low border-outline-variant/60'
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
-                    user.preferences.bibleReminderTelegram ? 'translate-x-7' : 'translate-x-1'
-                  )}
-                >
-                  <span className={cn('h-2 w-2 rounded-full', user.preferences.bibleReminderTelegram ? 'bg-primary' : 'bg-outline')} />
                 </span>
               </button>
             </div>
@@ -518,7 +352,7 @@ const Profile: React.FC = () => {
         </div>
       </section>
 
-      <section id="profile-integrations" className="space-y-4">
+      <section className="space-y-4">
         <h2 className={sectionTitleClass}>Focus</h2>
         <div className={panelClass}>
           <div className="px-4 py-3 rounded-2xl flex items-center justify-between">
@@ -527,7 +361,6 @@ const Profile: React.FC = () => {
               type="number"
               min={5}
               title="Focus minutes"
-              placeholder="Focus minutes"
               value={user.preferences.focusDuration}
               onChange={(e) => updatePreference('focusDuration', Math.max(5, Number(e.target.value || 25)))}
               className="w-20 rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm text-right"
@@ -539,92 +372,10 @@ const Profile: React.FC = () => {
               type="number"
               min={3}
               title="Break minutes"
-              placeholder="Break minutes"
               value={user.preferences.shortBreakDuration}
               onChange={(e) => updatePreference('shortBreakDuration', Math.max(3, Number(e.target.value || 5)))}
               className="w-20 rounded-xl border border-outline-variant/45 bg-surface-container-lowest px-2 py-1.5 text-sm text-right"
             />
-          </div>
-          <div className="px-4 py-3 rounded-2xl flex items-center justify-between border-t border-outline-variant/25">
-            <span className="text-sm text-on-surface">Focus Audio</span>
-            <span className="text-xs text-secondary">Upload-only playlist in Focus page</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <h2 className={sectionTitleClass}>Integrations</h2>
-        <div className={panelClass}>
-          <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-4">
-            <div className="space-y-2">
-              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">
-                🤖 Telegram Bot Setup (3 Steps)
-              </p>
-              <div className="space-y-3 text-xs text-secondary bg-surface-container-low rounded-xl p-3">
-                <div className="space-y-1">
-                  <p className="font-bold text-on-surface">Step 1: Find Your Chat ID</p>
-                  <ol className="list-decimal list-inside space-y-1 ml-1">
-                    <li>Open Telegram app</li>
-                    <li>Search for and start a chat with your bot (name in Settings)</li>
-                    <li>Send <code className="bg-surface-container-lowest px-1 rounded text-xs">/chatid</code> to get your ID</li>
-                    <li>Copy the numeric ID shown (e.g., 123456789 or -1001234567890)</li>
-                  </ol>
-                </div>
-                <hr className="border-outline-variant/25" />
-                <div className="space-y-1">
-                  <p className="font-bold text-on-surface">Step 2: Paste Your Chat ID Below</p>
-                  <p>This links your Telegram to receive task reminders and Bible readings here.</p>
-                </div>
-                <hr className="border-outline-variant/25" />
-                <div className="space-y-1">
-                  <p className="font-bold text-on-surface">Step 3: Test Connection</p>
-                  <p>Click "Test Connection" below. You should get a confirmation message in Telegram.</p>
-                </div>
-              </div>
-            </div>
-
-            <input
-              value={user.preferences.telegramChatId || ''}
-              onChange={(e) => updatePreference('telegramChatId', e.target.value)}
-              placeholder="Paste your Telegram chat ID here"
-              className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm"
-            />
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={testTelegramConnection}
-                disabled={testingTelegram}
-                className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold uppercase tracking-[0.14em] disabled:opacity-70 hover:bg-primary-dark transition-colors"
-              >
-                {testingTelegram ? 'Testing...' : 'Test Connection'}
-              </button>
-              {telegramStatus && (
-                <p className={cn(
-                  'text-xs',
-                  telegramStatus.includes('successfully')
-                    ? 'text-emerald-600'
-                    : telegramStatus.includes('missing') || telegramStatus.includes('invalid')
-                    ? 'text-amber-600'
-                    : 'text-secondary'
-                )}>
-                  {telegramStatus}
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-outline-variant/25 bg-surface-container-low p-3 space-y-2">
-              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-outline font-bold">📝 Available Commands</p>
-              <div className="text-xs text-secondary space-y-1">
-                <p><strong>/set</strong> - Create a new task</p>
-                <p><strong>/tasks</strong> - See all your tasks</p>
-                <p><strong>/edit, /modify</strong> - Update a task</p>
-                <p><strong>/delete</strong> - Remove a task</p>
-                <p><strong>/defaults</strong> - Set default task settings</p>
-                <p><strong>/chatid</strong> - Get your chat ID</p>
-                <p><strong>/cancel</strong> - Stop current operation</p>
-                <p className="text-[9px] italic pt-2">Tasks created in Telegram sync automatically to your app!</p>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -632,61 +383,41 @@ const Profile: React.FC = () => {
       <AndroidDiagnostics />
 
       <section className="space-y-4">
-        <h2 className={sectionTitleClass}>Account</h2>
+        <h2 className={sectionTitleClass}>App Controls</h2>
         <div className={panelClass}>
-          <div className="px-4 py-3 rounded-2xl flex items-center justify-between border-b border-outline-variant/25">
-            <span className="text-sm text-on-surface">Edit Profile</span>
-            <span className="material-symbols-outlined text-outline-variant text-[18px]">chevron_right</span>
-          </div>
-          <div className="px-4 py-3 rounded-2xl flex items-center justify-between border-b border-outline-variant/25">
-            <span className="text-sm text-on-surface">Change Password</span>
-            <span className="material-symbols-outlined text-outline-variant text-[18px]">chevron_right</span>
-          </div>
-          <div className="px-4 py-3 text-xs text-secondary flex items-center gap-2">
-            <Shield size={14} />
-            Preferences are synced with your account state.
-          </div>
-        </div>
-      </section>
-
-      <div className="pt-1">
-        <div className="mb-3 rounded-3xl border border-outline-variant/30 bg-surface-container-low p-4 space-y-3">
-          <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">App Install Controls</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="mb-3 rounded-2xl border border-outline-variant/30 bg-surface-container-low p-4 space-y-3">
+            <p className="font-label text-[10px] uppercase tracking-[0.14em] text-outline font-bold">Install and Update</p>
             <button
               type="button"
               onClick={() => { void handlePrimaryAppControl(); }}
-              className={cn(
-                'px-3 py-2 rounded-full text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1',
-                appControlMode === 'update' ? 'bg-emerald-600' : appControlMode === 'uninstall' ? 'bg-slate-600' : 'bg-primary'
-              )}
+              className={cn('px-3 py-2 rounded-full text-white text-[11px] font-bold uppercase tracking-[0.14em] inline-flex items-center gap-1', appControlMode === 'update' ? 'bg-emerald-600' : appControlMode === 'uninstall' ? 'bg-slate-600' : 'bg-primary')}
             >
               {appControlMode === 'update' ? <Zap size={13} /> : appControlMode === 'uninstall' ? <Trash2 size={13} /> : <Download size={13} />}
               {appControlMode === 'update' ? 'Update App' : appControlMode === 'uninstall' ? 'Uninstall App' : 'Install App'}
             </button>
+            {pwaStatus && <p className="text-xs text-secondary">{pwaStatus}</p>}
           </div>
-          {pwaStatus && <p className="text-xs text-secondary">{pwaStatus}</p>}
-        </div>
 
-        <button
-          onClick={async () => {
-            try {
-              await fetch('/api/auth/logout', { method: 'POST' });
-            } catch (error) {
-              console.warn('Logout session clear failed:', error);
-            }
-            setUser(null);
-          }}
-          className="w-full flex items-center justify-center gap-2 p-4 rounded-3xl bg-red-50 text-red-600 border border-red-100 font-bold text-xs uppercase tracking-widest hover:bg-red-100 transition-colors shadow-sm"
-        >
-          <LogOut size={18} />
-          Sign Out
-        </button>
-      </div>
+          <button
+            onClick={async () => {
+              try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+              } catch (error) {
+                console.warn('Logout session clear failed:', error);
+              }
+              setUser(null);
+            }}
+            className="w-full flex items-center justify-center gap-2 p-4 rounded-3xl bg-red-50 text-red-600 border border-red-100 font-bold text-xs uppercase tracking-widest hover:bg-red-100 transition-colors shadow-sm"
+          >
+            <LogOut size={18} />
+            Sign Out
+          </button>
+        </div>
+      </section>
 
       <footer className="text-center opacity-45 pt-4">
-        <p className="font-serif italic text-sm">Edenify Version 2.4.1</p>
-        <p className="text-[10px] uppercase tracking-[0.14em] mt-1">Made for the disciplined soul</p>
+        <p className="font-serif italic text-sm">Edenify Version 2.5.0</p>
+        <p className="text-[10px] uppercase tracking-[0.14em] mt-1">Made for focused growth</p>
       </footer>
     </div>
   );

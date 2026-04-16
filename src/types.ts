@@ -73,10 +73,8 @@ export interface User {
     focusAlarmSound?: string;
     bibleReminderTime?: string;
     bibleReminderAlarm?: boolean;
-    bibleReminderTelegram?: boolean;
     readingPlanStartDate?: string;
     revisionDefaultsApplied?: boolean;
-    telegramChatId?: string;
     customFocusSongName?: string;
     customFocusSongDataUrl?: string;
     customFocusPlaylistNames?: string[];

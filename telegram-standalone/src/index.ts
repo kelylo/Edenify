@@ -7,15 +7,37 @@ import type { Context } from 'telegraf';
 
 dotenv.config();
 
+type LayerId = 'spiritual' | 'academic' | 'financial' | 'physical' | 'general';
+type Priority = 'A' | 'B' | 'C' | 'D' | 'E';
+type RepeatMode = 'once' | 'daily' | 'weekly';
+
 interface TodoItem {
   id: string;
   text: string;
+  dueAt: string;
+  layerId: LayerId;
+  priority: Priority;
+  repeat: RepeatMode;
   done: boolean;
   createdAt: string;
   updatedAt: string;
+  reminderSentAt?: string;
+  dueSentAt?: string;
+  completedCount?: number;
+}
+
+interface ChatProfile {
+  scriptureStartDate?: string;
+  defaultLayerId?: LayerId;
+  defaultPriority?: Priority;
+  defaultRepeat?: RepeatMode;
+  streakCurrent?: number;
+  streakLongest?: number;
+  lastCompletionDate?: string;
 }
 
 interface ChatStore {
+  profile?: ChatProfile;
   todos: TodoItem[];
 }
 
@@ -46,9 +68,18 @@ interface ParsedReference {
   verseEnd?: number;
 }
 
-const SCRIPTURE_EMOJI = '📖';
-const TASK_EMOJI = '📝';
-const DONE_EMOJI = '✅';
+interface TaskInput {
+  text: string;
+  dueAt: string;
+  layerId?: LayerId;
+  priority?: Priority;
+  repeat?: RepeatMode;
+}
+
+const LAYERS: LayerId[] = ['spiritual', 'academic', 'financial', 'physical', 'general'];
+const PRIORITIES: Priority[] = ['A', 'B', 'C', 'D', 'E'];
+const REPEATS: RepeatMode[] = ['once', 'daily', 'weekly'];
+const PRIORITY_WEIGHT: Record<Priority, number> = { A: 5, B: 4, C: 3, D: 2, E: 1 };
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
@@ -63,6 +94,8 @@ const storePath = path.resolve(projectRoot, process.env.BOT_STORE_PATH || path.j
 const biblePlanPath = path.resolve(projectRoot, process.env.BIBLE_PLAN_PATH || path.join('data', 'bible-plan.json'));
 const bibleDbPath = path.resolve(projectRoot, process.env.BIBLE_DB_PATH || path.join('data', 'bible-data.json'));
 const timezoneLabel = (process.env.BOT_TIMEZONE || 'UTC').trim();
+const reminderLeadMs = 5 * 60 * 1000;
+const reminderIntervalMs = 30 * 1000;
 
 const bot = new Telegraf(botToken);
 
@@ -71,6 +104,10 @@ let bibleVerseCache: BibleVerseRow[] | null = null;
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function todayKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function chatIdFrom(ctx: Context): string {
@@ -93,11 +130,29 @@ function removeCommandPrefix(text: string, command: string): string {
   return text.replace(regex, '').trim();
 }
 
-function getDayOfYear(date = new Date()): number {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0));
-  const current = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const diff = current.getTime() - start.getTime();
-  return Math.floor(diff / 86400000);
+function commandNameFromText(text: string): string | null {
+  const first = text.trim().split(/\s+/)[0] || '';
+  if (!first.startsWith('/')) return null;
+  const token = first.slice(1).split('@')[0];
+  return token.toLowerCase() || null;
+}
+
+function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function isLayerId(value: string): value is LayerId {
+  return LAYERS.includes(value as LayerId);
+}
+
+function isPriority(value: string): value is Priority {
+  return PRIORITIES.includes(value as Priority);
+}
+
+function isRepeat(value: string): value is RepeatMode {
+  return REPEATS.includes(value as RepeatMode);
 }
 
 function parsePositiveInt(value: string): number | null {
@@ -106,21 +161,86 @@ function parsePositiveInt(value: string): number | null {
   return numeric;
 }
 
-function parseIndexAndText(payload: string): { index: number; text: string } | null {
+function normalizeBookName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function rowsToText(rows: BibleVerseRow[]): string {
+  return rows.map((row) => `${row.bookName} ${row.chapter}:${row.verse} ${row.text}`).join('\n');
+}
+
+function toUtcDayNumber(date: Date): number {
+  return Math.floor(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 86400000);
+}
+
+function getScriptureDayFromStart(startIso: string, now = new Date()): number {
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) return 1;
+
+  const elapsed = Math.max(0, toUtcDayNumber(now) - toUtcDayNumber(start));
+  return (elapsed % 366) + 1;
+}
+
+function parseTaskInput(payload: string): TaskInput | null {
+  const parts = payload.split('|').map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  const dateTime = parts[0];
+  const text = parts[1];
+  const dt = dateTime.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})$/);
+  if (!dt || !text) return null;
+
+  const due = new Date(`${dt[1]}T${dt[2]}:00`);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const layer = (parts[2] || '').toLowerCase();
+  const priority = (parts[3] || '').toUpperCase();
+  const repeat = (parts[4] || '').toLowerCase();
+
+  const result: TaskInput = {
+    text,
+    dueAt: due.toISOString(),
+  };
+
+  if (layer && isLayerId(layer)) result.layerId = layer;
+  if (priority && isPriority(priority)) result.priority = priority;
+  if (repeat && isRepeat(repeat)) result.repeat = repeat;
+
+  return result;
+}
+
+function parseEditPayload(payload: string): { index: number; updates: Partial<TaskInput> } | null {
   const match = payload.trim().match(/^(\d+)\s+([\s\S]+)$/);
   if (!match) return null;
 
   const index = Number.parseInt(match[1], 10);
   if (!Number.isFinite(index) || index <= 0) return null;
 
+  const rest = match[2].trim();
+  if (!rest) return null;
+
+  const full = parseTaskInput(rest);
+  if (full) {
+    return { index, updates: full };
+  }
+
+  const dueOnly = rest.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})$/);
+  if (dueOnly) {
+    const due = new Date(`${dueOnly[1]}T${dueOnly[2]}:00`);
+    if (Number.isNaN(due.getTime())) return null;
+    return {
+      index,
+      updates: { dueAt: due.toISOString() },
+    };
+  }
+
+  const textOnly = rest.replace(/^\|\s*/, '').trim();
+  if (!textOnly) return null;
+
   return {
     index,
-    text: match[2].trim(),
+    updates: { text: textOnly },
   };
-}
-
-function normalizeBookName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function parseReference(input: string): ParsedReference | null {
@@ -175,8 +295,39 @@ function parseReference(input: string): ParsedReference | null {
   return null;
 }
 
-function rowsToText(rows: BibleVerseRow[]): string {
-  return rows.map((row) => `${row.bookName} ${row.chapter}:${row.verse} ${row.text}`).join('\n');
+function advanceDueDate(iso: string, repeat: RepeatMode): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+
+  const stepDays = repeat === 'weekly' ? 7 : 1;
+  let next = new Date(date.getTime());
+  const now = new Date();
+
+  do {
+    next = new Date(next.getTime() + stepDays * 24 * 60 * 60 * 1000);
+  } while (next.getTime() <= now.getTime());
+
+  return next.toISOString();
+}
+
+function taskLine(task: TodoItem, index: number): string {
+  const marker = task.done ? 'DONE' : 'TODO';
+  return `${index + 1}. [${marker}] ${task.text} at ${formatDateTime(task.dueAt)} | ${task.layerId} | ${task.priority} | ${task.repeat}`;
+}
+
+function formatTodoList(todos: TodoItem[]): string {
+  if (todos.length === 0) {
+    return 'No tasks yet. Use /set YYYY-MM-DD HH:mm | task | layer | priority | repeat';
+  }
+
+  const sorted = [...todos].sort((a, b) => {
+    if (a.done !== b.done) return a.done ? 1 : -1;
+    const dueDiff = Date.parse(a.dueAt) - Date.parse(b.dueAt);
+    if (dueDiff !== 0) return dueDiff;
+    return PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
+  });
+
+  return `Task list:\n${sorted.map((task, index) => taskLine(task, index)).join('\n')}`;
 }
 
 async function readStore(): Promise<BotStore> {
@@ -209,19 +360,6 @@ async function mutateChat(chatId: string, mutate: (chat: ChatStore) => void): Pr
   store.chats[chatId] = chat;
   await writeStore(store);
   return chat;
-}
-
-function formatTodoList(todos: TodoItem[]): string {
-  if (todos.length === 0) {
-    return `${TASK_EMOJI} Your todo list is empty. Use /set or /add to create a task.`;
-  }
-
-  const lines = todos.map((task, index) => {
-    const marker = task.done ? DONE_EMOJI : '⬜';
-    return `${index + 1}. ${marker} ${task.text}`;
-  });
-
-  return `${TASK_EMOJI} Your tasks:\n${lines.join('\n')}`;
 }
 
 async function loadBiblePlan(): Promise<BiblePlan> {
@@ -283,7 +421,7 @@ async function findVersesByKeyword(query: string, limit = 5): Promise<BibleVerse
 
 async function getScriptureForDay(day: number): Promise<string> {
   if (day < 1 || day > 366) {
-    return `${SCRIPTURE_EMOJI} Please choose a day between 1 and 366.`;
+    return 'Please choose a day between 1 and 366.';
   }
 
   try {
@@ -291,7 +429,7 @@ async function getScriptureForDay(day: number): Promise<string> {
     const reading = plan.readings?.[String(day)];
 
     if (!reading?.passages) {
-      return `${SCRIPTURE_EMOJI} No reading found for day ${day}.`;
+      return `No reading found for day ${day}.`;
     }
 
     const tokens = reading.passages
@@ -304,30 +442,121 @@ async function getScriptureForDay(day: number): Promise<string> {
     for (const token of tokens) {
       const parsed = parseReference(token);
       if (!parsed) continue;
-      const rows = await findVersesByReference(parsed, 10);
+      const rows = await findVersesByReference(parsed, 8);
       extracted.push(...rows);
-      if (extracted.length >= 20) break;
+      if (extracted.length >= 12) break;
     }
 
     const sample = extracted.slice(0, 8);
     if (sample.length === 0) {
-      return `${SCRIPTURE_EMOJI} Daily Scripture (Day ${day})\nPlan: ${reading.passages}`;
+      return `Daily Scripture (Day ${day})\nPlan: ${reading.passages}`;
     }
 
     return [
-      `${SCRIPTURE_EMOJI} Daily Scripture (Day ${day})`,
+      `Daily Scripture (Day ${day})`,
       `Plan: ${reading.passages}`,
       '',
       rowsToText(sample),
     ].join('\n');
   } catch {
-    return `${SCRIPTURE_EMOJI} I could not read Bible plan/database files. Check BIBLE_PLAN_PATH and BIBLE_DB_PATH.`;
+    return 'I could not read Bible plan/database files. Check BIBLE_PLAN_PATH and BIBLE_DB_PATH.';
   }
 }
 
-async function addTask(ctx: Context, text: string): Promise<void> {
-  if (!text) {
-    await ctx.reply('Usage: /set <task description>');
+async function sendAutoDailyScripture(ctx: Context, chatId: string): Promise<void> {
+  const store = await readStore();
+  const chat = store.chats[chatId] || { todos: [] };
+  const startDate = chat.profile?.scriptureStartDate || nowIso();
+  const day = getScriptureDayFromStart(startDate);
+  const scripture = await getScriptureForDay(day);
+  await ctx.reply(`SCRIPTURE\n${scripture}\n\nTimezone: ${timezoneLabel}`);
+}
+
+function updateStreak(profile: ChatProfile, completionDate: string): void {
+  const prevDate = profile.lastCompletionDate;
+
+  if (!prevDate) {
+    profile.streakCurrent = 1;
+    profile.streakLongest = Math.max(1, profile.streakLongest || 0);
+    profile.lastCompletionDate = completionDate;
+    return;
+  }
+
+  if (prevDate === completionDate) return;
+
+  const prev = new Date(`${prevDate}T00:00:00`);
+  const curr = new Date(`${completionDate}T00:00:00`);
+  const deltaDays = Math.round((curr.getTime() - prev.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (deltaDays === 1) {
+    profile.streakCurrent = (profile.streakCurrent || 0) + 1;
+  } else {
+    profile.streakCurrent = 1;
+  }
+
+  profile.streakLongest = Math.max(profile.streakLongest || 0, profile.streakCurrent || 0);
+  profile.lastCompletionDate = completionDate;
+}
+
+async function processTaskReminders(): Promise<void> {
+  const store = await readStore();
+  const nowMs = Date.now();
+  let dirty = false;
+
+  for (const [chatId, chat] of Object.entries(store.chats)) {
+    for (const task of chat.todos) {
+      if (task.done) continue;
+
+      const dueMs = Date.parse(task.dueAt);
+      if (!Number.isFinite(dueMs)) continue;
+
+      const reminderMoment = dueMs - reminderLeadMs;
+
+      if (!task.reminderSentAt && nowMs >= reminderMoment && nowMs < dueMs) {
+        try {
+          await bot.telegram.sendMessage(
+            chatId,
+            `REMINDER: ${task.text}\nDue at ${formatDateTime(task.dueAt)} (in 5 minutes).`
+          );
+          task.reminderSentAt = nowIso();
+          dirty = true;
+        } catch (error) {
+          console.warn('Reminder send failed:', error);
+        }
+      }
+
+      if (!task.dueSentAt && nowMs >= dueMs) {
+        try {
+          await bot.telegram.sendMessage(
+            chatId,
+            `TASK DUE NOW: ${task.text}\nDue at ${formatDateTime(task.dueAt)}.`
+          );
+          task.dueSentAt = nowIso();
+          dirty = true;
+        } catch (error) {
+          console.warn('Due send failed:', error);
+        }
+      }
+    }
+  }
+
+  if (dirty) {
+    await writeStore(store);
+  }
+}
+
+function taskDefaults(profile?: ChatProfile): { layerId: LayerId; priority: Priority; repeat: RepeatMode } {
+  return {
+    layerId: profile?.defaultLayerId || 'general',
+    priority: profile?.defaultPriority || 'C',
+    repeat: profile?.defaultRepeat || 'once',
+  };
+}
+
+async function addTask(ctx: Context, payload: string): Promise<void> {
+  const parsed = parseTaskInput(payload);
+  if (!parsed) {
+    await ctx.reply('Usage: /set YYYY-MM-DD HH:mm | task | layer | priority | repeat');
     return;
   }
 
@@ -335,35 +564,71 @@ async function addTask(ctx: Context, text: string): Promise<void> {
   const created = nowIso();
 
   const chat = await mutateChat(chatId, (draft) => {
+    draft.profile = draft.profile || {};
+    const defaults = taskDefaults(draft.profile);
+
     draft.todos.push({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      text,
+      text: parsed.text,
+      dueAt: parsed.dueAt,
+      layerId: parsed.layerId || defaults.layerId,
+      priority: parsed.priority || defaults.priority,
+      repeat: parsed.repeat || defaults.repeat,
       done: false,
       createdAt: created,
       updatedAt: created,
+      completedCount: 0,
     });
   });
 
-  await ctx.reply(`${DONE_EMOJI} Task saved.\n\n${formatTodoList(chat.todos)}`);
+  await ctx.reply(`Task saved for ${formatDateTime(parsed.dueAt)}.\n\n${formatTodoList(chat.todos)}`);
 }
+
+bot.use(async (ctx: Context, next) => {
+  const text = messageTextFrom(ctx);
+  const command = commandNameFromText(text);
+
+  if (!command) {
+    await next();
+    return;
+  }
+
+  const chatId = chatIdFrom(ctx);
+  await mutateChat(chatId, (chat) => {
+    chat.profile = chat.profile || {};
+    if (!chat.profile.scriptureStartDate) {
+      chat.profile.scriptureStartDate = nowIso();
+    }
+    if (!chat.profile.defaultLayerId) chat.profile.defaultLayerId = 'general';
+    if (!chat.profile.defaultPriority) chat.profile.defaultPriority = 'C';
+    if (!chat.profile.defaultRepeat) chat.profile.defaultRepeat = 'once';
+  });
+
+  await next();
+
+  if (command !== 'scripture') {
+    await sendAutoDailyScripture(ctx, chatId);
+  }
+});
 
 bot.start(async (ctx) => {
   await ctx.reply(
     [
-      'Welcome to your standalone Edenify Telegram backend bot.',
-      'This bot is independent from the PWA and runs on its own service.',
+      'Standalone Telegram planner ready.',
       '',
-      'Commands:',
-      '/set Buy groceries',
+      'Create task:',
+      '/set 2026-04-17 18:30 | Pray and journal | spiritual | A | daily',
+      '',
+      'Track commands:',
+      '/today',
+      '/track',
+      '/defaults general C once',
       '/list',
-      '/edit 1 Buy healthy groceries',
       '/done 1',
+      '/edit 1 2026-04-18 07:00 | Updated text',
       '/remove 1',
       '/scripture',
-      '/scripture 93',
       '/verse John 3:16',
-      '/verse faith',
-      '/help',
     ].join('\n')
   );
 });
@@ -371,37 +636,43 @@ bot.start(async (ctx) => {
 bot.help(async (ctx) => {
   await ctx.reply(
     [
-      'Available commands:',
-      '/set <task> - Set/add todo item',
-      '/add <task> - Add todo item',
-      '/edit <number> <new text> - Edit task text',
-      '/list - Show all tasks',
-      '/done <number> - Mark task complete',
-      '/remove <number> - Remove task',
-      '/delete <number> - Remove task',
-      '/scripture - Show today\'s reading',
-      '/scripture <day> - Show specific day in plan',
-      '/verse <reference|keywords> - Search Bible database',
-      '/find <reference|keywords> - Alias of /verse',
+      'Commands:',
+      '/set YYYY-MM-DD HH:mm | task | layer | priority | repeat',
+      '/add YYYY-MM-DD HH:mm | task | layer | priority | repeat',
+      '/edit <index> YYYY-MM-DD HH:mm | task | layer | priority | repeat',
+      '/edit <index> YYYY-MM-DD HH:mm',
+      '/edit <index> | text',
+      '/done <index>',
+      '/remove <index>',
+      '/delete <index>',
+      '/list',
+      '/today',
+      '/track',
+      '/defaults <layer> <priority> <repeat>',
+      '/scripture or /scripture <day>',
+      '/verse <reference or keyword>',
+      '/find <reference or keyword>',
+      '',
+      `Layers: ${LAYERS.join(', ')}`,
+      `Priority: ${PRIORITIES.join(', ')}`,
+      `Repeat: ${REPEATS.join(', ')}`,
     ].join('\n')
   );
 });
 
 bot.command('set', async (ctx) => {
-  const text = removeCommandPrefix(messageTextFrom(ctx), 'set');
-  await addTask(ctx, text);
+  await addTask(ctx, removeCommandPrefix(messageTextFrom(ctx), 'set'));
 });
 
 bot.command('add', async (ctx) => {
-  const text = removeCommandPrefix(messageTextFrom(ctx), 'add');
-  await addTask(ctx, text);
+  await addTask(ctx, removeCommandPrefix(messageTextFrom(ctx), 'add'));
 });
 
 bot.command('edit', async (ctx) => {
   const payload = removeCommandPrefix(messageTextFrom(ctx), 'edit');
-  const parsed = parseIndexAndText(payload);
+  const parsed = parseEditPayload(payload);
   if (!parsed) {
-    await ctx.reply('Usage: /edit <task number> <new text>');
+    await ctx.reply('Usage: /edit <index> YYYY-MM-DD HH:mm | text | layer | priority | repeat');
     return;
   }
 
@@ -414,9 +685,20 @@ bot.command('edit', async (ctx) => {
       reply = `Task ${parsed.index} does not exist.`;
       return;
     }
-    task.text = parsed.text;
+
+    if (parsed.updates.text) task.text = parsed.updates.text;
+    if (parsed.updates.dueAt) {
+      task.dueAt = parsed.updates.dueAt;
+      task.reminderSentAt = undefined;
+      task.dueSentAt = undefined;
+      task.done = false;
+    }
+    if (parsed.updates.layerId) task.layerId = parsed.updates.layerId;
+    if (parsed.updates.priority) task.priority = parsed.updates.priority;
+    if (parsed.updates.repeat) task.repeat = parsed.updates.repeat;
+
     task.updatedAt = nowIso();
-    reply = `${DONE_EMOJI} Updated task ${parsed.index}.`;
+    reply = `Updated task ${parsed.index}.`;
   });
 
   await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
@@ -428,11 +710,95 @@ bot.command('list', async (ctx) => {
   await ctx.reply(formatTodoList(chat.todos));
 });
 
+bot.command('today', async (ctx) => {
+  const store = await readStore();
+  const chat = store.chats[chatIdFrom(ctx)] || { todos: [] };
+  const key = todayKey();
+  const now = Date.now();
+
+  const todays = chat.todos.filter((t) => !t.done && formatDateTime(t.dueAt).startsWith(key));
+  const overdue = chat.todos.filter((t) => !t.done && Date.parse(t.dueAt) < now);
+  const byPriority = [...todays].sort((a, b) => PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority]);
+  const top = byPriority.slice(0, 5);
+
+  const profile = chat.profile || {};
+  const streak = profile.streakCurrent || 0;
+
+  await ctx.reply(
+    [
+      `TODAY (${key})`,
+      `Open today: ${todays.length}`,
+      `Overdue: ${overdue.length}`,
+      `Current streak: ${streak}`,
+      '',
+      top.length > 0 ? top.map((task, i) => taskLine(task, i)).join('\n') : 'No open tasks for today.',
+    ].join('\n')
+  );
+});
+
+bot.command('track', async (ctx) => {
+  const store = await readStore();
+  const chat = store.chats[chatIdFrom(ctx)] || { todos: [] };
+  const total = chat.todos.length;
+  const done = chat.todos.filter((t) => t.done).length;
+  const open = total - done;
+  const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
+  const profile = chat.profile || {};
+
+  const layerCount = new Map<LayerId, number>();
+  for (const layer of LAYERS) layerCount.set(layer, 0);
+  for (const task of chat.todos) {
+    layerCount.set(task.layerId, (layerCount.get(task.layerId) || 0) + 1);
+  }
+
+  await ctx.reply(
+    [
+      'TRACK DASHBOARD',
+      `Total: ${total}`,
+      `Done: ${done}`,
+      `Open: ${open}`,
+      `Completion rate: ${completionRate}%`,
+      `Current streak: ${profile.streakCurrent || 0}`,
+      `Longest streak: ${profile.streakLongest || 0}`,
+      '',
+      'Layer balance:',
+      ...LAYERS.map((layer) => `- ${layer}: ${layerCount.get(layer) || 0}`),
+    ].join('\n')
+  );
+});
+
+bot.command('defaults', async (ctx) => {
+  const payload = removeCommandPrefix(messageTextFrom(ctx), 'defaults').trim();
+  const parts = payload.split(/\s+/).filter(Boolean);
+  if (parts.length < 3) {
+    await ctx.reply('Usage: /defaults <layer> <priority> <repeat>');
+    return;
+  }
+
+  const layer = parts[0].toLowerCase();
+  const priority = parts[1].toUpperCase();
+  const repeat = parts[2].toLowerCase();
+
+  if (!isLayerId(layer) || !isPriority(priority) || !isRepeat(repeat)) {
+    await ctx.reply(`Invalid defaults. Use layer(${LAYERS.join(', ')}), priority(${PRIORITIES.join(', ')}), repeat(${REPEATS.join(', ')}).`);
+    return;
+  }
+
+  await mutateChat(chatIdFrom(ctx), (chat) => {
+    chat.profile = chat.profile || {};
+    chat.profile.defaultLayerId = layer;
+    chat.profile.defaultPriority = priority;
+    chat.profile.defaultRepeat = repeat;
+  });
+
+  await ctx.reply(`Defaults saved: ${layer}, ${priority}, ${repeat}.`);
+});
+
 bot.command('done', async (ctx) => {
   const arg = removeCommandPrefix(messageTextFrom(ctx), 'done');
   const index = parsePositiveInt(arg);
   if (!index) {
-    await ctx.reply('Usage: /done <task number>');
+    await ctx.reply('Usage: /done <task index>');
     return;
   }
 
@@ -445,19 +811,33 @@ bot.command('done', async (ctx) => {
       reply = `Task ${index} does not exist.`;
       return;
     }
-    task.done = true;
+
+    draft.profile = draft.profile || {};
+    updateStreak(draft.profile, todayKey());
+
+    if (task.repeat === 'once') {
+      task.done = true;
+      task.updatedAt = nowIso();
+      task.completedCount = (task.completedCount || 0) + 1;
+      reply = `Completed task ${index}.`;
+      return;
+    }
+
+    task.completedCount = (task.completedCount || 0) + 1;
+    task.done = false;
+    task.dueAt = advanceDueDate(task.dueAt, task.repeat);
     task.updatedAt = nowIso();
-    reply = `${DONE_EMOJI} Marked task ${index} as done.`;
+    task.reminderSentAt = undefined;
+    task.dueSentAt = undefined;
+    reply = `Completed and rolled forward task ${index} (${task.repeat}) to ${formatDateTime(task.dueAt)}.`;
   });
 
   await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
 });
 
-bot.command('delete', async (ctx) => {
-  const arg = removeCommandPrefix(messageTextFrom(ctx), 'delete');
-  const index = parsePositiveInt(arg);
+async function removeTask(ctx: Context, index: number, usageLabel: string): Promise<void> {
   if (!index) {
-    await ctx.reply('Usage: /delete <task number>');
+    await ctx.reply(`Usage: ${usageLabel} <task index>`);
     return;
   }
 
@@ -469,40 +849,34 @@ bot.command('delete', async (ctx) => {
       reply = `Task ${index} does not exist.`;
       return;
     }
+
     const [removed] = draft.todos.splice(index - 1, 1);
-    reply = `${DONE_EMOJI} Deleted: ${removed.text}`;
+    reply = `Removed: ${removed.text}`;
   });
 
   await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
+}
+
+bot.command('delete', async (ctx) => {
+  await removeTask(ctx, parsePositiveInt(removeCommandPrefix(messageTextFrom(ctx), 'delete')) || 0, '/delete');
 });
 
 bot.command('remove', async (ctx) => {
-  const arg = removeCommandPrefix(messageTextFrom(ctx), 'remove');
-  const index = parsePositiveInt(arg);
-  if (!index) {
-    await ctx.reply('Usage: /remove <task number>');
-    return;
-  }
-
-  const chatId = chatIdFrom(ctx);
-  let reply = '';
-
-  const chat = await mutateChat(chatId, (draft) => {
-    if (!draft.todos[index - 1]) {
-      reply = `Task ${index} does not exist.`;
-      return;
-    }
-    const [removed] = draft.todos.splice(index - 1, 1);
-    reply = `${DONE_EMOJI} Removed: ${removed.text}`;
-  });
-
-  await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
+  await removeTask(ctx, parsePositiveInt(removeCommandPrefix(messageTextFrom(ctx), 'remove')) || 0, '/remove');
 });
 
 bot.command('scripture', async (ctx) => {
   const arg = removeCommandPrefix(messageTextFrom(ctx), 'scripture');
-  const providedDay = parsePositiveInt(arg);
-  const day = providedDay || getDayOfYear();
+  const explicitDay = parsePositiveInt(arg);
+
+  let day = explicitDay || 1;
+  if (!explicitDay) {
+    const store = await readStore();
+    const chat = store.chats[chatIdFrom(ctx)] || { todos: [] };
+    const startDate = chat.profile?.scriptureStartDate || nowIso();
+    day = getScriptureDayFromStart(startDate);
+  }
+
   const scripture = await getScriptureForDay(day);
   await ctx.reply(`${scripture}\n\nTimezone: ${timezoneLabel}`);
 });
@@ -519,13 +893,13 @@ bot.command('verse', async (ctx) => {
     const rows = parsedRef ? await findVersesByReference(parsedRef, 8) : await findVersesByKeyword(query, 5);
 
     if (rows.length === 0) {
-      await ctx.reply(`${SCRIPTURE_EMOJI} No verses found for "${query}".`);
+      await ctx.reply(`No verses found for "${query}".`);
       return;
     }
 
-    await ctx.reply(`${SCRIPTURE_EMOJI} Search Results\n${rowsToText(rows)}`);
+    await ctx.reply(`Verse search results\n${rowsToText(rows)}`);
   } catch {
-    await ctx.reply(`${SCRIPTURE_EMOJI} Unable to search Bible database now. Check BIBLE_DB_PATH.`);
+    await ctx.reply('Unable to search Bible database now. Check BIBLE_DB_PATH.');
   }
 });
 
@@ -540,16 +914,11 @@ bot.command('find', async (ctx) => {
   const rows = parsedRef ? await findVersesByReference(parsedRef, 8) : await findVersesByKeyword(query, 5);
 
   if (rows.length === 0) {
-    await ctx.reply(`${SCRIPTURE_EMOJI} No verses found for "${query}".`);
+    await ctx.reply(`No verses found for "${query}".`);
     return;
   }
 
-  await ctx.reply(`${SCRIPTURE_EMOJI} Search Results\n${rowsToText(rows)}`);
-});
-
-bot.hears(/^(scripture|daily scripture|verse)$/i, async (ctx) => {
-  const scripture = await getScriptureForDay(getDayOfYear());
-  await ctx.reply(`${scripture}\n\nTimezone: ${timezoneLabel}`);
+  await ctx.reply(`Verse search results\n${rowsToText(rows)}`);
 });
 
 bot.catch((error) => {
@@ -562,10 +931,15 @@ async function start(): Promise<void> {
   await loadBibleVerses();
   await bot.launch();
 
+  setInterval(() => {
+    void processTaskReminders();
+  }, reminderIntervalMs);
+
   console.log('[telegram-standalone] Bot started.');
   console.log(`[telegram-standalone] Store file: ${storePath}`);
   console.log(`[telegram-standalone] Bible plan file: ${biblePlanPath}`);
   console.log(`[telegram-standalone] Bible database file: ${bibleDbPath}`);
+  console.log(`[telegram-standalone] Reminder interval ms: ${reminderIntervalMs}`);
 }
 
 void start();

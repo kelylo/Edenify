@@ -511,7 +511,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         // Step 2: Check server session to validate/update cached user
-        const sessionResponse = await fetch(API_BASE + '/api/auth/session');
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 4000);
+        const sessionResponse = await fetch(API_BASE + '/api/auth/session', {
+          signal: controller.signal,
+        }).finally(() => {
+          window.clearTimeout(timeoutId);
+        });
         const sessionData = await sessionResponse.json();
         if (sessionResponse.ok && sessionData?.success && sessionData?.user) {
           setUserState(normalizeUser(sessionData.user));

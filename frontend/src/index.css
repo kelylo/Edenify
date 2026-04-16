@@ -143,12 +143,5 @@ body::before {
 
 .no-scrollbar {
   -ms-overflow-style: none;
-}
-
-.focus-safe-top {
-  top: env(safe-area-inset-top);
-}
-
-.focus-safe-padding {
-  padding-top: max(0.25rem, env(safe-area-inset-top));
+  scrollbar-width: none;
 }

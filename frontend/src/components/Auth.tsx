@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '');
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
 import React, { useState } from 'react';
 import { useApp } from '../AppContext';
 import { Mail, Lock, User, Check, ArrowLeft, Eye, EyeOff, Loader2 } from 'lucide-react';

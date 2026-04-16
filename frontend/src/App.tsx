@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '');
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_BACKEND_URL || '');
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,8 +8,6 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { AppProvider, useApp } from './AppContext';
 import Layout from './components/Layout';
 import { AnimatePresence, motion } from 'motion/react';
-import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 
 const Home = lazy(() => import('./components/Home'));
 const Pillars = lazy(() => import('./components/Pillars'));
@@ -158,26 +156,6 @@ const AppContent: React.FC = () => {
       return () => {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       };
-    }
-  }, []);
-
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
-        const title = notification.notification.title || 'Task Due';
-        const body = notification.notification.body || '';
-        
-        // If it's a high priority alarm notification, lock the app to the overlay
-        if (title.toLowerCase().includes('alarm')) {
-          const params = new URLSearchParams();
-          params.set('title', title);
-          params.set('body', body);
-          window.location.href = '/alarm-overlay?' + params.toString();
-        } else if (title.toLowerCase().includes('reminder')) {
-          // Normal reminders can just navigate home
-          window.location.href = '/?tab=home';
-        }
-      }).catch(err => console.warn('LocalNotifications listener failed:', err));
     }
   }, []);
 

@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Edenify</string>
-    <string name="title_activity_main">Edenify</string>
-    <string name="package_name">com.edenify.app</string>
-    <string name="custom_url_scheme">com.edenify.app</string>
-</resources>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Plus, RefreshCw, Timer, Trash2, WandSparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
@@ -138,6 +138,7 @@ const Home: React.FC = () => {
     addTask,
     toggleTask,
     deleteTask,
+    updateTask,
     bibleReading,
     completeBibleDay,
     goToBibleDay,
@@ -163,6 +164,7 @@ const Home: React.FC = () => {
   const [scripturePageIndex, setScripturePageIndex] = useState(0);
   const [loadingScriptureText, setLoadingScriptureText] = useState(false);
   const [isScriptureFullscreen, setIsScriptureFullscreen] = useState(false);
+  const [isReadingScriptureAloud, setIsReadingScriptureAloud] = useState(false);
   const [showReflectionComposer, setShowReflectionComposer] = useState(false);
   const [reflectionDraft, setReflectionDraft] = useState('');
 
@@ -192,6 +194,7 @@ const Home: React.FC = () => {
   const [alarmTask, setAlarmTask] = useState<Task | null>(null);
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
+  const scriptureSpeechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
@@ -238,6 +241,51 @@ const Home: React.FC = () => {
 
   const activeScripturePage = scripturePages[scripturePageIndex] || [];
   const activeScriptureLabel = scripturePageLabels[scripturePageIndex] || bibleReading.passage;
+
+  const stopScriptureReading = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    scriptureSpeechRef.current = null;
+    setIsReadingScriptureAloud(false);
+  }, []);
+
+  const readScriptureAloud = useCallback(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setNotificationStatus('Read aloud is not available in this browser.');
+      return;
+    }
+
+    const versesToRead = activeScripturePage.length > 0
+      ? activeScripturePage
+          .map((verse) => `${verse.bookName} ${verse.chapter}:${verse.verse}. ${verse.text}`)
+          .join(' ')
+      : bibleReading.text;
+    const textToRead = `${activeScriptureLabel}. ${versesToRead}`.trim();
+
+    if (!textToRead) {
+      setNotificationStatus('No scripture text is available to read aloud yet.');
+      return;
+    }
+
+    stopScriptureReading();
+
+    const utterance = new SpeechSynthesisUtterance(textToRead);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.onend = () => {
+      scriptureSpeechRef.current = null;
+      setIsReadingScriptureAloud(false);
+    };
+    utterance.onerror = () => {
+      scriptureSpeechRef.current = null;
+      setIsReadingScriptureAloud(false);
+    };
+
+    scriptureSpeechRef.current = utterance;
+    setIsReadingScriptureAloud(true);
+    window.speechSynthesis.speak(utterance);
+  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];
@@ -356,6 +404,46 @@ const Home: React.FC = () => {
     setAlarmTask(null);
   };
 
+  const snoozeActiveAlarm = useCallback(() => {
+    if (!alarmTask) return;
+
+    const snoozeMinutes = 10;
+    const snoozedAt = new Date(Date.now() + snoozeMinutes * 60 * 1000);
+
+    updateTask(alarmTask.id, {
+      time: format(snoozedAt, 'HH:mm'),
+      date: snoozedAt.toISOString(),
+      completed: false,
+      alarmEnabled: true,
+    });
+
+    stopPlaybackAlarm();
+    setAlarmOpen(false);
+    setAlarmTask(null);
+    setNotificationStatus(`${alarmTask.name} snoozed for 10 minutes.`);
+  }, [alarmTask, updateTask]);
+
+  const enterActiveAlarm = useCallback(() => {
+    if (!alarmTask) return;
+
+    stopPlaybackAlarm();
+    setAlarmOpen(false);
+    setAlarmTask(null);
+    setShowQuickAdd(false);
+    setShowFocusPage(false);
+    setShowScripturePage(false);
+    setNotificationStatus(`${alarmTask.name} opened in Edenify.`);
+  }, [alarmTask]);
+
+  const skipActiveAlarm = useCallback(() => {
+    if (!alarmTask) return;
+
+    stopPlaybackAlarm();
+    setAlarmOpen(false);
+    setAlarmTask(null);
+    setNotificationStatus(`${alarmTask.name} dismissed.`);
+  }, [alarmTask]);
+
   useEffect(() => {
     if (!alarmOpen || !alarmTask) return;
 
@@ -364,6 +452,18 @@ const Home: React.FC = () => {
       stopActiveAlarm();
     }
   }, [alarmOpen, alarmTask, tasks]);
+
+  useEffect(() => {
+    return () => {
+      stopScriptureReading();
+    };
+  }, [stopScriptureReading]);
+
+  useEffect(() => {
+    if (!showScripturePage) {
+      stopScriptureReading();
+    }
+  }, [showScripturePage, stopScriptureReading]);
 
   const requestNotificationPermission = async (withFeedback: boolean) => {
     if (!('Notification' in window)) {
@@ -1872,6 +1972,14 @@ const Home: React.FC = () => {
                     {loadingBible ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
                   </button>
                   <button
+                    aria-label={isReadingScriptureAloud ? 'Stop reading aloud' : 'Read scripture aloud'}
+                    title={isReadingScriptureAloud ? 'Stop reading aloud' : 'Read aloud'}
+                    onClick={isReadingScriptureAloud ? stopScriptureReading : readScriptureAloud}
+                    className="h-10 w-10 rounded-full hover:bg-surface-container-low text-primary flex items-center justify-center transition-colors"
+                  >
+                    {isReadingScriptureAloud ? <Pause size={16} /> : <Play size={16} />}
+                  </button>
+                  <button
                     aria-label="Next day reading"
                     title="Next day"
                     disabled={!canNavigateBible || bibleReading.day >= maxBibleDay || loadingBible}
@@ -2393,16 +2501,29 @@ const Home: React.FC = () => {
               <p className="font-label text-[10px] uppercase tracking-[0.16em] text-primary font-bold">Alarm Active</p>
               <h3 className="display-text text-3xl text-on-surface mt-2">{alarmTask.name}</h3>
               <p className="mt-3 text-sm text-on-surface-variant">{alarmTask.time} • {alarmTask.preferredMusic || 'Uploaded Song'}</p>
-              <p className="mt-2 text-xs text-secondary">Reminder is sent 5 minutes early. Alarm rings at exact task time and auto-stops after 1 minute if not dismissed.</p>
+              <p className="mt-2 text-xs text-secondary">Reminder is sent 5 minutes early. Alarm stays visible across the app and can be snoozed, entered, or skipped.</p>
 
-              <button
-                onClick={() => {
-                  stopActiveAlarm();
-                }}
-                className="mt-6 w-full rounded-full px-4 py-3 bg-primary text-white font-label text-xs font-bold uppercase tracking-[0.14em]"
-              >
-                Stop Alarm
-              </button>
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={snoozeActiveAlarm}
+                  className="rounded-full px-4 py-3 bg-surface-container-low text-primary font-label text-xs font-bold uppercase tracking-[0.14em] flex items-center justify-center gap-2"
+                >
+                  <SkipForward size={14} />
+                  Postpone 10m
+                </button>
+                <button
+                  onClick={enterActiveAlarm}
+                  className="rounded-full px-4 py-3 bg-primary text-white font-label text-xs font-bold uppercase tracking-[0.14em]"
+                >
+                  Enter Edenify
+                </button>
+                <button
+                  onClick={skipActiveAlarm}
+                  className="rounded-full px-4 py-3 border border-outline-variant/35 text-secondary font-label text-xs font-bold uppercase tracking-[0.14em]"
+                >
+                  Skip
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

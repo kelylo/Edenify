@@ -104,12 +104,19 @@ const defaultUserPreferences = {
   customFocusPlaylistNames: [],
   customFocusPlaylistDataUrls: [],
   shuffleFocusPlaylist: false,
+  lastAlarmSongName: '',
+  lastAlarmSongDataUrl: '',
+  mostRepeatedTasks: [],
   notifications: {
     taskReminders: true,
     dailyScripture: true,
     streakProtection: false,
   },
 };
+
+function normalizeUserKey(value?: string) {
+  return String(value || '').trim().toLowerCase();
+}
 
 function normalizeUser(user: Partial<{ id: string; email: string; name: string; password?: string; role?: 'admin' | 'user'; avatar?: string; preferences?: any }>) {
   return {
@@ -127,10 +134,6 @@ function normalizeUser(user: Partial<{ id: string; email: string; name: string; 
       },
     },
   };
-}
-
-function normalizeUserKey(value?: string) {
-  return String(value || '').trim().toLowerCase();
 }
 
 function resolveSessionUserId(db: DbShape, cookieHeader?: string) {
@@ -377,13 +380,119 @@ function getTaskDurationMinutes(task: Partial<TelegramTask>) {
 }
 
 const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const openAiModels = ['gpt-4o-mini', 'gpt-4.1-mini'];
 
 function getGeminiKeyOrder() {
-  const key1 = (process.env.GEMINI_API_KEY_1 || '').trim();
-  const key2 = (process.env.GEMINI_API_KEY_2 || '').trim();
-  const keys = [key1, key2].filter((key): key is string => Boolean(key));
+  const keys = [
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+  ]
+    .map((key) => String(key || '').trim())
+    .filter((key): key is string => Boolean(key));
+
   if (keys.length <= 1) return keys;
-  return Math.random() < 0.7 ? [key2, key1] : [key1, key2];
+  return Math.random() < 0.5 ? [keys[1], keys[0]] : keys;
+}
+
+function getOpenAIKeyOrder() {
+  const keys = [
+    process.env.OPENAI_API_KEY_1,
+    process.env.OPENAI_API_KEY_2,
+    process.env.OPENAI_API_KEY,
+  ]
+    .map((key) => String(key || '').trim())
+    .filter((key): key is string => Boolean(key));
+
+  if (keys.length <= 1) return keys;
+  return Math.random() < 0.5 ? [keys[1], keys[0], ...keys.slice(2)] : keys;
+}
+
+function normalizePromptText(value: any): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizePromptText(item)).filter(Boolean).join('\n');
+  }
+  if (value && typeof value === 'object') {
+    if (typeof value.text === 'string') return value.text;
+    if (typeof value.content === 'string') return value.content;
+    if (Array.isArray(value.parts)) {
+      return value.parts.map((part: any) => normalizePromptText(part?.text ?? part)).filter(Boolean).join('\n');
+    }
+  }
+  return String(value ?? '');
+}
+
+function buildOpenAIMessages(prompt: { contents: any; systemInstruction?: string }) {
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
+
+  if (prompt.systemInstruction) {
+    messages.push({ role: 'system', content: prompt.systemInstruction });
+  }
+
+  const entries = Array.isArray(prompt.contents)
+    ? prompt.contents
+    : [{ role: 'user', parts: [{ text: normalizePromptText(prompt.contents) }] }];
+
+  for (const entry of entries) {
+    const role = entry?.role === 'model' ? 'assistant' : 'user';
+    const content = normalizePromptText(entry?.parts ?? entry?.content ?? entry?.text ?? entry);
+    if (content.trim().length > 0) {
+      messages.push({ role, content });
+    }
+  }
+
+  return messages;
+}
+
+async function generateWithOpenAI(prompt: {
+  contents: any;
+  systemInstruction?: string;
+  responseMimeType?: string;
+}) {
+  const keys = getOpenAIKeyOrder();
+  if (keys.length === 0) return null;
+
+  const messages = buildOpenAIMessages(prompt);
+  let lastError: unknown;
+
+  for (const model of openAiModels) {
+    for (const key of keys) {
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature: 0.4,
+            ...(prompt.responseMimeType === 'application/json' ? { response_format: { type: 'json_object' } } : {}),
+          }),
+        });
+
+        const json = await response.json().catch(() => null);
+        if (!response.ok) {
+          lastError = json?.error?.message || `OpenAI HTTP ${response.status}`;
+          continue;
+        }
+
+        const text = String(json?.choices?.[0]?.message?.content || '').trim();
+        if (text) {
+          return text;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  return null;
 }
 
 async function generateWithServerGemini(prompt: {
@@ -393,11 +502,8 @@ async function generateWithServerGemini(prompt: {
   tools?: any[];
 }) {
   const keys = getGeminiKeyOrder();
-  if (keys.length === 0) {
-    throw new Error('GEMINI_API_KEY_1 or GEMINI_API_KEY_2 is not configured on server.');
-  }
-
   let lastError: unknown;
+
   for (const model of geminiModels) {
     for (const key of keys) {
       try {
@@ -411,14 +517,34 @@ async function generateWithServerGemini(prompt: {
             tools: prompt.tools,
           },
         });
-        return response.text || '';
+        const text = response.text || '';
+        if (text.trim().length > 0) {
+          return text;
+        }
       } catch (error) {
         lastError = error;
       }
     }
   }
 
-  throw lastError;
+  const openAiText = await generateWithOpenAI({
+    contents: prompt.contents,
+    systemInstruction: prompt.systemInstruction,
+    responseMimeType: prompt.responseMimeType,
+  }).catch((error) => {
+    lastError = error;
+    return null;
+  });
+
+  if (openAiText) {
+    return openAiText;
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error('No AI provider is configured on the server.');
 }
 
 function parseJsonSafely<T>(raw: string): T {
@@ -2312,6 +2438,15 @@ async function startServer() {
   const listenWithFallback = (port: number, retriesLeft: number) => {
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${port}`);
+      
+      setInterval(() => {
+        void processBackgroundTaskReminders(DB_PATH);
+        const db = readDb(DB_PATH);
+        const token = resolveTelegramBotTokenConfig(db).token;
+        if (token) {
+          void processBibleReminders(db, token, new Date());
+        }
+      }, 30000);
     });
 
     server.on('error', (error: any) => {

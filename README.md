@@ -1,83 +1,115 @@
-# Edenify Platform Deployment
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-Edenify is split for production deployment:
+# Run and deploy your AI Studio app
 
-- `frontend` deploys as a mobile-first PWA on Cloudflare Pages.
-- `backend` deploys as a persistent Node service on Railway for Telegram polling, reminders, and API routes.
+This contains everything you need to run your app locally.
 
-## 🚀 1. Cloudflare Pages Deployment (Frontend)
-Cloudflare statically builds and serves the mobile-first PWA globally.
+View your app in AI Studio: https://ai.studio/apps/748d00fe-b2c1-4d2b-9415-ceec8b9d8421
 
-**Click-by-Click Guide:**
-1. Log into your Cloudflare Dashboard.
-2. Navigate to **Workers & Pages** on the left menu.
-3. Click the blue **Create application** button.
-4. Select the **Pages** tab, then click **Connect to Git**.
-5. Select your GitHub account and authorize access. Select the **Edenify** repository.
-6. Click **Begin setup**.
-7. In the **Set up builds and deployments** screen, fill out the forms *exactly* as follows:
-   - **Project name:** `edenify-app` (or any name you prefer)
-   - **Production branch:** `main` (or whatever branch you use)
-   - **Framework preset:** `Vite`
-   - **Build command:** `npm run build`
-   - **Build output directory:** `dist`
-   - **Root directory (IMPORTANT):** `frontend`
-8. Scroll down, click **Environment variables (advanced)** > **Add variable**. Add these exact keys:
-   - `VITE_API_BASE_URL` -> *(Value: Enter your Railway backend URL once deployed, e.g., `https://edenify-production.up.railway.app`)*
-   - `VITE_SUPABASE_URL` -> *(Value: Your public Supabase project URL)*
-   - `VITE_SUPABASE_ANON_KEY` -> *(Value: Your public Supabase anon key)*
-9. Click **Save and Deploy**.
+## Run Locally
 
-## 🚂 2. Railway Deployment (Backend)
-Railway runs the Node.js Express backend for AI routes, Telegram polling, and reminder scheduling.
+**Prerequisites:**  Node.js
 
-**Click-by-Click Guide:**
-1. Log into your Railway Dashboard (railway.app).
-2. Click **+ New Project** at the top right.
-3. Select **Deploy from GitHub repo**.
-4. Select the **Edenify** repository. Railway will immediately detect the repository and start creating a service.
-5. Once the service appears in your dashboard canvas, click squarely on the new service node.
-6. On the right panel, navigate to the **Settings** tab.
-7. Scroll down to the **Service** section and configure exactly as follows:
-   - **Root Directory:** `backend`
-8. Scroll down to the **Build** section and configure exactly as follows:
-   - **Builder:** `Nixpacks` (It will automatically detect `package.json`).
-   - **Build Command:** `npm run build`
-9. Scroll down to the **Deploy** section and configure exactly as follows:
-   - **Start Command:** `npm run start` (or `node server.js`).
-10. At the top of the panel, switch from the **Settings** tab to the **Variables** tab. Click **New Variable** and add:
-   - `PORT` -> `6001` (Railway automatically detects and routes HTTP to this port)
-   - `TELEGRAM_BOT_TOKEN` -> *(Your bot token string)*
-   - `SUPABASE_URL` -> *(Your Supabase URL)*
-   - `SUPABASE_SERVICE_KEY` -> *(Your Supabase Service-Role / Master Key to bypass RLS)*
-   - `GEMINI_API_KEY_1` -> *(Your Gemini AI token)*
-   - `GEMINI_API_KEY_2` -> *(Optional Gemini rotation key)*
-   - `OPENAI_API_KEY` -> *(Optional fallback model key)*
-   - `CORS_ORIGIN` -> *(Your Cloudflare Pages URL, e.g., `https://edenify-app.pages.dev`)*
-11. Finally, switch to the **Settings** tab, scroll to **Networking**, and click **Generate Domain**.
-12. Copy this new domain (e.g., `edenify-xxx.up.railway.app`). This is what you put in Cloudflare's `VITE_API_BASE_URL` variable.
 
-Wait 2-3 minutes. If Railway shows a green checkmark, your API is fully alive!
+1. Install dependencies:
+   `npm install`
+2. Create `.env.local` from `.env.example` and set your keys:
+   - `GEMINI_API_KEY_1`
+   - `GEMINI_API_KEY_2`
+   - optional fallback: `GEMINI_API_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+   The app rotates Gemini keys automatically for better reliability.
+3. Create Supabase table for cloud state sync:
+   - Open Supabase SQL editor
+   - Run SQL from `supabase-schema.sql`
+4. Migrate your existing local `db.json` user states into Supabase:
+   `npm run migrate:supabase`
+5. Run the app:
+   `npm run dev`
 
-## 📖 Product Notes (Corrected)
+## Build Production
 
-- Bible reading uses an established **365-day** plan.
-- Focus is mobile-first via PWA and native mobile alarms.
-- Desktop shell support is optional and not the primary reminder path.
+1. Build the app:
+   `npm run build`
+2. Preview built app:
+   `npm run preview`
 
----
+## Deploy to Render (24/7 Bot)
 
-## Running Locally
-**1. Boot Backend:**
-```bash
-cd backend
-npm install
-npm run dev
-```
+This project includes a ready-to-use Render blueprint: `render.yaml`.
 
-**2. Boot Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Why this matters for Telegram:
+- The Telegram polling loop runs in the Node server process.
+- If you run locally and close VS Code, that process stops, so the bot stops.
+- Deploying to Render keeps the process running remotely.
+- For true always-on behavior, use a non-sleeping plan (Starter or higher).
+
+### Option A: Blueprint Deploy (recommended)
+
+1. Push this repository to GitHub.
+2. In Render dashboard, choose **New +** -> **Blueprint**.
+3. Select your repository and confirm creation.
+
+Render will use:
+- Build command: `npm install && npm run build`
+- Start command: `npm run start`
+- Health check: `/api/health`
+
+### Option B: Manual Web Service
+
+1. Create a new **Web Service** in Render.
+2. Runtime: **Node**.
+3. Build command: `npm install && npm run build`
+4. Start command: `npm run start`
+5. Plan: **Starter** (or higher) for 24/7 Telegram polling.
+
+### Environment Variables (Render)
+
+Set these in the Render service settings:
+
+- `GEMINI_API_KEY_1`
+- `GEMINI_API_KEY_2`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `TELEGRAM_BOT_TOKEN` (optional)
+
+Notes:
+- Do not expose Gemini keys to frontend code; they are server-only.
+- Do not expose `SUPABASE_SERVICE_ROLE_KEY` to frontend code; keep it server-only.
+- Render injects `PORT` automatically; this server already reads it.
+- If using free/sleeping instances, Telegram polling can pause when the service sleeps.
+
+## PWA Install (Mobile + Desktop)
+
+- Edenify is configured as a Progressive Web App.
+- Open the app in a supported browser (Chrome/Edge/Safari on iOS), then use:
+  - Browser install prompt, or
+  - the in-app "Install" suggestion banner on Home.
+- Installed app supports standalone launch and offline shell caching.
+
+## Native Shells (Mobile + Desktop/Laptop)
+
+Use native wrappers for stronger due/reminder reliability and background alarms.
+
+### Mobile (Capacitor)
+
+- Sync native platform:
+   - `npm run mobile:sync`
+- Open Android Studio project:
+   - `npm run mobile:android`
+
+### Desktop/Laptop (Electron)
+
+- Run desktop shell:
+   - `npm run desktop:start`
+- Build Windows installer:
+   - `npm run desktop:build`
+
+Detailed setup is in `NATIVE_SHELL_SETUP.md`.

@@ -4,6 +4,27 @@ import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
 
+const apiBase = String(import.meta.env.VITE_BACKEND_URL || '').trim().replace(/\/+$/, '');
+
+if (apiBase) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    if (typeof input === 'string' && input.startsWith('/api/')) {
+      return nativeFetch(`${apiBase}${input}`, init);
+    }
+
+    if (input instanceof Request) {
+      const url = input.url;
+      if (url.startsWith(`${window.location.origin}/api/`)) {
+        const nextUrl = `${apiBase}${url.replace(window.location.origin, '')}`;
+        return nativeFetch(new Request(nextUrl, input), init);
+      }
+    }
+
+    return nativeFetch(input as any, init);
+  }) as typeof window.fetch;
+}
+
 const applyPersistedTheme = () => {
   try {
     const stored = window.localStorage.getItem('edenify_theme');

@@ -1,7 +1,7 @@
 import { Task, User } from '../types';
 
-const TOKEN_STORAGE_KEY = 'edenify_google_calendar_token_v1';
-const TOKEN_EXPIRY_STORAGE_KEY = 'edenify_google_calendar_token_expiry_v1';
+const TOKEN_STORAGE_KEY_PREFIX = 'edenify_google_calendar_token_v1';
+const TOKEN_EXPIRY_STORAGE_KEY_PREFIX = 'edenify_google_calendar_token_expiry_v1';
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
 
@@ -35,22 +35,34 @@ function getClientId() {
   return String(import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 }
 
-function getStoredToken() {
-  const token = window.localStorage.getItem(TOKEN_STORAGE_KEY) || '';
-  const expiry = Number(window.localStorage.getItem(TOKEN_EXPIRY_STORAGE_KEY) || '0');
+function normalizeAccountKey(userEmail?: string) {
+  return String(userEmail || '').trim().toLowerCase() || 'guest';
+}
+
+function tokenStorageKey(userEmail?: string) {
+  return `${TOKEN_STORAGE_KEY_PREFIX}_${normalizeAccountKey(userEmail)}`;
+}
+
+function tokenExpiryStorageKey(userEmail?: string) {
+  return `${TOKEN_EXPIRY_STORAGE_KEY_PREFIX}_${normalizeAccountKey(userEmail)}`;
+}
+
+function getStoredToken(userEmail?: string) {
+  const token = window.localStorage.getItem(tokenStorageKey(userEmail)) || '';
+  const expiry = Number(window.localStorage.getItem(tokenExpiryStorageKey(userEmail)) || '0');
   if (!token || !Number.isFinite(expiry) || expiry <= Date.now() + 30_000) return '';
   return token;
 }
 
-function storeToken(token: string, expiresInSeconds: number) {
+function storeToken(token: string, expiresInSeconds: number, userEmail?: string) {
   const expiry = Date.now() + Math.max(30, Number(expiresInSeconds || 3600)) * 1000;
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  window.localStorage.setItem(TOKEN_EXPIRY_STORAGE_KEY, String(expiry));
+  window.localStorage.setItem(tokenStorageKey(userEmail), token);
+  window.localStorage.setItem(tokenExpiryStorageKey(userEmail), String(expiry));
 }
 
-function clearToken() {
-  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  window.localStorage.removeItem(TOKEN_EXPIRY_STORAGE_KEY);
+function clearToken(userEmail?: string) {
+  window.localStorage.removeItem(tokenStorageKey(userEmail));
+  window.localStorage.removeItem(tokenExpiryStorageKey(userEmail));
 }
 
 async function ensureGoogleIdentityScript() {
@@ -82,13 +94,13 @@ async function ensureGoogleIdentityScript() {
   });
 }
 
-export async function getGoogleCalendarAccessToken(interactive: boolean): Promise<string> {
+export async function getGoogleCalendarAccessToken(interactive: boolean, userEmail?: string): Promise<string> {
   const clientId = getClientId();
   if (!clientId) {
     throw new Error('Google Calendar is not configured. Missing VITE_GOOGLE_CLIENT_ID.');
   }
 
-  const stored = getStoredToken();
+  const stored = getStoredToken(userEmail);
   if (stored) return stored;
 
   if (!interactive) {
@@ -111,7 +123,7 @@ export async function getGoogleCalendarAccessToken(interactive: boolean): Promis
           return;
         }
 
-        storeToken(response.access_token, Number(response.expires_in || 3600));
+        storeToken(response.access_token, Number(response.expires_in || 3600), userEmail);
         resolve(response.access_token);
       },
     });
@@ -120,16 +132,16 @@ export async function getGoogleCalendarAccessToken(interactive: boolean): Promis
   });
 }
 
-export function disconnectGoogleCalendar() {
-  clearToken();
+export function disconnectGoogleCalendar(userEmail?: string) {
+  clearToken(userEmail);
 }
 
-export function isGoogleCalendarConnected() {
-  return Boolean(getStoredToken());
+export function isGoogleCalendarConnected(userEmail?: string) {
+  return Boolean(getStoredToken(userEmail));
 }
 
-async function postCalendarEndpoint(endpoint: string, body: Record<string, unknown>, interactiveAuth: boolean) {
-  const token = await getGoogleCalendarAccessToken(interactiveAuth);
+async function postCalendarEndpoint(endpoint: string, body: Record<string, unknown>, interactiveAuth: boolean, userEmail?: string) {
+  const token = await getGoogleCalendarAccessToken(interactiveAuth, userEmail);
   if (!token) return { success: false, skipped: true } as const;
 
   const response = await fetch(endpoint, {
@@ -146,7 +158,7 @@ async function postCalendarEndpoint(endpoint: string, body: Record<string, unkno
   const json = await response.json().catch(() => null);
   if (!response.ok || !json?.success) {
     if (response.status === 401 || response.status === 403) {
-      clearToken();
+      clearToken(userEmail);
     }
     throw new Error(json?.error || `Calendar sync failed (${response.status})`);
   }
@@ -156,18 +168,21 @@ async function postCalendarEndpoint(endpoint: string, body: Record<string, unkno
 
 export async function syncTaskToGoogleCalendar(task: Task, user: User | null, interactiveAuth = false) {
   if (!user?.preferences.googleCalendarEnabled) return;
+  const userEmail = String(user.email || '').trim().toLowerCase();
   await postCalendarEndpoint(
     '/api/google-calendar/upsert-task-event',
     {
       task,
-      userEmail: String(user.email || '').trim().toLowerCase(),
+      userEmail,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     },
-    interactiveAuth
+    interactiveAuth,
+    userEmail
   );
 }
 
 export async function removeTaskFromGoogleCalendar(task: Task, user: User | null, interactiveAuth = false) {
   if (!user?.preferences.googleCalendarEnabled) return;
-  await postCalendarEndpoint('/api/google-calendar/delete-task-event', { taskId: task.id }, interactiveAuth);
+  const userEmail = String(user.email || '').trim().toLowerCase();
+  await postCalendarEndpoint('/api/google-calendar/delete-task-event', { taskId: task.id }, interactiveAuth, userEmail);
 }

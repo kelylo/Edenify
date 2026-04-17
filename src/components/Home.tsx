@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Search, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Pencil, Play, Plus, RefreshCw, Search, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchBibleByReference, searchVerses, searchVersesFast } from '../services/bible';
@@ -108,6 +108,25 @@ const parseAnyTimeTo24 = (value: string) => {
   return null;
 };
 
+const buildTwiceDailyReminderSlots = (preferredTime: string) => {
+  const primary = parseAnyTimeTo24(preferredTime || '06:30 AM') || '06:30';
+  const [primaryHour, primaryMinute] = primary.split(':').map(Number);
+
+  const secondaryHourRaw = Number(primaryHour) + 12;
+  const secondaryHour = secondaryHourRaw >= 24 ? secondaryHourRaw - 24 : secondaryHourRaw;
+  const secondary = `${pad2(secondaryHour)}:${pad2(Number(primaryMinute) || 0)}`;
+
+  return [primary, secondary].map((value, index) => {
+    const [hour, minute] = value.split(':').map(Number);
+    return {
+      hour,
+      minute,
+      key: `${pad2(hour)}:${pad2(minute)}`,
+      label: index === 0 ? 'primary' : 'follow-up',
+    };
+  });
+};
+
 const useDebouncedValue = <T,>(value: T, delayMs: number) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -212,8 +231,19 @@ const Home: React.FC = () => {
   const [editingSearchTaskTime, setEditingSearchTaskTime] = useState('');
   const [editingSearchTaskRepeat, setEditingSearchTaskRepeat] = useState<'once' | 'daily' | 'weekly'>('once');
   const [editingSearchTaskPriority, setEditingSearchTaskPriority] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [detailTaskName, setDetailTaskName] = useState('');
+  const [detailTaskTime, setDetailTaskTime] = useState('');
+  const [detailTaskRepeat, setDetailTaskRepeat] = useState<'once' | 'daily' | 'weekly'>('once');
+  const [detailTaskPriority, setDetailTaskPriority] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
+  const [detailTaskDuration, setDetailTaskDuration] = useState(25);
+  const [detailTaskPreferredMusic, setDetailTaskPreferredMusic] = useState('');
+  const [detailTaskCustomAlarmName, setDetailTaskCustomAlarmName] = useState('');
+  const [detailTaskCustomAlarmDataUrl, setDetailTaskCustomAlarmDataUrl] = useState('');
+  const [detailTaskAlarmEnabled, setDetailTaskAlarmEnabled] = useState(true);
+  const [detailTaskError, setDetailTaskError] = useState('');
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
-  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(() => isGoogleCalendarConnected());
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(() => isGoogleCalendarConnected(user?.email));
   const isSubPageOpen = showScripturePage || showFocusPage;
 
   const todayDateKey = (() => {
@@ -230,11 +260,11 @@ const Home: React.FC = () => {
   const taskPreviewMediaRef = useRef<HTMLAudioElement | null>(null);
   const taskPreviewAudioRef = useRef<AudioContext | null>(null);
   const taskPreviewEndRef = useRef<number | null>(null);
-  const bibleReminderTimeoutRef = useRef<number | null>(null);
-  const bibleReminderTriggeredDateRef = useRef('');
+  const bibleReminderTriggeredRef = useRef<Record<string, boolean>>({});
   const academicReminderTimeoutRef = useRef<number | null>(null);
   const academicReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+  const detailAudioFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const completedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
   const readingStartDate = user?.preferences?.readingPlanStartDate || todayDateKey;
@@ -249,9 +279,91 @@ const Home: React.FC = () => {
     user?.preferences.notifications.dailyScripture &&
     user?.preferences.notifications.streakProtection
   );
+  const accountCacheKey = String(user?.email || user?.id || '').trim().toLowerCase();
+  const homePrefsStorageKey = accountCacheKey ? `edenify_home_prefs_${accountCacheKey}` : 'edenify_home_prefs_guest';
 
   const activeScripturePage = scripturePages[scripturePageIndex] || [];
   const activeScriptureLabel = scripturePageLabels[scripturePageIndex] || bibleReading.passage;
+
+  useEffect(() => {
+    if (!accountCacheKey) return;
+
+    try {
+      const raw = localStorage.getItem(homePrefsStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<{
+        lastAlarmSongName: string;
+        lastAlarmSongDataUrl: string;
+        taskHour: string;
+        taskMinute: string;
+        taskPeriod: 'AM' | 'PM';
+        taskTimeFormat: '12' | '24';
+        taskDuration: number;
+        bibleReminderTime: string;
+      }>;
+
+      if (parsed.taskHour) setNewTaskHourInput(String(parsed.taskHour).slice(0, 2));
+      if (parsed.taskMinute) setNewTaskMinuteInput(String(parsed.taskMinute).slice(0, 2));
+      if (parsed.taskPeriod === 'AM' || parsed.taskPeriod === 'PM') setNewTaskPeriod(parsed.taskPeriod);
+      if (parsed.taskTimeFormat === '12' || parsed.taskTimeFormat === '24') setNewTaskTimeFormat(parsed.taskTimeFormat);
+      if (Number.isFinite(Number(parsed.taskDuration))) {
+        const boundedDuration = Math.max(5, Math.min(300, Number(parsed.taskDuration)));
+        setNewTaskDuration(boundedDuration);
+      }
+
+      if (parsed.lastAlarmSongName) setNewTaskCustomAlarmName(parsed.lastAlarmSongName);
+      if (parsed.lastAlarmSongDataUrl) setNewTaskCustomAlarmDataUrl(parsed.lastAlarmSongDataUrl);
+
+      if (user && (parsed.lastAlarmSongName || parsed.lastAlarmSongDataUrl || parsed.bibleReminderTime)) {
+        setUser({
+          ...user,
+          preferences: {
+            ...user.preferences,
+            lastAlarmSongName: parsed.lastAlarmSongName || user.preferences.lastAlarmSongName,
+            lastAlarmSongDataUrl: parsed.lastAlarmSongDataUrl || user.preferences.lastAlarmSongDataUrl,
+            bibleReminderTime: parsed.bibleReminderTime || user.preferences.bibleReminderTime,
+          },
+        });
+      }
+    } catch {
+      // Ignore malformed cache payloads.
+    }
+  }, [accountCacheKey]);
+
+  useEffect(() => {
+    if (!accountCacheKey) return;
+
+    const safeAudioDataUrl = (newTaskCustomAlarmDataUrl || '').length <= 4_500_000 ? newTaskCustomAlarmDataUrl : '';
+    const payload = {
+      lastAlarmSongName: newTaskCustomAlarmName || user?.preferences.lastAlarmSongName || '',
+      lastAlarmSongDataUrl: safeAudioDataUrl || user?.preferences.lastAlarmSongDataUrl || '',
+      taskHour: newTaskHourInput,
+      taskMinute: newTaskMinuteInput,
+      taskPeriod: newTaskPeriod,
+      taskTimeFormat: newTaskTimeFormat,
+      taskDuration: newTaskDuration,
+      bibleReminderTime: user?.preferences.bibleReminderTime || '06:30 AM',
+    };
+
+    try {
+      localStorage.setItem(homePrefsStorageKey, JSON.stringify(payload));
+    } catch {
+      // Ignore localStorage quota errors.
+    }
+  }, [
+    accountCacheKey,
+    homePrefsStorageKey,
+    newTaskCustomAlarmName,
+    newTaskCustomAlarmDataUrl,
+    newTaskHourInput,
+    newTaskMinuteInput,
+    newTaskPeriod,
+    newTaskTimeFormat,
+    newTaskDuration,
+    user?.preferences.bibleReminderTime,
+    user?.preferences.lastAlarmSongName,
+    user?.preferences.lastAlarmSongDataUrl,
+  ]);
 
   const stopScriptureReading = useCallback(() => {
     if (scriptureAudioRef.current) {
@@ -437,13 +549,13 @@ const Home: React.FC = () => {
   }, [tasks, user?.id]);
 
   useEffect(() => {
-    setGoogleCalendarConnected(isGoogleCalendarConnected());
-  }, [user?.id, user?.preferences.googleCalendarEnabled]);
+    setGoogleCalendarConnected(isGoogleCalendarConnected(user?.email));
+  }, [user?.id, user?.email, user?.preferences.googleCalendarEnabled]);
 
   const connectGoogleCalendar = async () => {
     setGoogleCalendarBusy(true);
     try {
-      await getGoogleCalendarAccessToken(true);
+      await getGoogleCalendarAccessToken(true, user?.email);
       setGoogleCalendarConnected(true);
       setNotificationStatus('Google Calendar connected successfully.');
     } catch (error: any) {
@@ -454,7 +566,7 @@ const Home: React.FC = () => {
   };
 
   const disconnectCalendar = () => {
-    disconnectGoogleCalendar();
+    disconnectGoogleCalendar(user?.email);
     setGoogleCalendarConnected(false);
     setNotificationStatus('Google Calendar disconnected.');
   };
@@ -470,6 +582,10 @@ const Home: React.FC = () => {
       },
     });
     setNotificationStatus(nextEnabled ? 'Google Calendar sync enabled.' : 'Google Calendar sync disabled.');
+
+    if (nextEnabled && !googleCalendarConnected) {
+      void connectGoogleCalendar();
+    }
   };
 
   const stopActiveAlarm = () => {
@@ -793,6 +909,116 @@ const Home: React.FC = () => {
     setNotificationStatus('Task updated from search.');
   };
 
+  const openTaskDetails = (task: Task) => {
+    setDetailTaskId(task.id);
+    setDetailTaskName(task.name);
+    setDetailTaskTime(task.time);
+    setDetailTaskRepeat(task.repeat || 'once');
+    setDetailTaskPriority(task.priority);
+    setDetailTaskAlarmEnabled(task.alarmEnabled !== false);
+    setDetailTaskDuration(Math.max(5, Math.min(300, Number(task.estimatedDuration || 25))));
+    setDetailTaskPreferredMusic(task.preferredMusic || '');
+    setDetailTaskCustomAlarmName(task.customAlarmAudioName || '');
+    setDetailTaskCustomAlarmDataUrl(task.customAlarmAudioDataUrl || '');
+    setDetailTaskError('');
+  };
+
+  const closeTaskDetails = () => {
+    setDetailTaskId(null);
+    setDetailTaskError('');
+  };
+
+  const saveTaskDetails = () => {
+    if (!detailTaskId) return;
+
+    const normalizedTime = parseAnyTimeTo24(detailTaskTime);
+    if (!normalizedTime) {
+      setDetailTaskError('Please provide a valid time (HH:MM or H:MM AM/PM).');
+      return;
+    }
+
+    const trimmedName = detailTaskName.trim();
+    if (!trimmedName) {
+      setDetailTaskError('Task name is required.');
+      return;
+    }
+
+    const boundedDuration = Math.max(5, Math.min(300, Number(detailTaskDuration || 25)));
+
+    updateTask(detailTaskId, {
+      name: trimmedName,
+      time: normalizedTime,
+      repeat: detailTaskRepeat,
+      priority: detailTaskPriority,
+      alarmEnabled: detailTaskAlarmEnabled,
+      estimatedDuration: boundedDuration,
+      preferredMusic: detailTaskPreferredMusic || detailTaskCustomAlarmName || 'Uploaded Song',
+      customAlarmAudioName: detailTaskCustomAlarmName || undefined,
+      customAlarmAudioDataUrl: detailTaskCustomAlarmDataUrl || undefined,
+    });
+
+    if (user && detailTaskCustomAlarmDataUrl && detailTaskCustomAlarmName) {
+      setUser({
+        ...user,
+        preferences: {
+          ...user.preferences,
+          lastAlarmSongName: detailTaskCustomAlarmName,
+          lastAlarmSongDataUrl: detailTaskCustomAlarmDataUrl,
+        },
+      });
+    }
+
+    setNotificationStatus('Task details updated. Calendar sync will update automatically.');
+    closeTaskDetails();
+  };
+
+  const handleDetailReminderSongUpload = async (file?: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('audio/')) {
+      setDetailTaskError('Please choose a valid reminder audio file.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setDetailTaskError('Reminder audio is too large. Use a file under 20MB.');
+      return;
+    }
+
+    const dataUrl = await readFileAsDataUrl(file);
+    if ((dataUrl || '').length > 25 * 1024 * 1024) {
+      setDetailTaskError('Reminder audio is too large after encoding. Please use a shorter file.');
+      return;
+    }
+
+    setDetailTaskCustomAlarmName(file.name);
+    setDetailTaskCustomAlarmDataUrl(dataUrl);
+    setDetailTaskPreferredMusic(file.name);
+    setDetailTaskError('');
+  };
+
+  const previewDetailReminder = () => {
+    if (!detailTaskCustomAlarmDataUrl) {
+      setDetailTaskError('Upload a reminder song first.');
+      return;
+    }
+
+    stopTaskPreview();
+    const media = new Audio(detailTaskCustomAlarmDataUrl);
+    media.volume = 0.85;
+    media.play().then(() => {
+      setIsTaskPreviewPlaying(true);
+    }).catch(() => {
+      setIsTaskPreviewPlaying(false);
+      setDetailTaskError('Could not preview this audio file.');
+    });
+
+    media.onended = () => {
+      setIsTaskPreviewPlaying(false);
+      taskPreviewMediaRef.current = null;
+    };
+
+    taskPreviewMediaRef.current = media;
+  };
+
   const stopTaskPreview = () => {
     if (taskPreviewEndRef.current) {
       window.clearTimeout(taskPreviewEndRef.current);
@@ -845,6 +1071,14 @@ const Home: React.FC = () => {
       stopTaskPreview();
     };
   }, []);
+
+  useEffect(() => {
+    if (!detailTaskId) return;
+    const exists = tasks.some((task) => task.id === detailTaskId);
+    if (!exists) {
+      closeTaskDetails();
+    }
+  }, [detailTaskId, tasks]);
 
   const today = new Date();
   const formattedDate = format(today, 'EEEE, MMMM dd');
@@ -1077,13 +1311,14 @@ const Home: React.FC = () => {
   useEffect(() => {
     const askOnce = async () => {
       if (!user) return;
-      if (localStorage.getItem('edenify_notification_asked') === 'true') return;
+      const askedKey = accountCacheKey ? `edenify_notification_asked_${accountCacheKey}` : 'edenify_notification_asked_guest';
+      if (localStorage.getItem(askedKey) === 'true') return;
       await requestNotificationPermission(false);
-      localStorage.setItem('edenify_notification_asked', 'true');
+      localStorage.setItem(askedKey, 'true');
     };
 
     askOnce();
-  }, [user?.id]);
+  }, [user?.id, accountCacheKey]);
 
   useEffect(() => {
     if (!user) return;
@@ -1168,59 +1403,15 @@ const Home: React.FC = () => {
     void registerBibleReminderSync();
 
     const preferredTime = user.preferences.bibleReminderTime || '06:30 AM';
-    const normalized = preferredTime.toUpperCase();
-    const match12 = normalized.match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
-    const match24 = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    
-    if (!match12 && !match24) {
-      console.warn('[Bible Reminder] Invalid time format:', preferredTime);
-      return;
-    }
+    const reminderSlots = buildTwiceDailyReminderSlots(preferredTime);
 
-    let hours = 0;
-    let minutes = 0;
+    const fireBibleReminder = async (slotLabel: string, dateSlotKey: string) => {
+      if (bibleReminderTriggeredRef.current[dateSlotKey]) return;
+      bibleReminderTriggeredRef.current[dateSlotKey] = true;
 
-    if (match12) {
-      hours = Number(match12[1]);
-      minutes = Number(match12[2]);
-      const period = match12[3];
-      if (period === 'PM' && hours !== 12) hours += 12;
-      if (period === 'AM' && hours === 12) hours = 0;
-    } else if (match24) {
-      hours = Number(match24[1]);
-      minutes = Number(match24[2]);
-    }
-
-    const now = new Date();
-    const nextReminder = new Date();
-    nextReminder.setHours(hours, minutes, 0, 0);
-    if (nextReminder.getTime() <= now.getTime()) {
-      nextReminder.setDate(nextReminder.getDate() + 1);
-    }
-
-    const delay = Math.max(500, nextReminder.getTime() - now.getTime());
-    const nextReminderStr = nextReminder.toLocaleString();
-    console.log(`[Bible Reminder] Scheduled for ${nextReminderStr} (in ${Math.round(delay / 1000 / 60)} minutes)`);
-
-    if (bibleReminderTimeoutRef.current) {
-      window.clearTimeout(bibleReminderTimeoutRef.current);
-      bibleReminderTimeoutRef.current = null;
-    }
-
-    const fireBibleReminder = async () => {
       try {
-        const dateKey = format(new Date(), 'yyyy-MM-dd');
-        if (bibleReminderTriggeredDateRef.current === dateKey) {
-          console.log('[Bible Reminder] Skipped (already triggered today)');
-          return;
-        }
-        bibleReminderTriggeredDateRef.current = dateKey;
-
-        console.log('[Bible Reminder] Firing at', new Date().toLocaleString());
-        
-        // Use current bibleReading state at callback time
-        pushReminderEvent('Bible reminder', `Day ${bibleReading.day}: ${bibleReading.passage}`);
-
+        const cleanLabel = slotLabel === 'primary' ? 'Primary' : 'Follow-up';
+        await pushReminderEvent(`Bible reminder (${cleanLabel})`, `Day ${bibleReading.day}: ${bibleReading.passage}`);
         await tryBrowserNotification('Edenify Bible Reading', `Day ${bibleReading.day}: ${bibleReading.passage}`);
 
         if (user?.preferences.bibleReminderAlarm) {
@@ -1231,48 +1422,35 @@ const Home: React.FC = () => {
       }
     };
 
-    bibleReminderTimeoutRef.current = window.setTimeout(() => {
-      void fireBibleReminder();
-    }, delay);
+    const checkBibleReminderSlots = () => {
+      const now = new Date();
+      const todayKey = format(now, 'yyyy-MM-dd');
 
-    const catchUpId = window.setInterval(() => {
-      const current = new Date();
-      const todayKey = format(current, 'yyyy-MM-dd');
-      if (bibleReminderTriggeredDateRef.current === todayKey) return;
+      reminderSlots.forEach((slot) => {
+        const scheduledToday = new Date(now);
+        scheduledToday.setHours(slot.hour, slot.minute, 0, 0);
 
-      const scheduledToday = new Date(current);
-      scheduledToday.setHours(hours, minutes, 0, 0);
-      const lagMs = current.getTime() - scheduledToday.getTime();
+        const lagMs = now.getTime() - scheduledToday.getTime();
+        const dateSlotKey = `${todayKey}|${slot.key}`;
 
-      // If app was backgrounded/killed around reminder time, fire once when back.
-      if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
-        void fireBibleReminder();
-      }
-    }, 60_000);
+        // Fire if due now or app resumed within 6 hours of scheduled slot.
+        if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
+          void fireBibleReminder(slot.label, dateSlotKey);
+        }
+      });
+    };
+
+    checkBibleReminderSlots();
+    const catchUpId = window.setInterval(checkBibleReminderSlots, 60_000);
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
-
-      const current = new Date();
-      const todayKey = format(current, 'yyyy-MM-dd');
-      if (bibleReminderTriggeredDateRef.current === todayKey) return;
-
-      const scheduledToday = new Date(current);
-      scheduledToday.setHours(hours, minutes, 0, 0);
-      const lagMs = current.getTime() - scheduledToday.getTime();
-
-      if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
-        void fireBibleReminder();
-      }
+      checkBibleReminderSlots();
     };
 
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      if (bibleReminderTimeoutRef.current) {
-        window.clearTimeout(bibleReminderTimeoutRef.current);
-        bibleReminderTimeoutRef.current = null;
-      }
       window.clearInterval(catchUpId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
@@ -1613,6 +1791,16 @@ const Home: React.FC = () => {
 
     setNewTaskCustomAlarmName(file.name);
     setNewTaskCustomAlarmDataUrl(dataUrl);
+    if (user) {
+      setUser({
+        ...user,
+        preferences: {
+          ...user.preferences,
+          lastAlarmSongName: file.name,
+          lastAlarmSongDataUrl: dataUrl,
+        },
+      });
+    }
     setQuickAddError('');
   };
 
@@ -2014,6 +2202,17 @@ const Home: React.FC = () => {
                         {layer?.name || 'General'} • {task.time}{failed && !completed ? ' • Failed (duration passed)' : ''}
                       </p>
                     </div>
+
+                    <button
+                      type="button"
+                      aria-label={`Modify task ${task.name}`}
+                      title="Modify task"
+                      onClick={() => openTaskDetails(task)}
+                      className="h-8 px-2.5 flex items-center gap-1.5 justify-center rounded-md border border-outline-variant/40 text-primary hover:bg-surface-container-low"
+                    >
+                      <Pencil size={13} />
+                      <span className="text-[10px] font-bold uppercase tracking-[0.12em]">Modify</span>
+                    </button>
 
                     <button
                       type="button"
@@ -2778,6 +2977,206 @@ const Home: React.FC = () => {
                     )}
                   </section>
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {detailTaskId && !isSubPageOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeTaskDetails}
+            className="fixed inset-0 z-[88] bg-black/45 backdrop-blur-sm flex items-center justify-center p-5"
+          >
+            <motion.div
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xl overflow-hidden rounded-[2rem] bg-surface-container-low border border-outline-variant/25 shadow-[0_20px_50px_rgba(44,33,24,0.08)] max-h-[88vh] overflow-y-auto no-scrollbar"
+            >
+              <div className="p-5 border-b border-outline-variant/20 sticky top-0 bg-surface-container-low z-10 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.15em] font-bold text-primary">Task Details</p>
+                  <h3 className="text-lg font-semibold text-on-surface mt-1">Modify Task</h3>
+                </div>
+                <button
+                  onClick={closeTaskDetails}
+                  className="h-9 w-9 rounded-full hover:bg-surface-container-lowest flex items-center justify-center text-primary"
+                  aria-label="Close task details"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Task Name</label>
+                  <input
+                    value={detailTaskName}
+                    onChange={(e) => setDetailTaskName(e.target.value)}
+                    placeholder="Task name"
+                    className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Time</label>
+                    <input
+                      value={detailTaskTime}
+                      onChange={(e) => setDetailTaskTime(e.target.value)}
+                      placeholder="14:30 or 2:30 PM"
+                      className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Duration (Minutes)</label>
+                    <input
+                      type="number"
+                      aria-label="Task duration minutes"
+                      min={5}
+                      max={300}
+                      value={detailTaskDuration}
+                      onChange={(e) => setDetailTaskDuration(Math.max(5, Math.min(300, Number(e.target.value || 25))))}
+                      className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Repeat</label>
+                    <select
+                      aria-label="Task repeat details"
+                      value={detailTaskRepeat}
+                      onChange={(e) => setDetailTaskRepeat(e.target.value as 'once' | 'daily' | 'weekly')}
+                      className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                    >
+                      <option value="once">Once</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block mb-2">Priority</label>
+                    <select
+                      aria-label="Task priority details"
+                      value={detailTaskPriority}
+                      onChange={(e) => setDetailTaskPriority(e.target.value as 'A' | 'B' | 'C' | 'D' | 'E')}
+                      className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                    >
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                      <option value="D">D</option>
+                      <option value="E">E</option>
+                    </select>
+                  </div>
+                </div>
+
+                <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">
+                  <span className="text-sm text-on-surface">Alarm enabled</span>
+                  <button
+                    type="button"
+                    aria-label="Toggle detail alarm"
+                    onClick={() => setDetailTaskAlarmEnabled((prev) => !prev)}
+                    className={cn(
+                      'h-8 w-14 rounded-full relative transition-all duration-300 border',
+                      detailTaskAlarmEnabled
+                        ? 'bg-gradient-to-r from-primary to-primary-container border-primary/40 shadow-[0_8px_20px_rgba(150,68,7,0.25)]'
+                        : 'bg-surface-container-low border-outline-variant/60'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-1 h-6 w-6 rounded-full bg-white transition-all duration-300 flex items-center justify-center',
+                        detailTaskAlarmEnabled ? 'translate-x-7' : 'translate-x-1'
+                      )}
+                    >
+                      <span className={cn('h-2 w-2 rounded-full', detailTaskAlarmEnabled ? 'bg-primary' : 'bg-outline')} />
+                    </span>
+                  </button>
+                </label>
+
+                <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
+                  <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Alarm Audio</p>
+                  <input
+                    value={detailTaskPreferredMusic}
+                    onChange={(e) => setDetailTaskPreferredMusic(e.target.value)}
+                    placeholder="Preferred music label"
+                    className="w-full rounded-xl border border-outline-variant/45 bg-surface-container-low px-3 py-2 text-sm text-on-surface"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => detailAudioFileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
+                    >
+                      Upload song
+                    </button>
+                    <input
+                      ref={detailAudioFileInputRef}
+                      type="file"
+                      accept="audio/*"
+                      title="Upload detail reminder song"
+                      onChange={(e) => handleDetailReminderSongUpload(e.target.files?.[0])}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={previewDetailReminder}
+                      className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
+                    >
+                      Preview Upload
+                    </button>
+                    {isTaskPreviewPlaying && (
+                      <button
+                        type="button"
+                        onClick={stopTaskPreview}
+                        className="px-3 py-1.5 rounded-full bg-primary text-white text-[11px] font-bold uppercase tracking-[0.14em]"
+                      >
+                        Stop Preview
+                      </button>
+                    )}
+                  </div>
+                  {detailTaskCustomAlarmName ? (
+                    <p className="text-xs text-on-surface-variant">Selected: {detailTaskCustomAlarmName}</p>
+                  ) : (
+                    <p className="text-xs text-secondary">No custom upload yet. Default alarm behavior will be used.</p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">
+                  <p className="text-xs text-secondary">
+                    Google Calendar sync is {user?.preferences.googleCalendarEnabled ? 'enabled' : 'disabled'}. Saving this task updates calendar events automatically.
+                  </p>
+                </div>
+
+                {detailTaskError && <p className="text-sm text-red-600">{detailTaskError}</p>}
+
+                <div className="pt-1 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={closeTaskDetails}
+                    className="flex-1 rounded-full px-4 py-2 bg-surface-container-low text-secondary font-label text-xs font-bold uppercase tracking-[0.14em]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveTaskDetails}
+                    className="flex-1 rounded-full px-4 py-2 bg-gradient-to-br from-primary to-primary-container text-white font-label text-xs font-bold uppercase tracking-[0.14em]"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

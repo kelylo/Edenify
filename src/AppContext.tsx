@@ -365,6 +365,7 @@ const mergeUserWithMediaFallback = (previous: User, remote: any): User => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const getAccountKey = (currentUser: User | null) => String(currentUser?.email || currentUser?.id || '').trim().toLowerCase();
+  const getCachedUserKey = (accountKey: string) => `edenify_cached_user_${accountKey || 'guest'}`;
   const getLastAccountKey = () => {
     try {
       return String(localStorage.getItem('edenify_last_account_key') || '').trim().toLowerCase();
@@ -377,6 +378,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cacheUser = (user: User | null) => {
     if (!user) {
       localStorage.removeItem('edenify_cached_user');
+      const lastKey = getLastAccountKey();
+      if (lastKey) {
+        localStorage.removeItem(getCachedUserKey(lastKey));
+      }
       return;
     }
 
@@ -400,6 +405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     try {
+      localStorage.setItem(getCachedUserKey(accountKey), JSON.stringify(lightUser));
       localStorage.setItem('edenify_cached_user', JSON.stringify(lightUser));
     } catch (error) {
       console.warn('Failed to cache user session:', error);
@@ -408,10 +414,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getCachedUser = (): User | null => {
     try {
-      const cached = localStorage.getItem('edenify_cached_user');
+      const lastKey = getLastAccountKey();
+      const cached = (lastKey ? localStorage.getItem(getCachedUserKey(lastKey)) : null)
+        || localStorage.getItem('edenify_cached_user');
       return cached ? JSON.parse(cached) : null;
     } catch (error) {
       console.warn('Failed to restore cached user:', error);
+      const lastKey = getLastAccountKey();
+      if (lastKey) {
+        localStorage.removeItem(getCachedUserKey(lastKey));
+      }
       localStorage.removeItem('edenify_cached_user');
       return null;
     }

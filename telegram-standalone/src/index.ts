@@ -696,7 +696,7 @@ function taskDefaults(profile?: ChatProfile): { layerId: LayerId; priority: Prio
 async function addTask(ctx: Context, payload: string): Promise<void> {
   const parsed = parseTaskInput(payload);
   if (!parsed) {
-    await ctx.reply('Usage: /set YYYY-MM-DD HH:mm | task | layer | priority | repeat');
+    await ctx.reply('Invalid task format. Usage: /set YYYY-MM-DD HH:mm | task | layer | priority | repeat');
     return;
   }
 
@@ -721,7 +721,7 @@ async function addTask(ctx: Context, payload: string): Promise<void> {
     });
   });
 
-  await ctx.reply(`Task saved for ${formatDateTime(parsed.dueAt)}.\n\n${formatTodoList(chat.todos)}`);
+  await ctx.reply(`SUCCESS: Task saved for ${formatDateTime(parsed.dueAt)}.\n\n${formatTodoList(chat.todos)}`);
 }
 
 bot.use(async (ctx: Context, next) => {
@@ -756,7 +756,7 @@ bot.use(async (ctx: Context, next) => {
 bot.start(async (ctx) => {
   await ctx.reply(
     [
-      'Standalone Telegram planner ready.',
+      'SUCCESS: Standalone Telegram planner ready.',
       '',
       'Create task:',
       '/set 2026-04-17 18:30 | Pray and journal | spiritual | A | daily',
@@ -780,6 +780,7 @@ bot.start(async (ctx) => {
 bot.help(async (ctx) => {
   await ctx.reply(
     [
+      'SUCCESS: Help menu',
       'Commands:',
       '/set YYYY-MM-DD HH:mm | task | layer | priority | repeat',
       '/add YYYY-MM-DD HH:mm | task | layer | priority | repeat',
@@ -823,7 +824,7 @@ bot.command('edit', async (ctx) => {
   const payload = removeCommandPrefix(messageTextFrom(ctx), 'edit');
   const parsed = parseEditPayload(payload);
   if (!parsed) {
-    await ctx.reply('Usage: /edit <index> YYYY-MM-DD HH:mm | text | layer | priority | repeat');
+    await ctx.reply('Invalid edit format. Usage: /edit <index> YYYY-MM-DD HH:mm | text | layer | priority | repeat');
     return;
   }
 
@@ -852,13 +853,13 @@ bot.command('edit', async (ctx) => {
     reply = `Updated task ${parsed.index}.`;
   });
 
-  await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
+  await ctx.reply(`${reply.startsWith('Updated') ? `SUCCESS: ${reply}` : reply}\n\n${formatTodoList(chat.todos)}`);
 });
 
 bot.command('list', async (ctx) => {
   const store = await readStore();
   const chat = store.chats[chatIdFrom(ctx)] || { todos: [] };
-  await ctx.reply(formatTodoList(chat.todos));
+  await ctx.reply(`SUCCESS: Retrieved task list.\n\n${formatTodoList(chat.todos)}`);
 });
 
 bot.command('today', async (ctx) => {
@@ -877,6 +878,7 @@ bot.command('today', async (ctx) => {
 
   await ctx.reply(
     [
+      `SUCCESS: Today summary`,
       `TODAY (${key})`,
       `Open today: ${todays.length}`,
       `Overdue: ${overdue.length}`,
@@ -904,6 +906,7 @@ bot.command('track', async (ctx) => {
 
   await ctx.reply(
     [
+      'SUCCESS: Track dashboard',
       'TRACK DASHBOARD',
       `Total: ${total}`,
       `Done: ${done}`,
@@ -922,7 +925,7 @@ bot.command('defaults', async (ctx) => {
   const payload = removeCommandPrefix(messageTextFrom(ctx), 'defaults').trim();
   const parts = payload.split(/\s+/).filter(Boolean);
   if (parts.length < 3) {
-    await ctx.reply('Usage: /defaults <layer> <priority> <repeat>');
+    await ctx.reply('Invalid defaults format. Usage: /defaults <layer> <priority> <repeat>');
     return;
   }
 
@@ -942,14 +945,14 @@ bot.command('defaults', async (ctx) => {
     chat.profile.defaultRepeat = repeat;
   });
 
-  await ctx.reply(`Defaults saved: ${layer}, ${priority}, ${repeat}.`);
+  await ctx.reply(`SUCCESS: Defaults saved: ${layer}, ${priority}, ${repeat}.`);
 });
 
 bot.command('done', async (ctx) => {
   const arg = removeCommandPrefix(messageTextFrom(ctx), 'done');
   const index = parsePositiveInt(arg);
   if (!index) {
-    await ctx.reply('Usage: /done <task index>');
+    await ctx.reply('Invalid done format. Usage: /done <task index>');
     return;
   }
 
@@ -983,12 +986,12 @@ bot.command('done', async (ctx) => {
     reply = `Completed and rolled forward task ${index} (${task.repeat}) to ${formatDateTime(task.dueAt)}.`;
   });
 
-  await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
+  await ctx.reply(`${reply.startsWith('Completed') ? `SUCCESS: ${reply}` : reply}\n\n${formatTodoList(chat.todos)}`);
 });
 
 async function removeTask(ctx: Context, index: number, usageLabel: string): Promise<void> {
   if (!index) {
-    await ctx.reply(`Usage: ${usageLabel} <task index>`);
+    await ctx.reply(`Invalid remove format. Usage: ${usageLabel} <task index>`);
     return;
   }
 
@@ -1005,7 +1008,7 @@ async function removeTask(ctx: Context, index: number, usageLabel: string): Prom
     reply = `Removed: ${removed.text}`;
   });
 
-  await ctx.reply(`${reply}\n\n${formatTodoList(chat.todos)}`);
+  await ctx.reply(`${reply.startsWith('Removed') ? `SUCCESS: ${reply}` : reply}\n\n${formatTodoList(chat.todos)}`);
 }
 
 bot.command('delete', async (ctx) => {
@@ -1031,6 +1034,7 @@ bot.command('scripture', async (ctx) => {
   const parts = await getScripturePartsForDay(day);
   await ctx.reply(
     [
+      'SUCCESS: Scripture retrieved',
       `SCRIPTURE DAY ${parts.day}`,
       `Part 1: ${parts.part1}`,
       `Part 2: ${parts.part2}`,
@@ -1043,7 +1047,7 @@ bot.command('scripturetimes', async (ctx) => {
   const payload = removeCommandPrefix(messageTextFrom(ctx), 'scripturetimes').trim();
   const parts = payload.split(/\s+/).filter(Boolean);
   if (parts.length < 2) {
-    await ctx.reply('Usage: /scripturetimes <HH:mm> <HH:mm>. Example: /scripturetimes 06:30 20:30');
+    await ctx.reply('Invalid scripturetimes format. Usage: /scripturetimes <HH:mm> <HH:mm>. Example: /scripturetimes 06:30 20:30');
     return;
   }
 
@@ -1063,7 +1067,7 @@ bot.command('scripturetimes', async (ctx) => {
 
   await ctx.reply(
     [
-      'Scripture schedule saved.',
+      'SUCCESS: Scripture schedule saved.',
       'These times send reminder notifications only.',
       `Part 1 time: ${first}`,
       `Part 2 time: ${second}`,
@@ -1076,7 +1080,7 @@ bot.command('scripturetimes', async (ctx) => {
 bot.command('scripturestart', async (ctx) => {
   const payload = removeCommandPrefix(messageTextFrom(ctx), 'scripturestart').trim();
   if (!payload) {
-    await ctx.reply('Usage: /scripturestart <YYYY-MM-DD>. Example: /scripturestart 2026-04-17');
+    await ctx.reply('Invalid scripturestart format. Usage: /scripturestart <YYYY-MM-DD>. Example: /scripturestart 2026-04-17');
     return;
   }
 
@@ -1097,13 +1101,47 @@ bot.command('scripturestart', async (ctx) => {
   const parts = await getScripturePartsForDay(day);
   await ctx.reply(
     [
-      `Scripture start date saved: ${payload}`,
+      `SUCCESS: Scripture start date saved: ${payload}`,
       `Current journey day: ${parts.day}`,
       `Part 1: ${parts.part1}`,
       `Part 2: ${parts.part2}`,
       `Timezone: ${timezoneLabel}`,
     ].join('\n')
   );
+});
+
+bot.on('text', async (ctx) => {
+  const text = messageTextFrom(ctx);
+  const known = new Set([
+    'start',
+    'help',
+    'set',
+    'add',
+    'edit',
+    'done',
+    'remove',
+    'delete',
+    'list',
+    'today',
+    'track',
+    'defaults',
+    'scripture',
+    'scripturetimes',
+    'scripturestart',
+    'verse',
+    'find',
+  ]);
+
+  if (text.startsWith('/')) {
+    const command = commandNameFromText(text);
+    if (!command || !known.has(command)) {
+      await ctx.reply('Unknown command. Type /help to see all commands.');
+      return;
+    }
+    return;
+  }
+
+  await ctx.reply('I did not understand that. Type /help to see commands.');
 });
 
 bot.command('verse', async (ctx) => {

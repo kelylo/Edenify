@@ -205,6 +205,7 @@ const Home: React.FC = () => {
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
   const scriptureAudioRef = useRef<HTMLAudioElement | null>(null);
+  const scriptureAudioUrlRef = useRef<string | null>(null);
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
@@ -384,6 +385,11 @@ const Home: React.FC = () => {
       scriptureAudioRef.current = null;
     }
 
+    if (scriptureAudioUrlRef.current) {
+      URL.revokeObjectURL(scriptureAudioUrlRef.current);
+      scriptureAudioUrlRef.current = null;
+    }
+
     setIsReadingScriptureAloud(false);
   }, []);
 
@@ -403,7 +409,7 @@ const Home: React.FC = () => {
 
     stopScriptureReading();
     setIsReadingScriptureAloud(true);
-    setNotificationStatus('Generating ElevenLabs voice...');
+    setNotificationStatus('Sending scripture to read-aloud engine...');
 
     try {
       const response = await fetch('/api/eden/read-aloud', {
@@ -422,25 +428,47 @@ const Home: React.FC = () => {
         throw new Error(json?.error || 'Could not generate read-aloud audio.');
       }
 
-      const audio = new Audio(`data:${json.mimeType || 'audio/mpeg'};base64,${json.audioBase64}`);
+      const binary = atob(json.audioBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      const audioBlob = new Blob([bytes], { type: json.mimeType || 'audio/mpeg' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      scriptureAudioUrlRef.current = audioUrl;
+
+      const audio = new Audio(audioUrl);
       scriptureAudioRef.current = audio;
 
       audio.onended = () => {
         scriptureAudioRef.current = null;
+        if (scriptureAudioUrlRef.current) {
+          URL.revokeObjectURL(scriptureAudioUrlRef.current);
+          scriptureAudioUrlRef.current = null;
+        }
         setIsReadingScriptureAloud(false);
         setNotificationStatus('Read aloud finished.');
       };
 
       audio.onerror = () => {
         scriptureAudioRef.current = null;
+        if (scriptureAudioUrlRef.current) {
+          URL.revokeObjectURL(scriptureAudioUrlRef.current);
+          scriptureAudioUrlRef.current = null;
+        }
         setIsReadingScriptureAloud(false);
         setNotificationStatus('Read aloud failed. Please try again.');
       };
 
       await audio.play();
-      setNotificationStatus('Reading aloud with ElevenLabs voice.');
+      setNotificationStatus(`Reading aloud (${json.providerFlow || 'server-tts'}).`);
     } catch (error: any) {
       scriptureAudioRef.current = null;
+      if (scriptureAudioUrlRef.current) {
+        URL.revokeObjectURL(scriptureAudioUrlRef.current);
+        scriptureAudioUrlRef.current = null;
+      }
       setIsReadingScriptureAloud(false);
       setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
     }
@@ -2450,6 +2478,9 @@ const Home: React.FC = () => {
                 <div className="space-y-2">
                   <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-outline">Read More</p>
                   <h2 className="text-2xl sm:text-3xl font-semibold text-on-surface tracking-tight">{activeScriptureLabel}</h2>
+                  {notificationStatus && (
+                    <p className="text-xs font-semibold text-primary">{notificationStatus}</p>
+                  )}
                   {scripturePages.length > 1 && (
                     <p className="text-xs text-secondary uppercase tracking-[0.14em] font-bold">Passage {scripturePageIndex + 1} of {scripturePages.length}</p>
                   )}

@@ -6,6 +6,7 @@ import fs from "fs";
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 
+dotenv.config({ path: path.join(process.cwd(), '.env.server.local') });
 dotenv.config({ path: path.join(process.cwd(), '.env.local') });
 dotenv.config();
 

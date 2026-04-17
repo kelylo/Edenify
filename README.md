@@ -84,6 +84,7 @@ Set these in the Render service settings:
 Notes:
 - Do not expose Gemini keys to frontend code; they are server-only.
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to frontend code; keep it server-only.
+- Keep backend secrets in `.env.server.local` for local dev and Render secret env vars in production.
 - Render injects `PORT` automatically; this server already reads it.
 - If using free/sleeping instances, Telegram polling can pause when the service sleeps.
 

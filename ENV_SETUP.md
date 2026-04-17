@@ -1,28 +1,21 @@
 # Environment Configuration Guide
 
-## Local Development (.env.local)
+## Local Development
 
-Create a `.env.local` file in the root directory with these variables:
+Create these files in the root directory:
+
+- `.env.local` for browser-safe variables
+- `.env.server.local` for backend-only secrets
+
+`.env.local`:
 
 ```env
-# Supabase Configuration
+# Supabase Configuration (browser-safe)
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Gemini API (Eden AI)
-GEMINI_API_KEY_1=your-primary-api-key
-GEMINI_API_KEY_2=your-secondary-api-key (optional backup)
 
 # Google Calendar OAuth (client-side token flow)
 VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
-
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=your-telegram-bot-token-from-botfather
-# OR use these alternatives:
-# TELEGRAM_BOT_TOKEN_1=...
-# TELEGRAM_BOT_TOKEN_PRIMARY=...
 
 # Server Configuration
 PORT=6001
@@ -30,6 +23,26 @@ NODE_ENV=development
 
 # Database
 DATABASE_PATH=./db.json
+```
+
+`.env.server.local`:
+
+```env
+# Server-only secrets (never expose in browser)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_DB_PASSWORD=your-db-password
+
+# Gemini API (Eden AI)
+GEMINI_API_KEY_1=your-primary-api-key
+GEMINI_API_KEY_2=your-secondary-api-key (optional backup)
+GEMINI_API_KEY=your-fallback-api-key
+
+OPENAI_API_KEY=your-openai-api-key
+
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token-from-botfather
+RESEND_API_KEY=your-resend-api-key
 ```
 
 ## Production Deployment (Render)
@@ -111,6 +124,8 @@ These should be automatically included when deploying to Render.
 
 - Never commit `.env` files to git
 - `.env.local` is in `.gitignore`
+- `.env.server.local` is in `.gitignore`
 - Keep SUPABASE_SERVICE_ROLE_KEY private (only used server-side)
 - ANON_KEY can be public (used by frontend)
+- `VITE_GOOGLE_API_KEY` is not used by this app and should stay unset
 

@@ -171,6 +171,7 @@ const Home: React.FC = () => {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
 
     const [readingSuggestion, setReadingSuggestion] = useState('');

@@ -773,25 +773,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (cancelled) return;
 
         setBibleReading((prev) => {
+          // Keep the user's currently browsed day when possible.
+          const boundedCurrentDay = Math.min(totalDays, Math.max(1, Number(prev.day || targetDay)));
+          const shouldKeepCurrentPassage = boundedCurrentDay !== targetDay;
+          const hasNoPassageYet = !String(prev.passage || '').trim() || !String(prev.text || '').trim();
+
           if (
             prev.totalDays === totalDays &&
-            prev.day === targetDay &&
+            prev.day === boundedCurrentDay &&
             prev.highestCompletedDay === highest &&
-            prev.passage === reading.passage &&
-            prev.text === reading.text
+            (shouldKeepCurrentPassage || prev.passage === reading.passage) &&
+            (shouldKeepCurrentPassage || prev.text === reading.text)
           ) {
             return prev;
           }
 
           console.log('[Bible] Updating reading state');
-          
+
           return {
             ...prev,
             totalDays,
-            day: targetDay,
+            day: boundedCurrentDay,
             highestCompletedDay: highest,
-            passage: reading.passage,
-            text: reading.text,
+            passage: shouldKeepCurrentPassage && !hasNoPassageYet ? prev.passage : reading.passage,
+            text: shouldKeepCurrentPassage && !hasNoPassageYet ? prev.text : reading.text,
           };
         });
       } catch (error) {
@@ -804,7 +809,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       cancelled = true;
     };
-  }, [bibleReading.day, bibleReading.highestCompletedDay, bibleReading.completed, bibleReading.lastCompletedDate, user?.preferences?.readingPlanStartDate]);
+  }, [user?.id, user?.email, user?.preferences?.readingPlanStartDate]);
 
   // Load cloud state from Supabase when user is available, then keep it synced.
   useEffect(() => {
@@ -1203,47 +1208,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const goToBibleDay = async (targetDay: number) => {
     const totalDays = await getTotalReadingDays();
-    const today = getLocalDateKey();
-    const completedToday = bibleReading.lastCompletedDate === today && bibleReading.highestCompletedDay > 0;
-    const maxReadableDay = Math.min(totalDays, Math.max(1, bibleReading.highestCompletedDay + (completedToday ? 0 : 1)));
-    const bounded = Math.min(maxReadableDay, Math.max(1, targetDay));
+    const bounded = Math.min(totalDays, Math.max(1, targetDay));
     await loadBibleDay(bounded, bibleReading.highestCompletedDay);
   };
 
   const completeBibleDay = async (completed = true) => {
     const today = getLocalDateKey();
+    const totalDays = await getTotalReadingDays();
+    const current = bibleReading;
 
-    setBibleReading((prev) => {
-      if (completed) {
-        if (prev.completed && prev.lastCompletedDate === today) return prev;
+    if (completed) {
+      const completedDay = Math.min(totalDays, Math.max(1, current.day));
+      const nextHighest = Math.max(current.highestCompletedDay, completedDay);
+      const nextDay = Math.min(totalDays, Math.max(1, nextHighest + 1));
+      const nextReading = await getDayReading(nextDay);
+      const yesterday = getYesterdayDateKey();
+      const nextStreak = current.lastCompletedDate === yesterday
+        ? Math.max(1, Number(current.currentStreak || 0) + 1)
+        : 1;
 
-        const completedDay = Math.min(prev.totalDays, Math.max(1, prev.day));
-        const nextHighest = Math.max(prev.highestCompletedDay, completedDay);
-        const yesterday = getYesterdayDateKey();
-        const nextStreak = prev.lastCompletedDate === yesterday
-          ? Math.max(1, Number(prev.currentStreak || 0) + 1)
-          : 1;
-
-        return {
-          ...prev,
-          day: completedDay,
-          highestCompletedDay: nextHighest,
-          completed: true,
-          lastCompletedDate: today,
-          currentStreak: nextStreak,
-        };
-      }
-
-      const canRollbackToday = prev.lastCompletedDate === today && prev.day === prev.highestCompletedDay && prev.highestCompletedDay > 0;
-      const rolledBackHighest = canRollbackToday ? prev.highestCompletedDay - 1 : prev.highestCompletedDay;
-      return {
+      setBibleReading((prev) => ({
         ...prev,
-        day: Math.max(1, rolledBackHighest + 1),
-        highestCompletedDay: rolledBackHighest,
+        totalDays,
+        day: nextDay,
+        highestCompletedDay: nextHighest,
+        passage: nextReading.passage,
+        text: nextReading.text,
         completed: false,
-        lastCompletedDate: prev.lastCompletedDate === today ? '' : prev.lastCompletedDate,
-      };
-    });
+        lastCompletedDate: today,
+        currentStreak: nextStreak,
+      }));
+      return;
+    }
+
+    const canRollbackToday = current.lastCompletedDate === today && current.highestCompletedDay > 0;
+    const rolledBackHighest = canRollbackToday ? current.highestCompletedDay - 1 : current.highestCompletedDay;
+    const nextDay = Math.max(1, Math.min(totalDays, rolledBackHighest + 1));
+    const nextReading = await getDayReading(nextDay);
+
+    setBibleReading((prev) => ({
+      ...prev,
+      totalDays,
+      day: nextDay,
+      highestCompletedDay: rolledBackHighest,
+      passage: nextReading.passage,
+      text: nextReading.text,
+      completed: false,
+      lastCompletedDate: current.lastCompletedDate === today ? '' : current.lastCompletedDate,
+    }));
   };
 
   const setDailyTaskGoal = (goal: number) => {

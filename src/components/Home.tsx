@@ -212,7 +212,6 @@ const Home: React.FC = () => {
   const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
-  const [interactionDebugOpen, setInteractionDebugOpen] = useState(false);
   const [interactionEvents, setInteractionEvents] = useState<InteractionHealthEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDomain, setSearchDomain] = useState<'all' | 'bible' | 'tasks'>('all');
@@ -2019,9 +2018,6 @@ const Home: React.FC = () => {
     reportActionSuccess('task-delete', `Deleted task: ${task.name} (${source}).`);
   };
 
-  const blockedInteractionCount = interactionEvents.filter((event) => event.status === 'blocked').length;
-  const recentInteractionEvents = interactionEvents.slice(0, 8);
-
   return (
     <div className="min-h-screen bg-surface pb-24">
       {!isSubPageOpen && (
@@ -2306,87 +2302,6 @@ const Home: React.FC = () => {
       >
         <Plus size={24} />
       </button>
-      )}
-
-      {!isSubPageOpen && (
-      <div className="fixed bottom-24 left-4 z-[60]">
-        {interactionDebugOpen ? (
-          <div className="w-[320px] rounded-2xl border border-outline-variant/35 bg-surface-container-low shadow-[0_10px_28px_rgba(44,33,24,0.12)] p-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary">Interaction Health</p>
-                <p className="text-[11px] text-secondary">Blocked {blockedInteractionCount} of {interactionEvents.length} tracked actions</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInteractionDebugOpen(false)}
-                className="h-8 w-8 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center"
-                title="Close interaction panel"
-                aria-label="Close interaction panel"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
-                <p className="uppercase tracking-[0.12em] text-outline font-bold">Notifications</p>
-                <p className="text-on-surface mt-1">{notificationStateLabel}</p>
-              </div>
-              <div className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
-                <p className="uppercase tracking-[0.12em] text-outline font-bold">Alarms Ready</p>
-                <p className="text-on-surface mt-1">{alarmReadyCount}</p>
-              </div>
-            </div>
-
-            <div className="text-[11px] rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
-              <p className="uppercase tracking-[0.12em] text-outline font-bold">Backend Check</p>
-              <p className="mt-1 text-on-surface">{opsLastCheckedAt ? format(new Date(opsLastCheckedAt), 'HH:mm:ss') : 'Not checked yet'}</p>
-              {opsCheckError && <p className="mt-1 text-red-600">{opsCheckError}</p>}
-            </div>
-
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {recentInteractionEvents.length === 0 && (
-                <p className="text-[11px] text-secondary">No interactions logged yet.</p>
-              )}
-              {recentInteractionEvents.map((event) => (
-                <div key={event.id} className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
-                  <p className={cn('text-[10px] uppercase tracking-[0.12em] font-bold', event.status === 'blocked' ? 'text-red-600' : 'text-emerald-600')}>
-                    {event.status} • {event.action}
-                  </p>
-                  <p className="text-[11px] text-on-surface mt-1">{event.reason}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void runSystemCheck()}
-                className="flex-1 px-3 py-1.5 rounded-full bg-primary text-white text-[10px] uppercase tracking-[0.12em] font-bold"
-                disabled={opsChecking}
-              >
-                {opsChecking ? 'Checking...' : 'Run Check'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setInteractionEvents([])}
-                className="px-3 py-1.5 rounded-full bg-surface-container-lowest text-secondary text-[10px] uppercase tracking-[0.12em] font-bold"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setInteractionDebugOpen(true)}
-            className="px-3 py-2 rounded-full bg-surface-container-low border border-outline-variant/35 text-[10px] uppercase tracking-[0.14em] font-bold text-primary shadow-sm"
-          >
-            Interaction Health
-          </button>
-        )}
-      </div>
       )}
 
       <AnimatePresence>

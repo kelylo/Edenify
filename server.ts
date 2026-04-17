@@ -444,7 +444,16 @@ async function generateCollaborativeEdenText(prompt: {
 }
 
 function getElevenLabsApiKey() {
-  return String(process.env.ELEVENLABS_API_KEY || process.env.ELEVENLAB_API_KEY || '').trim();
+  const keys = [
+    process.env.ELEVENLABS_API_KEY,
+    process.env.ELEVENLAB_API_KEY,
+    process.env.ELEVEN_API_KEY,
+    process.env.VITE_ELEVENLABS_API_KEY,
+  ]
+    .map((key) => String(key || '').trim())
+    .filter((key): key is string => Boolean(key));
+
+  return keys[0] || '';
 }
 
 function getElevenLabsVoiceId() {
@@ -1139,19 +1148,28 @@ async function startServer() {
       }
 
       const userData = db.data?.[sessionUserId] || {};
-      const prefs = {
-        ...defaultUserPreferences,
-        ...(userData?.preferences || {}),
-        ...(userData?.user?.preferences || {}),
-        notifications: {
-          ...defaultUserPreferences.notifications,
-          ...(userData?.preferences?.notifications || {}),
-          ...(userData?.user?.preferences?.notifications || {}),
-        },
-      };
+      const expanded = String(process.env.OPENAI_API_KEYS || '')
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean);
 
-      db.reminders = db.reminders || {};
+      const keys = [
+        process.env.OPENAI_API_KEY_1,
+        process.env.OPENAI_API_KEY_2,
+        process.env.OPENAI_API_KEY,
+        process.env.OPENAI_KEY,
+        process.env.VITE_OPENAI_API_KEY_1,
+        process.env.VITE_OPENAI_API_KEY_2,
+        process.env.VITE_OPENAI_API_KEY,
+        ...expanded,
+      ]
+        .map((key) => String(key || '').trim())
+        .filter((key): key is string => Boolean(key));
 
+      const deduped = Array.from(new Set(keys));
+
+      if (deduped.length <= 1) return deduped;
+      return Math.random() < 0.5 ? [deduped[1], deduped[0], ...deduped.slice(2)] : deduped;
       const now = new Date();
       const nowMs = now.getTime();
       const tasks = Array.isArray(userData.tasks) ? userData.tasks.map((task: any) => normalizeTask(task)) : [];

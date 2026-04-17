@@ -887,72 +887,43 @@ async function startServer() {
         return;
       }
 
-      const narration = await buildReadAloudNarration(text);
-
-      let elevenLabsError = '';
-      let openAiError = '';
-
-      let audio = await generateSpeechWithElevenLabs(narration).catch((error) => {
-        elevenLabsError = formatProviderError(error);
-        return null;
-      });
-      let providerFlow = 'openai-prep+elevenlabs-tts';
-
-      if (!audio) {
-        audio = await generateSpeechWithOpenAI(narration).catch((error) => {
-          openAiError = formatProviderError(error);
-          return null;
-        });
-        providerFlow = 'openai-prep+openai-tts';
+      // Use Gemini for TTS
+      const keys = getGeminiKeyOrder();
+      if (!keys.length) {
+        res.status(500).json({ success: false, error: 'No Gemini API key is configured for TTS.' });
+        return;
       }
 
-      if (!audio && narration !== text) {
-        audio = await generateSpeechWithElevenLabs(text).catch((error) => {
-          if (!elevenLabsError) elevenLabsError = formatProviderError(error);
-          return null;
-        });
-        if (audio) {
-          providerFlow = 'elevenlabs-tts-direct';
-        }
-      }
-
-      if (!audio && narration !== text) {
-        audio = await generateSpeechWithOpenAI(text).catch((error) => {
-          if (!openAiError) openAiError = formatProviderError(error);
-          return null;
-        });
-        if (audio) {
-          providerFlow = 'openai-tts-direct';
-        }
-      }
-
-      if (!audio) {
-        const combinedError = [
-          `Could not synthesize audio.`,
-          `ElevenLabs: ${elevenLabsError || 'no audio returned'}.`,
-          `OpenAI: ${openAiError || 'no audio returned'}.`,
-        ].join(' ');
-
-        res.status(500).json({
-          success: false,
-          error: combinedError,
-          diagnostics: {
-            elevenLabsError: elevenLabsError || null,
-            openAiError: openAiError || null,
-            hasElevenLabsKey: Boolean(getElevenLabsApiKey()),
-            hasOpenAIKeys: hasOpenAIKeys(),
+      // Use the first available Gemini key
+      const ai = new GoogleGenAI({ apiKey: keys[0] });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `Read this text aloud as natural speech. Output only the audio.\n\n${text}`,
+              },
+            ],
           },
-        });
+        ],
+        config: {
+          responseMimeType: 'audio/mpeg',
+        },
+      });
+
+      if (!response.audio) {
+        res.status(500).json({ success: false, error: 'Gemini did not return audio.' });
         return;
       }
 
       res.json({
         success: true,
-        audioBase64: audio.audioBase64,
-        mimeType: audio.mimeType,
-        model: audio.model,
-        voice: audio.voice,
-        providerFlow,
+        audioBase64: response.audio,
+        mimeType: 'audio/mpeg',
+        model: 'gemini-2.5-flash',
+        providerFlow: 'gemini-tts',
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message || 'Could not synthesize read-aloud audio.' });

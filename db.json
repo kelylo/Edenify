@@ -565,9 +565,9 @@
     },
     "poller": {
       "ownerId": "37592-dd1915",
-      "updatedAt": "2026-04-17T10:24:13.421Z"
+      "updatedAt": "2026-04-17T10:49:13.640Z"
     },
-    "lastPollAt": "2026-04-17T10:24:13.421Z",
+    "lastPollAt": "2026-04-17T10:49:13.640Z",
     "lastPollError": "",
     "lastPollErrorAt": ""
   },

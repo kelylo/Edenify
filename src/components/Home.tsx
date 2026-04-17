@@ -164,7 +164,13 @@ const Home: React.FC = () => {
   const [showFocusPage, setShowFocusPage] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
-  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  import { useApp } from '../AppContext';
+  import toast from 'react-hot-toast';
+  import { Modal } from '../components/Modal';
+  import { Skeleton, SkeletonList } from '../components/Skeleton';
+  import { useInfiniteScroll } from '../lib/useInfiniteScroll';
+  import { useDragAndDrop } from '../lib/useDragAndDrop';
+  import { highlightSearch } from '../lib/highlightSearch';
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
 
@@ -408,7 +414,7 @@ const Home: React.FC = () => {
 
     stopScriptureReading();
     setIsReadingScriptureAloud(true);
-    setNotificationStatus('Sending scripture to read-aloud engine...');
+    setNotificationStatus('Sending scripture to Gemini TTS...');
 
     try {
       const response = await fetch('/api/eden/read-aloud', {
@@ -418,7 +424,6 @@ const Home: React.FC = () => {
         },
         body: JSON.stringify({
           text: ttsInput,
-          voice: 'alloy',
         }),
       });
 
@@ -461,7 +466,7 @@ const Home: React.FC = () => {
       };
 
       await audio.play();
-      setNotificationStatus(`Reading aloud (${json.providerFlow || 'server-tts'}).`);
+      setNotificationStatus('Reading aloud (Gemini TTS).');
     } catch (error: any) {
       scriptureAudioRef.current = null;
       if (scriptureAudioUrlRef.current) {

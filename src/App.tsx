@@ -367,6 +367,7 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
+      <ToastProvider />
       <AppErrorBoundary>
         <AppContent />
       </AppErrorBoundary>

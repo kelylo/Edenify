@@ -253,6 +253,8 @@ const Home: React.FC = () => {
       return;
     }
 
+    const synthesis = window.speechSynthesis;
+
     const flattenedPassage = scripturePages.flat();
     const versesToRead = flattenedPassage.length > 0
       ? flattenedPassage
@@ -272,21 +274,31 @@ const Home: React.FC = () => {
 
     stopScriptureReading();
 
+    // Some browsers need an explicit resume call after prior cancellation/interruption.
+    synthesis.resume();
+
     const utterance = new SpeechSynthesisUtterance(textToRead);
     utterance.rate = 0.95;
     utterance.pitch = 1;
+    const voices = synthesis.getVoices();
+    const englishVoice = voices.find((voice) => /^en(-|$)/i.test(voice.lang));
+    if (englishVoice) {
+      utterance.voice = englishVoice;
+    }
     utterance.onend = () => {
       scriptureSpeechRef.current = null;
       setIsReadingScriptureAloud(false);
+      setNotificationStatus('Read aloud finished.');
     };
     utterance.onerror = () => {
       scriptureSpeechRef.current = null;
       setIsReadingScriptureAloud(false);
+      setNotificationStatus('Read aloud failed. Try once more in this browser.');
     };
 
     scriptureSpeechRef.current = utterance;
     setIsReadingScriptureAloud(true);
-    window.speechSynthesis.speak(utterance);
+    synthesis.speak(utterance);
   }, [activeScripturePage, bibleReading.passage, bibleReading.text, scripturePages, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
@@ -880,8 +892,8 @@ const Home: React.FC = () => {
     clearAllScheduledTimeouts();
 
     const now = Date.now();
+    const remindersEnabled = Boolean(user?.preferences.notifications.taskReminders);
     tasks.forEach((task) => {
-      if (!user?.preferences.notifications.taskReminders) return;
       if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
 
       const reminderDue = getFutureDue(task, now);
@@ -898,7 +910,7 @@ const Home: React.FC = () => {
 
       if (delay > 1000 * 60 * 60 * 26) return;
 
-      if (user?.preferences.notifications.taskReminders) {
+      if (remindersEnabled) {
         reminderTimeoutsRef.current[reminderKey] = window.setTimeout(() => {
           void triggerReminder(task, reminderKey);
         }, delay);

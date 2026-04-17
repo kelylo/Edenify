@@ -185,12 +185,22 @@ async function loadReadingPlan(): Promise<Record<number, string>> {
     console.log('[Bible Plan] Fetching /data/bible-plan.json...');
     const response = await fetch('/data/bible-plan.json');
     if (!response.ok) throw new Error(`bible-plan.json not found (status: ${response.status})`);
-    const data = await response.json() as { readings: Record<string, { passages: string }> };
+    const data = await response.json() as {
+      readings?: Record<string, { passages?: string } | string>;
+      plan?: Record<string, { passages?: string } | string>;
+      days?: Record<string, { passages?: string } | string>;
+    };
 
     readingPlan = {};
 
-    Object.entries(data.readings).forEach(([day, reading]) => {
-      readingPlan![Number(day)] = reading.passages;
+    const sourcePlan = data.readings || data.plan || data.days || {};
+
+    Object.entries(sourcePlan).forEach(([day, reading]) => {
+      const dayNumber = Number(day);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return;
+      const passages = typeof reading === 'string' ? reading : reading?.passages;
+      if (!passages || typeof passages !== 'string') return;
+      readingPlan![dayNumber] = passages;
     });
 
     const dayCount = Object.keys(readingPlan).length;

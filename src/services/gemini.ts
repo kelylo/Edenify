@@ -1,4 +1,4 @@
-const edenApiTimeoutMs = 9000;
+const edenApiTimeoutMs = 20000;
 
 type ChatHistory = { role: 'user' | 'model'; parts: { text: string }[] }[];
 
@@ -32,8 +32,8 @@ const appKnowledge = [
   'Profile has notification preferences, Bible reminder settings, and avatar settings.',
   'Layers screen has habits, guide cards, and suggestions that can become tasks.',
   'Focus supports ambient sounds and completion alarm selection/upload.',
-  'Bible reading plan spans 400 days with local progression fallback.',
-  'Local responses should handle most interactions instantly; Gemini is for deep reasoning only.',
+  'Bible reading plan spans 365 days with local progression fallback.',
+  'Prefer backend AI responses when available; local responses are failover when API is unavailable.',
 ];
 
 const layerKnowledge: Record<string, string[]> = {
@@ -2317,7 +2317,7 @@ export async function chatWithEden(history: ChatHistory, message: string) {
     return aiReply;
   }
 
-  const localReply = getLocalChatReply(message);
+  const localReply = getLocalChatReply(message, profile);
   if (localReply) {
     const personal = personalizeReply(localReply, profile);
     logConversation({

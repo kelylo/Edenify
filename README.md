@@ -86,24 +86,33 @@ Notes:
 - Render injects `PORT` automatically; this server already reads it.
 - If using free/sleeping instances, Telegram polling can pause when the service sleeps.
 
-### Keep App Awake (Telegram + Reminders Reliability)
+### Keep App Awake (No Cold Starts)
 
-This repo includes a Render cron service (`edenify-keepalive`) that runs every 10 minutes.
-
-What it pings:
+This repo includes a Render cron service (`edenify-keepalive`) that runs every 5 minutes and pings only:
 - `/api/health`
-- `/api/user/reminder-check`
 
 Required env for the cron service:
 - `KEEPALIVE_URL` = your web app URL (example: `https://edenify.onrender.com`)
 - optional fallback: `APP_URL`
 
-If you prefer external uptime tools, use either:
-- UptimeRobot (every 5-10 minutes)
-- Cron-job.org (every 5-10 minutes)
+You can also keep the app awake with an external monitor.
 
-Target URL for external pings:
-- `https://your-app.onrender.com/api/health`
+UptimeRobot setup:
+1. Create a new monitor of type **HTTP(s)**.
+2. URL: `https://your-app.onrender.com/api/health`
+3. Interval: **5 minutes**.
+4. Timeout: **30 seconds**.
+5. Save and confirm monitor status is Up.
+
+Cron-job.org setup:
+1. Create a new cronjob with method **GET**.
+2. URL: `https://your-app.onrender.com/api/health`
+3. Schedule expression: `*/5 * * * *`.
+4. Enable the cronjob and verify successful runs.
+
+Result:
+- App stays warm.
+- No wake-up delay from sleep.
 
 ## PWA Install (Mobile + Desktop)
 

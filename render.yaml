@@ -29,12 +29,12 @@ services:
   - type: cron
     name: edenify-keepalive
     runtime: node
-    schedule: "*/10 * * * *"
+    schedule: "*/5 * * * *"
     buildCommand: npm install
     startCommand: >-
-      node -e "const raw=(process.env.KEEPALIVE_URL||process.env.APP_URL||'').trim(); if(!raw){console.error('Set KEEPALIVE_URL (for example: https://your-app.onrender.com)'); process.exit(1);} const base=raw.replace(/\/+$/,''); const targets=[`${base}/api/health`,`${base}/api/user/reminder-check`]; Promise.all(targets.map(async (url)=>{const res=await fetch(url,{method:'GET'}); console.log('keepalive',url,res.status); if(!res.ok) throw new Error(`${url} -> ${res.status}`);})).then(()=>process.exit(0)).catch((e)=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
+      node -e "const raw=(process.env.KEEPALIVE_URL||process.env.APP_URL||'').trim(); if(!raw){console.error('Set KEEPALIVE_URL (for example: https://your-app.onrender.com)'); process.exit(1);} const url=`${raw.replace(/\/+$/,'')}/api/health`; fetch(url,{method:'GET'}).then((res)=>{console.log('keepalive',url,res.status); if(!res.ok) throw new Error(`${url} -> ${res.status}`); process.exit(0);}).catch((e)=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
     envVars:
       - key: KEEPALIVE_URL
-        sync: false
+        value: https://edenify-m92d.onrender.com
       - key: APP_URL
         sync: false

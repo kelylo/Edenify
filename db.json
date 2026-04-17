@@ -308,8 +308,8 @@
         "day": 1,
         "totalDays": 365,
         "highestCompletedDay": 0,
-        "passage": "Loading reading plan...",
-        "text": "Loading verses from bible-data.json",
+        "passage": "Genesis 1; Psalm 1",
+        "text": "In the beginning God created the heavens and the earth...",
         "completed": false,
         "currentStreak": 0,
         "lastCompletedDate": ""
@@ -425,8 +425,8 @@
         "day": 1,
         "totalDays": 400,
         "highestCompletedDay": 0,
-        "passage": "Loading reading plan...",
-        "text": "Loading verses from bible-data.json",
+        "passage": "Genesis 1; Psalm 1",
+        "text": "In the beginning God created the heavens and the earth...",
         "completed": false,
         "currentStreak": 0,
         "lastCompletedDate": ""
@@ -565,9 +565,9 @@
     },
     "poller": {
       "ownerId": "37592-dd1915",
-      "updatedAt": "2026-04-17T08:46:45.458Z"
+      "updatedAt": "2026-04-17T10:24:13.421Z"
     },
-    "lastPollAt": "2026-04-17T08:46:45.458Z",
+    "lastPollAt": "2026-04-17T10:24:13.421Z",
     "lastPollError": "",
     "lastPollErrorAt": ""
   },

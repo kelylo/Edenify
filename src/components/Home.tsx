@@ -3,6 +3,7 @@ import { useApp } from '../AppContext';
 import toast from 'react-hot-toast';
 import { Modal } from '../components/Modal';
 import { Skeleton, SkeletonList } from '../components/Skeleton';
+import { TaskList } from '../components/TaskList';
 import { useInfiniteScroll } from '../lib/useInfiniteScroll';
 import { useDragAndDrop } from '../lib/useDragAndDrop';
 import { highlightSearch } from '../lib/highlightSearch';
@@ -2237,62 +2238,15 @@ const Home: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            <AnimatePresence mode="popLayout">
-              {sortedTodayTasks.slice(0, 20).map((task, index) => {
-                const layer = layers.find((l) => l.id === task.layerId);
-                const failed = failedTaskIds.has(task.id);
-                const completed = isTaskCompletedForToday(task);
-                return (
-                  <motion.div
-                    key={task.id}
-                    id={getTaskCardDomId(task.id)}
-                    layout
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.96 }}
-                    transition={{ delay: index * 0.03 }}
-                    className={cn(
-                      'rounded-xl border px-4 py-3 flex items-center gap-3 bg-surface-container-lowest',
-                      completed ? 'opacity-60 border-transparent bg-surface-container-low' : 'border-outline-variant/35',
-                      failed && !completed ? 'border-red-300 bg-red-50/70' : '',
-                      focusedTaskId === task.id ? 'ring-2 ring-primary border-primary/60 shadow-[0_0_0_3px_rgba(150,68,7,0.15)]' : ''
-                    )}
-                  >
-                    <button aria-label={`Toggle task ${task.name}`} title="Toggle task" onClick={() => handleTaskToggleAction(task.id, 'home-task-list')} className={cn('transition-colors', completed ? 'text-primary' : 'text-secondary/35 hover:text-primary')}>
-                      {completed ? <CheckCircle2 size={22} /> : <Circle size={22} />}
-                    </button>
-
-                    <div className="min-w-0 flex-1">
-                      <p className={cn('text-sm font-medium text-on-surface truncate', completed && 'line-through text-secondary')}>{task.name}</p>
-                      <p className={cn('font-label text-[10px] uppercase tracking-[0.14em] font-bold mt-1', failed && !completed ? 'text-red-600' : 'text-outline')}>
-                        {layer?.name || 'General'} • {task.time}{failed && !completed ? ' • Failed (duration passed)' : ''}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      aria-label={`Modify task ${task.name}`}
-                      title="Modify task"
-                      onClick={() => openTaskDetails(task)}
-                      className="h-8 px-2.5 flex items-center gap-1.5 justify-center rounded-md border border-outline-variant/40 text-primary hover:bg-surface-container-low"
-                    >
-                      <Pencil size={13} />
-                      <span className="text-[10px] font-bold uppercase tracking-[0.12em]">Modify</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      aria-label={`Delete task ${task.name}`}
-                      title="Delete task"
-                      onClick={() => handleTaskDeleteAction(task.id, 'home-task-list')}
-                      className="h-8 w-8 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+            <TaskList
+              tasks={sortedTodayTasks}
+              layers={layers}
+              failedTaskIds={failedTaskIds}
+              focusedTaskId={focusedTaskId}
+              onToggleTask={handleTaskToggleAction}
+              onModifyTask={openTaskDetails}
+              onDeleteTask={handleTaskDeleteAction}
+            />
           </div>
         </motion.section>
       </main>

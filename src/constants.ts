@@ -19,6 +19,7 @@ export const INITIAL_USER: User = {
     customFocusPlaylistNames: [],
     customFocusPlaylistDataUrls: [],
     shuffleFocusPlaylist: false,
+    googleCalendarEnabled: false,
     notifications: {
       taskReminders: true,
       dailyScripture: true,

@@ -15,6 +15,9 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 GEMINI_API_KEY_1=your-primary-api-key
 GEMINI_API_KEY_2=your-secondary-api-key (optional backup)
 
+# Google Calendar OAuth (client-side token flow)
+VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
+
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token-from-botfather
 # OR use these alternatives:
@@ -43,6 +46,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 GEMINI_API_KEY_1=your-gemini-api-key
+VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 NODE_ENV=production
 PORT=6001

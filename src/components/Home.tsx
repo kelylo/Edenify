@@ -9,6 +9,7 @@ import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleRem
 import { playTaskAlarm, playBibleReminderAlarm, stopAlarm as stopPlaybackAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
+import { disconnectGoogleCalendar, getGoogleCalendarAccessToken, isGoogleCalendarConnected } from '../services/google-calendar';
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
@@ -200,6 +201,8 @@ const Home: React.FC = () => {
   const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
+  const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(() => isGoogleCalendarConnected());
   const isSubPageOpen = showScripturePage || showFocusPage;
 
   const todayDateKey = (() => {
@@ -280,11 +283,14 @@ const Home: React.FC = () => {
     const utterance = new SpeechSynthesisUtterance(textToRead);
     utterance.rate = 0.95;
     utterance.pitch = 1;
-    const voices = synthesis.getVoices();
-    const englishVoice = voices.find((voice) => /^en(-|$)/i.test(voice.lang));
-    if (englishVoice) {
-      utterance.voice = englishVoice;
-    }
+    const applyVoiceAndSpeak = () => {
+      const voices = synthesis.getVoices();
+      const englishVoice = voices.find((voice) => /^en(-|$)/i.test(voice.lang));
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+      }
+      synthesis.speak(utterance);
+    };
     utterance.onend = () => {
       scriptureSpeechRef.current = null;
       setIsReadingScriptureAloud(false);
@@ -298,7 +304,22 @@ const Home: React.FC = () => {
 
     scriptureSpeechRef.current = utterance;
     setIsReadingScriptureAloud(true);
-    synthesis.speak(utterance);
+
+    if (synthesis.getVoices().length === 0 && typeof synthesis.onvoiceschanged !== 'undefined') {
+      const onVoicesReady = () => {
+        synthesis.onvoiceschanged = null;
+        applyVoiceAndSpeak();
+      };
+      synthesis.onvoiceschanged = onVoicesReady;
+      window.setTimeout(() => {
+        if (scriptureSpeechRef.current === utterance && synthesis.speaking === false) {
+          onVoicesReady();
+        }
+      }, 250);
+      return;
+    }
+
+    applyVoiceAndSpeak();
   }, [activeScripturePage, bibleReading.passage, bibleReading.text, scripturePages, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
@@ -411,6 +432,42 @@ const Home: React.FC = () => {
       },
     });
   }, [tasks, user?.id]);
+
+  useEffect(() => {
+    setGoogleCalendarConnected(isGoogleCalendarConnected());
+  }, [user?.id, user?.preferences.googleCalendarEnabled]);
+
+  const connectGoogleCalendar = async () => {
+    setGoogleCalendarBusy(true);
+    try {
+      await getGoogleCalendarAccessToken(true);
+      setGoogleCalendarConnected(true);
+      setNotificationStatus('Google Calendar connected successfully.');
+    } catch (error: any) {
+      setNotificationStatus(error?.message || 'Could not connect Google Calendar.');
+    } finally {
+      setGoogleCalendarBusy(false);
+    }
+  };
+
+  const disconnectCalendar = () => {
+    disconnectGoogleCalendar();
+    setGoogleCalendarConnected(false);
+    setNotificationStatus('Google Calendar disconnected.');
+  };
+
+  const toggleGoogleCalendarSync = () => {
+    if (!user) return;
+    const nextEnabled = !Boolean(user.preferences.googleCalendarEnabled);
+    setUser({
+      ...user,
+      preferences: {
+        ...user.preferences,
+        googleCalendarEnabled: nextEnabled,
+      },
+    });
+    setNotificationStatus(nextEnabled ? 'Google Calendar sync enabled.' : 'Google Calendar sync disabled.');
+  };
 
   const stopActiveAlarm = () => {
     stopPlaybackAlarm();
@@ -1357,11 +1414,6 @@ const Home: React.FC = () => {
       return;
     }
 
-    if (!newTaskCustomAlarmDataUrl) {
-      setQuickAddError('Upload a reminder song first. This app now uses upload-only audio for task alarms.');
-      return;
-    }
-
     const resolvedTime = buildTimeFromEditor(newTaskTimeFormat, newTaskHourInput, newTaskMinuteInput, newTaskPeriod);
     if (!resolvedTime) {
       setQuickAddError('Please enter a valid time (hour and minute).');
@@ -1383,7 +1435,7 @@ const Home: React.FC = () => {
       alarmEnabled: newTaskAlarmEnabled,
       preferredMusic: newTaskPreferredMusic || newTaskCustomAlarmName || 'Uploaded Song',
       customAlarmAudioName: newTaskCustomAlarmName || 'Uploaded Song',
-      customAlarmAudioDataUrl: newTaskCustomAlarmDataUrl,
+      customAlarmAudioDataUrl: newTaskCustomAlarmDataUrl || undefined,
       estimatedDuration: newTaskDuration,
       durationStartedAt: new Date().toISOString(),
     };
@@ -1394,7 +1446,7 @@ const Home: React.FC = () => {
       return;
     }
 
-    if (due.getTime() <= Date.now()) {
+    if (newTaskRepeat === 'once' && due.getTime() <= Date.now()) {
       setQuickAddError('Please choose a future time. Past times cannot be used.');
       return;
     }
@@ -2288,7 +2340,7 @@ const Home: React.FC = () => {
                   )}
 
                   <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
-                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block">Reminder Song (Upload Only)</label>
+                    <label className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold block">Reminder Song (Optional Upload)</label>
                     {mediaPermissionGranted === false ? (
                       <div className="rounded-lg bg-red-50 border border-red-200 p-3">
                         <p className="text-xs text-red-700 font-semibold">Media access denied</p>
@@ -2315,7 +2367,7 @@ const Home: React.FC = () => {
                         {newTaskCustomAlarmName ? (
                           <p className="text-xs text-on-surface-variant">Selected: {newTaskCustomAlarmName}</p>
                         ) : (
-                          <p className="text-xs text-secondary">No upload yet. Upload a song to enable task alarm audio.</p>
+                          <p className="text-xs text-secondary">No upload yet. Task will use default alarm behavior.</p>
                         )}
                       </>
                     )}
@@ -2337,6 +2389,44 @@ const Home: React.FC = () => {
                         </button>
                       )}
                     </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-outline-variant/35 bg-surface-container-lowest p-4 space-y-3">
+                    <p className="font-label text-[10px] uppercase tracking-[0.16em] text-outline font-bold">Google Calendar Sync</p>
+                    <p className="text-xs text-secondary">Sync created/updated tasks to Google Calendar. Daily and weekly tasks are added as recurring events.</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={toggleGoogleCalendarSync}
+                        className={cn(
+                          'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.14em] border',
+                          user?.preferences.googleCalendarEnabled
+                            ? 'bg-primary text-white border-primary'
+                            : 'bg-surface-container-low text-secondary border-outline-variant/40'
+                        )}
+                      >
+                        {user?.preferences.googleCalendarEnabled ? 'Sync: On' : 'Sync: Off'}
+                      </button>
+                      {!googleCalendarConnected ? (
+                        <button
+                          type="button"
+                          onClick={connectGoogleCalendar}
+                          disabled={googleCalendarBusy}
+                          className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em] disabled:opacity-60"
+                        >
+                          {googleCalendarBusy ? 'Connecting...' : 'Connect Google'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={disconnectCalendar}
+                          className="px-3 py-1.5 rounded-full bg-surface-container-low text-primary text-[11px] font-bold uppercase tracking-[0.14em]"
+                        >
+                          Disconnect Google
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-on-surface-variant">Status: {googleCalendarConnected ? 'Connected' : 'Not connected'}</p>
                   </div>
 
                   <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">

@@ -73,6 +73,7 @@ Set these in the Render service settings:
 
 - `GEMINI_API_KEY_1`
 - `GEMINI_API_KEY_2`
+- `VITE_GOOGLE_CLIENT_ID` (Google OAuth Web Client ID for Calendar sync)
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`

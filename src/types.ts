@@ -83,6 +83,7 @@ export interface User {
     lastAlarmSongName?: string; // Remember last used alarm song
     lastAlarmSongDataUrl?: string; // Remember last used alarm audio
     mostRepeatedTasks?: Array<{ name: string; layerId: LayerId; priority: string; count: number }>; // Track for AI prediction
+    googleCalendarEnabled?: boolean;
     notifications: {
       taskReminders: boolean;
       dailyScripture: boolean;

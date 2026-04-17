@@ -448,7 +448,7 @@
     }
   },
   "telegram": {
-    "offset": 146642283,
+    "offset": 146642284,
     "byChatId": {
       "7875504612": {
         "tasks": [
@@ -565,9 +565,9 @@
     },
     "poller": {
       "ownerId": "37592-dd1915",
-      "updatedAt": "2026-04-17T07:57:28.965Z"
+      "updatedAt": "2026-04-17T08:46:45.458Z"
     },
-    "lastPollAt": "2026-04-17T07:57:28.965Z",
+    "lastPollAt": "2026-04-17T08:46:45.458Z",
     "lastPollError": "",
     "lastPollErrorAt": ""
   },

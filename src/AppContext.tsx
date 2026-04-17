@@ -4,6 +4,7 @@ import { INITIAL_USER, INITIAL_LAYERS, INITIAL_HABITS, INITIAL_TASKS, INITIAL_BI
 import { getDayReading, getTotalReadingDays } from './services/bible';
 import { loadBackendUserState, loadUserState, saveBackendUserState, saveUserState } from './services/supabase';
 import { syncNativeTaskAlarms } from './services/native-alarms';
+import { removeTaskFromGoogleCalendar, syncTaskToGoogleCalendar } from './services/google-calendar';
 
 interface AppState {
   user: User | null;
@@ -1090,6 +1091,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addTask = (task: Task) => {
     setTasks(prev => [...prev, task]);
+    void syncTaskToGoogleCalendar(task, user, false).catch((error) => {
+      console.warn('Google Calendar sync on task create failed:', error);
+    });
   };
 
   const toggleTask = (taskId: string) => {
@@ -1104,10 +1108,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTask = (taskId: string, updates: Partial<Task>) => {
-    setTasks((prev) => prev.map((task) => task.id === taskId ? { ...task, ...updates } : task));
+    let mergedTask: Task | null = null;
+    setTasks((prev) => prev.map((task) => {
+      if (task.id !== taskId) return task;
+      mergedTask = { ...task, ...updates };
+      return mergedTask;
+    }));
+
+    if (mergedTask) {
+      void syncTaskToGoogleCalendar(mergedTask, user, false).catch((error) => {
+        console.warn('Google Calendar sync on task update failed:', error);
+      });
+    }
   };
 
   const deleteTask = (taskId: string) => {
+    const taskToDelete = tasks.find((task) => task.id === taskId) || null;
     setTasks((prev) => prev.filter((task) => task.id !== taskId));
 
     // Track this deletion to prevent re-adding during merge for next 60 seconds
@@ -1128,6 +1144,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       recentlyDeletedTaskIdsRef.current = new Set(Object.keys(deletedTaskTombstonesRef.current));
       saveTaskDeletionTombstones(getAccountKey(user), deletedTaskTombstonesRef.current);
     }, 60000);
+
+    if (taskToDelete) {
+      void removeTaskFromGoogleCalendar(taskToDelete, user, false).catch((error) => {
+        console.warn('Google Calendar delete sync failed:', error);
+      });
+    }
   };
 
   const addJournalEntry = (entry: JournalEntry) => {

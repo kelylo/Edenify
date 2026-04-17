@@ -53,6 +53,7 @@ const defaultUserPreferences = {
   customFocusPlaylistNames: [],
   customFocusPlaylistDataUrls: [],
   shuffleFocusPlaylist: false,
+  googleCalendarEnabled: false,
   lastAlarmSongName: '',
   lastAlarmSongDataUrl: '',
   mostRepeatedTasks: [],
@@ -448,6 +449,39 @@ function parseBibleReminderTime(timeStr: string): { hours: number; minutes: numb
   }
 
   return null;
+}
+
+function toCalendarDateTime(task: TaskItem, timezone: string) {
+  const due = parseTaskDueDate(task);
+  if (!due) return null;
+
+  const start = due;
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  return {
+    start: {
+      dateTime: start.toISOString(),
+      timeZone: timezone || 'UTC',
+    },
+    end: {
+      dateTime: end.toISOString(),
+      timeZone: timezone || 'UTC',
+    },
+  };
+}
+
+function buildTaskRecurrence(task: TaskItem) {
+  if (task.repeat === 'daily') {
+    return ['RRULE:FREQ=DAILY'];
+  }
+
+  if (task.repeat === 'weekly') {
+    const baseDate = new Date(task.date || new Date().toISOString());
+    const weekdayMap = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    const byDay = weekdayMap[baseDate.getDay()] || weekdayMap[new Date().getDay()];
+    return [`RRULE:FREQ=WEEKLY;BYDAY=${byDay}`];
+  }
+
+  return undefined;
 }
 
 async function startServer() {
@@ -866,6 +900,139 @@ async function startServer() {
 
   app.get('/api/user/bible-reminder-check', async (req, res) => {
     res.redirect(307, '/api/user/reminder-check');
+  });
+
+  app.post('/api/google-calendar/upsert-task-event', async (req, res) => {
+    try {
+      const accessToken = String(req.body?.accessToken || '').trim();
+      const timezone = String(req.body?.timezone || 'UTC').trim() || 'UTC';
+      const userEmail = String(req.body?.userEmail || '').trim().toLowerCase();
+      const task = req.body?.task;
+
+      if (!accessToken) {
+        res.status(400).json({ success: false, error: 'accessToken is required.' });
+        return;
+      }
+
+      if (!task?.id || !task?.name || !task?.time) {
+        res.status(400).json({ success: false, error: 'task.id, task.name, and task.time are required.' });
+        return;
+      }
+
+      const dateTime = toCalendarDateTime(task, timezone);
+      if (!dateTime) {
+        res.status(400).json({ success: false, error: 'Task time is invalid for Calendar sync.' });
+        return;
+      }
+
+      const baseUrl = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+      const queryUrl = `${baseUrl}?privateExtendedProperty=${encodeURIComponent(`edenifyTaskId=${task.id}`)}&maxResults=1&singleEvents=false`;
+
+      const queryResponse = await fetch(queryUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!queryResponse.ok) {
+        const errorBody = await queryResponse.json().catch(() => null);
+        res.status(queryResponse.status).json({ success: false, error: errorBody?.error?.message || 'Google Calendar query failed.' });
+        return;
+      }
+
+      const queryJson = await queryResponse.json().catch(() => ({} as any));
+      const existing = Array.isArray(queryJson?.items) ? queryJson.items[0] : null;
+
+      const payload: any = {
+        summary: task.name,
+        description: `Created by Edenify\nUser: ${userEmail || 'unknown'}\nLayer: ${task.layerId || 'general'}\nPriority: ${task.priority || 'C'}\nRepeat: ${task.repeat || 'once'}`,
+        ...dateTime,
+        recurrence: buildTaskRecurrence(task),
+        extendedProperties: {
+          private: {
+            edenifyTaskId: task.id,
+            edenifyUserEmail: userEmail,
+          },
+        },
+      };
+
+      if (!payload.recurrence) {
+        delete payload.recurrence;
+      }
+
+      const method = existing?.id ? 'PATCH' : 'POST';
+      const writeUrl = existing?.id ? `${baseUrl}/${existing.id}` : baseUrl;
+
+      const writeResponse = await fetch(writeUrl, {
+        method,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const writeJson = await writeResponse.json().catch(() => null);
+      if (!writeResponse.ok) {
+        res.status(writeResponse.status).json({ success: false, error: writeJson?.error?.message || 'Google Calendar write failed.' });
+        return;
+      }
+
+      res.json({ success: true, eventId: writeJson?.id || null });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error?.message || 'Could not sync task to Google Calendar.' });
+    }
+  });
+
+  app.post('/api/google-calendar/delete-task-event', async (req, res) => {
+    try {
+      const accessToken = String(req.body?.accessToken || '').trim();
+      const taskId = String(req.body?.taskId || '').trim();
+
+      if (!accessToken || !taskId) {
+        res.status(400).json({ success: false, error: 'accessToken and taskId are required.' });
+        return;
+      }
+
+      const baseUrl = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+      const queryUrl = `${baseUrl}?privateExtendedProperty=${encodeURIComponent(`edenifyTaskId=${taskId}`)}&maxResults=20&singleEvents=false`;
+
+      const queryResponse = await fetch(queryUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!queryResponse.ok) {
+        const errorBody = await queryResponse.json().catch(() => null);
+        res.status(queryResponse.status).json({ success: false, error: errorBody?.error?.message || 'Google Calendar query failed.' });
+        return;
+      }
+
+      const queryJson = await queryResponse.json().catch(() => ({} as any));
+      const existingItems = Array.isArray(queryJson?.items) ? queryJson.items : [];
+
+      await Promise.all(
+        existingItems
+          .filter((item: any) => item?.id)
+          .map((item: any) =>
+            fetch(`${baseUrl}/${item.id}`, {
+              method: 'DELETE',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            })
+          )
+      );
+
+      res.json({ success: true, deleted: existingItems.length });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error?.message || 'Could not delete task event from Google Calendar.' });
+    }
   });
 
   app.post('/api/user/bible-reminder-sent', (req, res) => {

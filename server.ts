@@ -106,6 +106,42 @@ function writeDb(dbPath: string, db: DbShape) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
 }
 
+function getKeepaliveTargetUrl() {
+  const raw = String(process.env.RENDER_EXTERNAL_URL || process.env.KEEPALIVE_URL || process.env.APP_URL || '').trim();
+  if (!raw) return '';
+  return `${raw.replace(/\/+$/, '')}/api/health`;
+}
+
+function startBackendHeartbeat() {
+  const targetUrl = getKeepaliveTargetUrl();
+  if (!targetUrl) {
+    console.log('[keepalive] No public URL configured; backend heartbeat disabled.');
+    return;
+  }
+
+  const ping = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      console.log('[keepalive] ping', targetUrl, response.status);
+    } catch (error) {
+      console.warn('[keepalive] ping failed', error instanceof Error ? error.message : error);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  void ping();
+  setInterval(() => {
+    void ping();
+  }, 4 * 60 * 1000);
+}
+
 
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -1273,6 +1309,7 @@ async function startServer() {
   };
 
   listenWithFallback(PORT, 5);
+  startBackendHeartbeat();
 }
 
 startServer();

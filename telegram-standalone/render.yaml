@@ -11,7 +11,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: APP_URL
+        value: https://edenify-m92d.onrender.com/
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        value: 8360285407:AAFq6nJ0m0tA9gVYul0SJCZN7O6UEcGjyUw
       - key: BOT_TIMEZONE
         value: UTC

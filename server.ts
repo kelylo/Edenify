@@ -451,6 +451,27 @@ function getElevenLabsVoiceId() {
   return String(process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM').trim();
 }
 
+async function buildReadAloudNarration(sourceText: string) {
+  const text = String(sourceText || '').trim();
+  if (!text) return '';
+
+  const openAiScript = await generateWithOpenAI({
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: `Rewrite this scripture for spoken audio while preserving meaning exactly. Keep it natural, concise, and easy to listen to. Do not add commentary or new claims.\n\n${text}`,
+          },
+        ],
+      },
+    ],
+    systemInstruction: 'You prepare scripture text for spoken narration. Output plain text only.',
+  }).catch(() => null);
+
+  return String(openAiScript || text).trim();
+}
+
 async function generateSpeechWithElevenLabs(input: string) {
   const text = String(input || '').trim();
   if (!text) return null;
@@ -499,6 +520,60 @@ async function generateSpeechWithElevenLabs(input: string) {
     };
   }
 
+  return null;
+}
+
+async function generateSpeechWithOpenAI(input: string) {
+  const text = String(input || '').trim();
+  if (!text) return null;
+
+  const keys = getOpenAIKeyOrder();
+  if (keys.length === 0) {
+    throw new Error('No OpenAI API key is configured for TTS fallback.');
+  }
+
+  const ttsModels = ['gpt-4o-mini-tts', 'tts-1-hd', 'tts-1'];
+  let lastError: unknown;
+
+  for (const model of ttsModels) {
+    for (const key of keys) {
+      try {
+        const response = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            input: text,
+            voice: 'alloy',
+            response_format: 'mp3',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorJson = await response.json().catch(() => null);
+          lastError = errorJson?.error?.message || `OpenAI TTS HTTP ${response.status}`;
+          continue;
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.length > 0) {
+          return {
+            audioBase64: buffer.toString('base64'),
+            mimeType: 'audio/mpeg',
+            model,
+            voice: 'alloy',
+          };
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  if (lastError) throw lastError;
   return null;
 }
 
@@ -792,7 +867,16 @@ async function startServer() {
         return;
       }
 
-      const audio = await generateSpeechWithElevenLabs(text);
+      const narration = await buildReadAloudNarration(text);
+
+      let audio = await generateSpeechWithElevenLabs(narration).catch(() => null);
+      let providerFlow = 'openai-prep+elevenlabs-tts';
+
+      if (!audio) {
+        audio = await generateSpeechWithOpenAI(narration).catch(() => null);
+        providerFlow = 'openai-prep+openai-tts';
+      }
+
       if (!audio) {
         res.status(500).json({ success: false, error: 'Could not synthesize audio.' });
         return;
@@ -804,7 +888,7 @@ async function startServer() {
         mimeType: audio.mimeType,
         model: audio.model,
         voice: audio.voice,
-        providerFlow: 'elevenlabs-tts',
+        providerFlow,
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message || 'Could not synthesize read-aloud audio.' });

@@ -29,6 +29,10 @@ interface TodoItem {
 
 interface ChatProfile {
   scriptureStartDate?: string;
+  scriptureFirstTime?: string;
+  scriptureSecondTime?: string;
+  scriptureLastSentDatePart1?: string;
+  scriptureLastSentDatePart2?: string;
   defaultLayerId?: LayerId;
   defaultPriority?: Priority;
   defaultRepeat?: RepeatMode;
@@ -98,6 +102,8 @@ const timezoneLabel = (process.env.BOT_TIMEZONE || 'UTC').trim();
 const port = Number.parseInt(process.env.PORT || '8787', 10);
 const reminderLeadMs = 5 * 60 * 1000;
 const reminderIntervalMs = 30 * 1000;
+const defaultScriptureFirstTime = '06:30';
+const defaultScriptureSecondTime = '20:30';
 
 const bot = new Telegraf(botToken);
 
@@ -161,6 +167,42 @@ function parsePositiveInt(value: string): number | null {
   const numeric = Number.parseInt(value.trim(), 10);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
   return numeric;
+}
+
+function isHHmm(value: string): boolean {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value.trim());
+}
+
+function normalizeHHmm(value: string): string {
+  return value.trim();
+}
+
+function utcTimeHHmm(date = new Date()): string {
+  return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function utcDateKey(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function parseStartDateToIso(input: string): string | null {
+  const trimmed = input.trim();
+  const m = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+
+  const year = Number.parseInt(m[1], 10);
+  const month = Number.parseInt(m[2], 10);
+  const day = Number.parseInt(m[3], 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+  const date = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  if (Number.isNaN(date.getTime())) return null;
+
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) {
+    return null;
+  }
+
+  return date.toISOString();
 }
 
 function normalizeBookName(name: string): string {
@@ -421,9 +463,29 @@ async function findVersesByKeyword(query: string, limit = 5): Promise<BibleVerse
   return matched.slice(0, limit);
 }
 
-async function getScriptureForDay(day: number): Promise<string> {
+function splitPassages(passages: string): string[] {
+  const normalized = passages.replace(/\s+/g, ' ').trim();
+  if (!normalized) return [];
+
+  const primary = normalized.split(';').map((s) => s.trim()).filter(Boolean);
+  if (primary.length >= 2) return primary;
+
+  const alt = normalized.split(/\s+\|\s+/).map((s) => s.trim()).filter(Boolean);
+  if (alt.length >= 2) return alt;
+
+  const andSplit = normalized.split(/\s+and\s+/i).map((s) => s.trim()).filter(Boolean);
+  if (andSplit.length >= 2) return andSplit;
+
+  return [normalized];
+}
+
+async function getScripturePartsForDay(day: number): Promise<{ day: number; part1: string; part2: string }> {
   if (day < 1 || day > 366) {
-    return 'Please choose a day between 1 and 366.';
+    return {
+      day,
+      part1: 'Please choose a day between 1 and 366.',
+      part2: 'Please choose a day between 1 and 366.',
+    };
   }
 
   try {
@@ -431,47 +493,29 @@ async function getScriptureForDay(day: number): Promise<string> {
     const reading = plan.readings?.[String(day)];
 
     if (!reading?.passages) {
-      return `No reading found for day ${day}.`;
+      return {
+        day,
+        part1: `No reading found for day ${day}.`,
+        part2: `No reading found for day ${day}.`,
+      };
     }
 
-    const tokens = reading.passages
-      .split(';')
-      .map((token) => token.trim())
-      .filter(Boolean)
-      .slice(0, 3);
+    const tokens = splitPassages(reading.passages);
+    const first = tokens[0] || reading.passages.trim();
+    const second = tokens[1] || first;
 
-    const extracted: BibleVerseRow[] = [];
-    for (const token of tokens) {
-      const parsed = parseReference(token);
-      if (!parsed) continue;
-      const rows = await findVersesByReference(parsed, 8);
-      extracted.push(...rows);
-      if (extracted.length >= 12) break;
-    }
-
-    const sample = extracted.slice(0, 8);
-    if (sample.length === 0) {
-      return `Daily Scripture (Day ${day})\nPlan: ${reading.passages}`;
-    }
-
-    return [
-      `Daily Scripture (Day ${day})`,
-      `Plan: ${reading.passages}`,
-      '',
-      rowsToText(sample),
-    ].join('\n');
+    return {
+      day,
+      part1: first,
+      part2: second,
+    };
   } catch {
-    return 'I could not read Bible plan/database files. Check BIBLE_PLAN_PATH and BIBLE_DB_PATH.';
+    return {
+      day,
+      part1: 'I could not read Bible plan file. Check BIBLE_PLAN_PATH.',
+      part2: 'I could not read Bible plan file. Check BIBLE_PLAN_PATH.',
+    };
   }
-}
-
-async function sendAutoDailyScripture(ctx: Context, chatId: string): Promise<void> {
-  const store = await readStore();
-  const chat = store.chats[chatId] || { todos: [] };
-  const startDate = chat.profile?.scriptureStartDate || nowIso();
-  const day = getScriptureDayFromStart(startDate);
-  const scripture = await getScriptureForDay(day);
-  await ctx.reply(`SCRIPTURE\n${scripture}\n\nTimezone: ${timezoneLabel}`);
 }
 
 function updateStreak(profile: ChatProfile, completionDate: string): void {
@@ -547,6 +591,69 @@ async function processTaskReminders(): Promise<void> {
   }
 }
 
+async function processScriptureReminders(): Promise<void> {
+  const store = await readStore();
+  const now = new Date();
+  const nowTime = utcTimeHHmm(now);
+  const today = utcDateKey(now);
+  let dirty = false;
+
+  for (const [chatId, chat] of Object.entries(store.chats)) {
+    chat.profile = chat.profile || {};
+    const profile = chat.profile;
+
+    if (!profile.scriptureStartDate) profile.scriptureStartDate = nowIso();
+    if (!profile.scriptureFirstTime || !isHHmm(profile.scriptureFirstTime)) {
+      profile.scriptureFirstTime = defaultScriptureFirstTime;
+    }
+    if (!profile.scriptureSecondTime || !isHHmm(profile.scriptureSecondTime)) {
+      profile.scriptureSecondTime = defaultScriptureSecondTime;
+    }
+
+    const day = getScriptureDayFromStart(profile.scriptureStartDate, now);
+
+    if (nowTime === profile.scriptureFirstTime && profile.scriptureLastSentDatePart1 !== today) {
+      try {
+        await bot.telegram.sendMessage(
+          chatId,
+          [
+            'SCRIPTURE REMINDER',
+            `It is time to read Part 1 for Day ${day}.`,
+            'Use /scripture to view today\'s references.',
+            `Timezone: ${timezoneLabel}`,
+          ].join('\n')
+        );
+        profile.scriptureLastSentDatePart1 = today;
+        dirty = true;
+      } catch (error) {
+        console.warn('Scripture part 1 send failed:', error);
+      }
+    }
+
+    if (nowTime === profile.scriptureSecondTime && profile.scriptureLastSentDatePart2 !== today) {
+      try {
+        await bot.telegram.sendMessage(
+          chatId,
+          [
+            'SCRIPTURE REMINDER',
+            `It is time to read Part 2 for Day ${day}.`,
+            'Use /scripture to view today\'s references.',
+            `Timezone: ${timezoneLabel}`,
+          ].join('\n')
+        );
+        profile.scriptureLastSentDatePart2 = today;
+        dirty = true;
+      } catch (error) {
+        console.warn('Scripture part 2 send failed:', error);
+      }
+    }
+  }
+
+  if (dirty) {
+    await writeStore(store);
+  }
+}
+
 function taskDefaults(profile?: ChatProfile): { layerId: LayerId; priority: Priority; repeat: RepeatMode } {
   return {
     layerId: profile?.defaultLayerId || 'general',
@@ -601,16 +708,18 @@ bot.use(async (ctx: Context, next) => {
     if (!chat.profile.scriptureStartDate) {
       chat.profile.scriptureStartDate = nowIso();
     }
+    if (!chat.profile.scriptureFirstTime || !isHHmm(chat.profile.scriptureFirstTime)) {
+      chat.profile.scriptureFirstTime = defaultScriptureFirstTime;
+    }
+    if (!chat.profile.scriptureSecondTime || !isHHmm(chat.profile.scriptureSecondTime)) {
+      chat.profile.scriptureSecondTime = defaultScriptureSecondTime;
+    }
     if (!chat.profile.defaultLayerId) chat.profile.defaultLayerId = 'general';
     if (!chat.profile.defaultPriority) chat.profile.defaultPriority = 'C';
     if (!chat.profile.defaultRepeat) chat.profile.defaultRepeat = 'once';
   });
 
   await next();
-
-  if (command !== 'scripture') {
-    await sendAutoDailyScripture(ctx, chatId);
-  }
 });
 
 bot.start(async (ctx) => {
@@ -630,6 +739,8 @@ bot.start(async (ctx) => {
       '/edit 1 2026-04-18 07:00 | Updated text',
       '/remove 1',
       '/scripture',
+      '/scripturetimes 06:30 20:30',
+      '/scripturestart 2026-04-17',
       '/verse John 3:16',
     ].join('\n')
   );
@@ -652,12 +763,19 @@ bot.help(async (ctx) => {
       '/track',
       '/defaults <layer> <priority> <repeat>',
       '/scripture or /scripture <day>',
+      '/scripturetimes <HH:mm> <HH:mm>',
+      '/scripturestart <YYYY-MM-DD>',
       '/verse <reference or keyword>',
       '/find <reference or keyword>',
       '',
       `Layers: ${LAYERS.join(', ')}`,
       `Priority: ${PRIORITIES.join(', ')}`,
       `Repeat: ${REPEATS.join(', ')}`,
+      '',
+      'Scripture behavior:',
+      '- /scripture returns today\'s reference-only Part 1 and Part 2.',
+      '- /scripturetimes sets two daily reminder notifications.',
+      '- reminders prompt you to read and use /scripture.',
     ].join('\n')
   );
 });
@@ -879,8 +997,82 @@ bot.command('scripture', async (ctx) => {
     day = getScriptureDayFromStart(startDate);
   }
 
-  const scripture = await getScriptureForDay(day);
-  await ctx.reply(`${scripture}\n\nTimezone: ${timezoneLabel}`);
+  const parts = await getScripturePartsForDay(day);
+  await ctx.reply(
+    [
+      `SCRIPTURE DAY ${parts.day}`,
+      `Part 1: ${parts.part1}`,
+      `Part 2: ${parts.part2}`,
+      `Timezone: ${timezoneLabel}`,
+    ].join('\n')
+  );
+});
+
+bot.command('scripturetimes', async (ctx) => {
+  const payload = removeCommandPrefix(messageTextFrom(ctx), 'scripturetimes').trim();
+  const parts = payload.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) {
+    await ctx.reply('Usage: /scripturetimes <HH:mm> <HH:mm>. Example: /scripturetimes 06:30 20:30');
+    return;
+  }
+
+  const first = normalizeHHmm(parts[0]);
+  const second = normalizeHHmm(parts[1]);
+
+  if (!isHHmm(first) || !isHHmm(second)) {
+    await ctx.reply('Invalid time format. Use 24-hour HH:mm, for example 06:30 20:30');
+    return;
+  }
+
+  await mutateChat(chatIdFrom(ctx), (chat) => {
+    chat.profile = chat.profile || {};
+    chat.profile.scriptureFirstTime = first;
+    chat.profile.scriptureSecondTime = second;
+  });
+
+  await ctx.reply(
+    [
+      'Scripture schedule saved.',
+      'These times send reminder notifications only.',
+      `Part 1 time: ${first}`,
+      `Part 2 time: ${second}`,
+      'Use /scripture anytime to view today\'s references.',
+      `Timezone: ${timezoneLabel}`,
+    ].join('\n')
+  );
+});
+
+bot.command('scripturestart', async (ctx) => {
+  const payload = removeCommandPrefix(messageTextFrom(ctx), 'scripturestart').trim();
+  if (!payload) {
+    await ctx.reply('Usage: /scripturestart <YYYY-MM-DD>. Example: /scripturestart 2026-04-17');
+    return;
+  }
+
+  const startIso = parseStartDateToIso(payload);
+  if (!startIso) {
+    await ctx.reply('Invalid date format. Use YYYY-MM-DD, for example /scripturestart 2026-04-17');
+    return;
+  }
+
+  await mutateChat(chatIdFrom(ctx), (chat) => {
+    chat.profile = chat.profile || {};
+    chat.profile.scriptureStartDate = startIso;
+    chat.profile.scriptureLastSentDatePart1 = undefined;
+    chat.profile.scriptureLastSentDatePart2 = undefined;
+  });
+
+  const day = getScriptureDayFromStart(startIso, new Date());
+  const parts = await getScripturePartsForDay(day);
+  await ctx.reply(
+    [
+      `Scripture start date saved: ${payload}`,
+      `Current journey day: ${parts.day}`,
+      `Part 1: ${parts.part1}`,
+      `Part 2: ${parts.part2}`,
+      `Timezone: ${timezoneLabel}`,
+    ].join('\n')
+  );
 });
 
 bot.command('verse', async (ctx) => {
@@ -953,6 +1145,7 @@ async function start(): Promise<void> {
 
   setInterval(() => {
     void processTaskReminders();
+    void processScriptureReminders();
   }, reminderIntervalMs);
 
   console.log('[telegram-standalone] Bot started.');

@@ -9,6 +9,7 @@
     "build": "vite build",
     "build:web": "vite build",
     "start": "cross-env NODE_ENV=production npx tsx server.ts",
+    "keepalive": "node scripts/keepalive.cjs",
     "mobile:sync": "npm run build:web && npx cap sync",
     "mobile:android": "npm run mobile:sync && npx cap open android",
     "desktop:start": "npm run build:web && electron ./electron/main.cjs",

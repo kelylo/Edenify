@@ -93,9 +93,14 @@ Notes:
 This repo includes a Render cron service (`edenify-keepalive`) that runs every 5 minutes and pings only:
 - `/api/health`
 
+There is also a reusable keepalive robot script:
+- `npm run keepalive`
+
 Required env for the cron service:
 - `KEEPALIVE_URL` = your web app URL (example: `https://edenify.onrender.com`)
 - optional fallback: `APP_URL`
+
+If you leave `KEEPALIVE_URL` unset, the script will try `APP_URL` and `RENDER_EXTERNAL_URL`.
 
 You can also keep the app awake with an external monitor.
 
@@ -115,6 +120,10 @@ Cron-job.org setup:
 Result:
 - App stays warm.
 - No wake-up delay from sleep.
+
+Note:
+- A browser-side ping helps while the PWA is open.
+- Only the cron/external ping can keep a sleeping free Render service warm when nobody has the app open.
 
 ## PWA Install (Mobile + Desktop)
 

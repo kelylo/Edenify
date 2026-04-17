@@ -41,10 +41,9 @@ services:
     runtime: node
     schedule: "*/5 * * * *"
     buildCommand: npm install
-    startCommand: >-
-      node -e "const raw=(process.env.KEEPALIVE_URL||process.env.APP_URL||'').trim(); if(!raw){console.error('Set KEEPALIVE_URL (for example: https://your-app.onrender.com)'); process.exit(1);} const url=`${raw.replace(/\/+$/,'')}/api/health`; fetch(url,{method:'GET'}).then((res)=>{console.log('keepalive',url,res.status); if(!res.ok) throw new Error(`${url} -> ${res.status}`); process.exit(0);}).catch((e)=>{console.error('keepalive failed', e?.message||e); process.exit(1);});"
+    startCommand: node scripts/keepalive.cjs
     envVars:
       - key: KEEPALIVE_URL
-        value: https://edenify-m92d.onrender.com
+        sync: false
       - key: APP_URL
         sync: false

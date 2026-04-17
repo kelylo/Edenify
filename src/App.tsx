@@ -198,6 +198,57 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let heartbeatId: number | null = null;
+
+    const pingHeartbeat = async () => {
+      if (cancelled) return;
+      if (document.visibilityState !== 'visible') return;
+
+      try {
+        await fetch('/api/health', {
+          method: 'GET',
+          cache: 'no-store',
+        });
+      } catch {
+        // Ignore background heartbeat failures.
+      }
+    };
+
+    const startHeartbeat = () => {
+      if (heartbeatId) window.clearInterval(heartbeatId);
+      heartbeatId = window.setInterval(() => {
+        void pingHeartbeat();
+      }, 4 * 60 * 1000);
+    };
+
+    const stopHeartbeat = () => {
+      if (heartbeatId) {
+        window.clearInterval(heartbeatId);
+        heartbeatId = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void pingHeartbeat();
+        startHeartbeat();
+      } else {
+        stopHeartbeat();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    handleVisibility();
+
+    return () => {
+      cancelled = true;
+      stopHeartbeat();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!authReady || backendReady) return;
 
     const openAnywayTimer = window.setTimeout(() => {

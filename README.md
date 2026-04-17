@@ -122,6 +122,30 @@ If you leave `KEEPALIVE_URL` unset, the script will try `APP_URL` and `RENDER_EX
 
 You can also keep the app awake with an external monitor.
 
+### Keepalive Without Paid Render And Without Leaving VS Code Open
+
+This repository now includes a GitHub Actions scheduler:
+- .github/workflows/render-keepalive.yml
+
+How it works:
+- GitHub runs every 5 minutes in the cloud.
+- It calls your Render health endpoint at /api/health.
+- It does not depend on your laptop, browser, or VS Code being open.
+
+Setup (one time):
+1. Open your GitHub repository settings.
+2. Go to Secrets and variables -> Actions.
+3. Add a repository secret named KEEPALIVE_URL.
+4. Set value to your Render app base URL, for example: https://your-app.onrender.com
+
+Optional:
+- Run the workflow manually from the Actions tab using workflow_dispatch.
+- Keep Render cron keepalive enabled as extra redundancy.
+
+Important limitation:
+- Free-tier sleep behavior is platform-controlled, so this is best-effort, not a legal 100% uptime guarantee.
+- In practice, this greatly reduces sleep/cold-start events without requiring a paid plan.
+
 UptimeRobot setup:
 1. Create a new monitor of type **HTTP(s)**.
 2. URL: `https://your-app.onrender.com/api/health`

@@ -5,6 +5,7 @@
 
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { AppProvider, useApp } from './AppContext';
+import { ToastProvider } from './components/ToastProvider';
 import Layout from './components/Layout';
 import { AnimatePresence, motion } from 'motion/react';
 

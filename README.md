@@ -31,6 +31,20 @@ View your app in AI Studio: https://ai.studio/apps/748d00fe-b2c1-4d2b-9415-ceec8
 5. Run the app:
    `npm run dev`
 
+## Account-Scoped Sync
+
+Edenify ties your workspace data to the signed-in email address.
+
+That includes:
+- tasks
+- habits
+- alarms
+- reminder notifications
+- Bible reading progress
+- Google Calendar sync
+
+Your data is restored across reloads, hard refreshes, and other devices as long as you sign in with the same email.
+
 ## Build Production
 
 1. Build the app:
@@ -80,12 +94,15 @@ Set these in the Render service settings:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `TELEGRAM_BOT_TOKEN` (optional)
+- `OPENAI_API_KEY_1` / `OPENAI_API_KEY_2` or `OPENAI_API_KEY` for scripture narration prep and fallback TTS
+- `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` for the primary scripture read-aloud voice
 
 Notes:
 - Do not expose Gemini keys to frontend code; they are server-only.
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to frontend code; keep it server-only.
 - Keep backend secrets in `.env.server.local` for local dev and Render secret env vars in production.
-- Put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `.env.server.local`; do not add them to `.env.local`.
+- Read-aloud uses OpenAI to prep the scripture narration text, then ElevenLabs for the primary TTS voice. OpenAI TTS is only a server-side fallback.
+- Put `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and OpenAI keys in `.env.server.local`; do not add them to `.env.local`.
 - Render injects `PORT` automatically; this server already reads it.
 - If using free/sleeping instances, Telegram polling can pause when the service sleeps.
 

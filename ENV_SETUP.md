@@ -38,6 +38,7 @@ GEMINI_API_KEY_1=your-primary-api-key
 GEMINI_API_KEY_2=your-secondary-api-key (optional backup)
 GEMINI_API_KEY=your-fallback-api-key
 
+# OpenAI is used for scripture narration prep and TTS fallback
 OPENAI_API_KEY=your-openai-api-key
 
 # Telegram Bot Configuration
@@ -66,6 +67,7 @@ GEMINI_API_KEY_1=your-gemini-api-key
 VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 ELEVENLABS_API_KEY=your-elevenlabs-api-key
+OPENAI_API_KEY=your-openai-api-key
 NODE_ENV=production
 PORT=6001
 ```
@@ -133,4 +135,10 @@ These should be automatically included when deploying to Render.
 - Keep SUPABASE_SERVICE_ROLE_KEY private (only used server-side)
 - ANON_KEY can be public (used by frontend)
 - `VITE_GOOGLE_API_KEY` is not used by this app and should stay unset
+
+## Email-Scoped Sync
+
+Tasks, habits, reminder notifications, alarm audio, Bible reading progress, and Google Calendar sync are tied to the signed-in email.
+
+If you log in with the same email on another browser, device, or after a hard refresh, the app restores the same account-scoped state from local cache and cloud sync.
 

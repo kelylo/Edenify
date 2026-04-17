@@ -205,7 +205,6 @@ const Home: React.FC = () => {
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
   const scriptureAudioRef = useRef<HTMLAudioElement | null>(null);
-  const scriptureUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
@@ -385,53 +384,7 @@ const Home: React.FC = () => {
       scriptureAudioRef.current = null;
     }
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        // Ignore speech synthesis cancellation failures.
-      }
-    }
-    scriptureUtteranceRef.current = null;
-
     setIsReadingScriptureAloud(false);
-  }, []);
-
-  const speakWithBrowserFallback = useCallback(async (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      throw new Error('Read aloud is unavailable right now.');
-    }
-
-    return new Promise<void>((resolve, reject) => {
-      try {
-        window.speechSynthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95;
-        utterance.pitch = 1;
-        scriptureUtteranceRef.current = utterance;
-
-        utterance.onend = () => {
-          scriptureUtteranceRef.current = null;
-          setIsReadingScriptureAloud(false);
-          setNotificationStatus('Read aloud finished.');
-          resolve();
-        };
-
-        utterance.onerror = () => {
-          scriptureUtteranceRef.current = null;
-          setIsReadingScriptureAloud(false);
-          reject(new Error('Browser read aloud failed.'));
-        };
-
-        window.speechSynthesis.speak(utterance);
-        setNotificationStatus('Reading aloud with device voice fallback.');
-      } catch (error) {
-        scriptureUtteranceRef.current = null;
-        setIsReadingScriptureAloud(false);
-        reject(error);
-      }
-    });
   }, []);
 
   const readScriptureAloud = useCallback(async () => {
@@ -488,14 +441,10 @@ const Home: React.FC = () => {
       setNotificationStatus('Reading aloud with ElevenLabs voice.');
     } catch (error: any) {
       scriptureAudioRef.current = null;
-      try {
-        await speakWithBrowserFallback(ttsInput);
-      } catch {
-        setIsReadingScriptureAloud(false);
-        setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
-      }
+      setIsReadingScriptureAloud(false);
+      setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
     }
-  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, speakWithBrowserFallback, stopScriptureReading]);
+  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];

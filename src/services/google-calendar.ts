@@ -140,6 +140,30 @@ export function isGoogleCalendarConnected(userEmail?: string) {
   return Boolean(getStoredToken(userEmail));
 }
 
+export async function verifyGoogleCalendarToken(accessToken: string, expectedEmail?: string) {
+  const response = await fetch('/api/google-calendar/verify-token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      accessToken,
+      expectedEmail: String(expectedEmail || '').trim().toLowerCase(),
+    }),
+  });
+
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !json?.success) {
+    throw new Error(json?.error || 'Could not verify Google account identity.');
+  }
+
+  return {
+    email: String(json.email || '').trim().toLowerCase(),
+    emailVerified: Boolean(json.emailVerified),
+    matchesExpected: Boolean(json.matchesExpected),
+  };
+}
+
 async function postCalendarEndpoint(endpoint: string, body: Record<string, unknown>, interactiveAuth: boolean, userEmail?: string) {
   const token = await getGoogleCalendarAccessToken(interactiveAuth, userEmail);
   if (!token) return { success: false, skipped: true } as const;
@@ -184,5 +208,5 @@ export async function syncTaskToGoogleCalendar(task: Task, user: User | null, in
 export async function removeTaskFromGoogleCalendar(task: Task, user: User | null, interactiveAuth = false) {
   if (!user?.preferences.googleCalendarEnabled) return;
   const userEmail = String(user.email || '').trim().toLowerCase();
-  await postCalendarEndpoint('/api/google-calendar/delete-task-event', { taskId: task.id }, interactiveAuth, userEmail);
+  await postCalendarEndpoint('/api/google-calendar/delete-task-event', { taskId: task.id, userEmail }, interactiveAuth, userEmail);
 }

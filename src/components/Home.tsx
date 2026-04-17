@@ -9,7 +9,7 @@ import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleRem
 import { playTaskAlarm, playBibleReminderAlarm, stopAlarm as stopPlaybackAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
-import { disconnectGoogleCalendar, getGoogleCalendarAccessToken, isGoogleCalendarConnected } from '../services/google-calendar';
+import { disconnectGoogleCalendar, getGoogleCalendarAccessToken, isGoogleCalendarConnected, verifyGoogleCalendarToken } from '../services/google-calendar';
 import { LayerId, Task } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
@@ -226,6 +226,7 @@ const Home: React.FC = () => {
   const [detailTaskError, setDetailTaskError] = useState('');
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
   const [googleCalendarConnected, setGoogleCalendarConnected] = useState(() => isGoogleCalendarConnected(user?.email));
+  const [googleCalendarAccountEmail, setGoogleCalendarAccountEmail] = useState('');
   const isSubPageOpen = showScripturePage || showFocusPage;
 
   const todayDateKey = (() => {
@@ -551,15 +552,41 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     setGoogleCalendarConnected(isGoogleCalendarConnected(user?.email));
+    setGoogleCalendarAccountEmail('');
   }, [user?.id, user?.email, user?.preferences.googleCalendarEnabled]);
 
   const connectGoogleCalendar = async () => {
+    const appUserEmail = String(user?.email || '').trim().toLowerCase();
+    if (!appUserEmail) {
+      setNotificationStatus('Sign in with your Edenify account first so Google Calendar can be tied to your email.');
+      return;
+    }
+
     setGoogleCalendarBusy(true);
     try {
-      await getGoogleCalendarAccessToken(true, user?.email);
+      const token = await getGoogleCalendarAccessToken(true, appUserEmail);
+      const identity = await verifyGoogleCalendarToken(token, appUserEmail);
+
+      if (!identity.matchesExpected) {
+        disconnectGoogleCalendar(appUserEmail);
+        throw new Error(`Connected Google account (${identity.email || 'unknown'}) does not match your Edenify email (${appUserEmail}).`);
+      }
+
       setGoogleCalendarConnected(true);
-      setNotificationStatus('Google Calendar connected successfully.');
+      setGoogleCalendarAccountEmail(identity.email || appUserEmail);
+      if (user && !user.preferences.googleCalendarEnabled) {
+        setUser({
+          ...user,
+          preferences: {
+            ...user.preferences,
+            googleCalendarEnabled: true,
+          },
+        });
+      }
+      setNotificationStatus('Google Calendar connected and tied to your email.');
     } catch (error: any) {
+      setGoogleCalendarConnected(false);
+      setGoogleCalendarAccountEmail('');
       setNotificationStatus(error?.message || 'Could not connect Google Calendar.');
     } finally {
       setGoogleCalendarBusy(false);
@@ -569,12 +596,19 @@ const Home: React.FC = () => {
   const disconnectCalendar = () => {
     disconnectGoogleCalendar(user?.email);
     setGoogleCalendarConnected(false);
+    setGoogleCalendarAccountEmail('');
     setNotificationStatus('Google Calendar disconnected.');
   };
 
   const toggleGoogleCalendarSync = () => {
     if (!user) return;
     const nextEnabled = !Boolean(user.preferences.googleCalendarEnabled);
+
+    if (nextEnabled && !googleCalendarConnected) {
+      void connectGoogleCalendar();
+      return;
+    }
+
     setUser({
       ...user,
       preferences: {
@@ -583,10 +617,6 @@ const Home: React.FC = () => {
       },
     });
     setNotificationStatus(nextEnabled ? 'Google Calendar sync enabled.' : 'Google Calendar sync disabled.');
-
-    if (nextEnabled && !googleCalendarConnected) {
-      void connectGoogleCalendar();
-    }
   };
 
   const stopActiveAlarm = () => {
@@ -2646,7 +2676,9 @@ const Home: React.FC = () => {
                         </button>
                       )}
                     </div>
-                    <p className="text-xs text-on-surface-variant">Status: {googleCalendarConnected ? 'Connected' : 'Not connected'}</p>
+                    <p className="text-xs text-on-surface-variant">
+                      Status: {googleCalendarConnected ? (googleCalendarAccountEmail ? `Connected as ${googleCalendarAccountEmail}` : 'Connected') : 'Not connected'}
+                    </p>
                   </div>
 
                   <label className="flex items-center justify-between rounded-xl border border-outline-variant/35 bg-surface-container-lowest px-3 py-2">

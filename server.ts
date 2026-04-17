@@ -1060,6 +1060,44 @@ async function startServer() {
     res.redirect(307, '/api/user/reminder-check');
   });
 
+  app.post('/api/google-calendar/verify-token', async (req, res) => {
+    try {
+      const accessToken = String(req.body?.accessToken || '').trim();
+      const expectedEmail = String(req.body?.expectedEmail || '').trim().toLowerCase();
+
+      if (!accessToken) {
+        res.status(400).json({ success: false, error: 'accessToken is required.' });
+        return;
+      }
+
+      const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        res.status(response.status).json({ success: false, error: json?.error_description || json?.error || 'Google token verification failed.' });
+        return;
+      }
+
+      const email = String(json?.email || '').trim().toLowerCase();
+      const emailVerified = Boolean(json?.email_verified);
+      const matchesExpected = !expectedEmail || email === expectedEmail;
+
+      res.json({
+        success: true,
+        email,
+        emailVerified,
+        matchesExpected,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error?.message || 'Could not verify Google token.' });
+    }
+  });
+
   app.post('/api/google-calendar/upsert-task-event', async (req, res) => {
     try {
       const accessToken = String(req.body?.accessToken || '').trim();
@@ -1148,6 +1186,7 @@ async function startServer() {
     try {
       const accessToken = String(req.body?.accessToken || '').trim();
       const taskId = String(req.body?.taskId || '').trim();
+      const userEmail = String(req.body?.userEmail || '').trim().toLowerCase();
 
       if (!accessToken || !taskId) {
         res.status(400).json({ success: false, error: 'accessToken and taskId are required.' });
@@ -1155,7 +1194,11 @@ async function startServer() {
       }
 
       const baseUrl = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-      const queryUrl = `${baseUrl}?privateExtendedProperty=${encodeURIComponent(`edenifyTaskId=${taskId}`)}&maxResults=20&singleEvents=false`;
+      const privateFilters = [
+        `privateExtendedProperty=${encodeURIComponent(`edenifyTaskId=${taskId}`)}`,
+        userEmail ? `privateExtendedProperty=${encodeURIComponent(`edenifyUserEmail=${userEmail}`)}` : '',
+      ].filter(Boolean).join('&');
+      const queryUrl = `${baseUrl}?${privateFilters}&maxResults=20&singleEvents=false`;
 
       const queryResponse = await fetch(queryUrl, {
         method: 'GET',

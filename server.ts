@@ -451,6 +451,17 @@ function getElevenLabsVoiceId() {
   return String(process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM').trim();
 }
 
+function formatProviderError(error: unknown) {
+  if (!error) return 'unknown error';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message || 'unknown error';
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 async function buildReadAloudNarration(sourceText: string) {
   const text = String(sourceText || '').trim();
   if (!text) return '';
@@ -869,16 +880,60 @@ async function startServer() {
 
       const narration = await buildReadAloudNarration(text);
 
-      let audio = await generateSpeechWithElevenLabs(narration).catch(() => null);
+      let elevenLabsError = '';
+      let openAiError = '';
+
+      let audio = await generateSpeechWithElevenLabs(narration).catch((error) => {
+        elevenLabsError = formatProviderError(error);
+        return null;
+      });
       let providerFlow = 'openai-prep+elevenlabs-tts';
 
       if (!audio) {
-        audio = await generateSpeechWithOpenAI(narration).catch(() => null);
+        audio = await generateSpeechWithOpenAI(narration).catch((error) => {
+          openAiError = formatProviderError(error);
+          return null;
+        });
         providerFlow = 'openai-prep+openai-tts';
       }
 
+      if (!audio && narration !== text) {
+        audio = await generateSpeechWithElevenLabs(text).catch((error) => {
+          if (!elevenLabsError) elevenLabsError = formatProviderError(error);
+          return null;
+        });
+        if (audio) {
+          providerFlow = 'elevenlabs-tts-direct';
+        }
+      }
+
+      if (!audio && narration !== text) {
+        audio = await generateSpeechWithOpenAI(text).catch((error) => {
+          if (!openAiError) openAiError = formatProviderError(error);
+          return null;
+        });
+        if (audio) {
+          providerFlow = 'openai-tts-direct';
+        }
+      }
+
       if (!audio) {
-        res.status(500).json({ success: false, error: 'Could not synthesize audio.' });
+        const combinedError = [
+          `Could not synthesize audio.`,
+          `ElevenLabs: ${elevenLabsError || 'no audio returned'}.`,
+          `OpenAI: ${openAiError || 'no audio returned'}.`,
+        ].join(' ');
+
+        res.status(500).json({
+          success: false,
+          error: combinedError,
+          diagnostics: {
+            elevenLabsError: elevenLabsError || null,
+            openAiError: openAiError || null,
+            hasElevenLabsKey: Boolean(getElevenLabsApiKey()),
+            hasOpenAIKeys: hasOpenAIKeys(),
+          },
+        });
         return;
       }
 

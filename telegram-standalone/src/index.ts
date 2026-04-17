@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { createServer } from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -94,6 +95,7 @@ const storePath = path.resolve(projectRoot, process.env.BOT_STORE_PATH || path.j
 const biblePlanPath = path.resolve(projectRoot, process.env.BIBLE_PLAN_PATH || path.join('data', 'bible-plan.json'));
 const bibleDbPath = path.resolve(projectRoot, process.env.BIBLE_DB_PATH || path.join('data', 'bible-data.json'));
 const timezoneLabel = (process.env.BOT_TIMEZONE || 'UTC').trim();
+const port = Number.parseInt(process.env.PORT || '8787', 10);
 const reminderLeadMs = 5 * 60 * 1000;
 const reminderIntervalMs = 30 * 1000;
 
@@ -930,6 +932,24 @@ async function start(): Promise<void> {
   await loadBiblePlan();
   await loadBibleVerses();
   await bot.launch();
+
+  const webServer = createServer((req, res) => {
+    const url = req.url || '/';
+    if (url === '/healthz' || url === '/api/health') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ok: true, service: 'edenify-telegram-standalone' }));
+      return;
+    }
+
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('edenify-telegram-standalone is running');
+  });
+
+  webServer.listen(port, () => {
+    console.log(`[telegram-standalone] Health endpoint listening on :${port}`);
+  });
 
   setInterval(() => {
     void processTaskReminders();

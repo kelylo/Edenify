@@ -59,10 +59,38 @@ This folder includes its own Render blueprint at `telegram-standalone/render.yam
 
 1. Push repository to GitHub.
 2. In Render, create **Blueprint** and point to this repo.
-3. Confirm worker service `edenify-telegram-standalone`.
+3. Confirm web service `edenify-telegram-standalone`.
 4. Set environment variable:
    - `TELEGRAM_BOT_TOKEN`
-5. Deploy and keep it running 24/7.
+5. Deploy.
+
+Health URLs after deploy:
+
+- `/healthz`
+- `/api/health`
+
+## Keep Free Tier Awake (No Laptop Needed)
+
+If you are on a free/sleeping tier, configure external pings every 5-10 minutes.
+
+Option A: UptimeRobot
+
+1. Create an HTTP(s) monitor.
+2. URL: `https://<your-render-service>.onrender.com/healthz`
+3. Interval: 5 minutes (or 10 minutes).
+
+Option B: Cron-job.org
+
+1. Create a recurring job.
+2. URL: `https://<your-render-service>.onrender.com/healthz`
+3. Method: `GET`
+4. Schedule: every 5-10 minutes.
+
+Result:
+
+- Service stays warm most of the time.
+- Telegram bot remains available 24/7 without your PC being on.
+- Wake-up delay is minimized on free tier.
 
 ## Notes
 
@@ -72,4 +100,3 @@ This folder includes its own Render blueprint at `telegram-standalone/render.yam
 - You can override paths with `BOT_STORE_PATH`, `BIBLE_PLAN_PATH`, and `BIBLE_DB_PATH`.
 - This bot does not depend on Edenify web routes or app state sync, so it runs independently.
 - The bot timezone label defaults to UTC and can be changed with `BOT_TIMEZONE`.
-    

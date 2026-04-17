@@ -85,6 +85,7 @@ Notes:
 - Do not expose Gemini keys to frontend code; they are server-only.
 - Do not expose `SUPABASE_SERVICE_ROLE_KEY` to frontend code; keep it server-only.
 - Keep backend secrets in `.env.server.local` for local dev and Render secret env vars in production.
+- Put `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `.env.server.local`; do not add them to `.env.local`.
 - Render injects `PORT` automatically; this server already reads it.
 - If using free/sleeping instances, Telegram polling can pause when the service sleeps.
 

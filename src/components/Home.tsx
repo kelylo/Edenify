@@ -351,9 +351,6 @@ const Home: React.FC = () => {
       scriptureAudioRef.current.currentTime = 0;
       scriptureAudioRef.current = null;
     }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
     setIsReadingScriptureAloud(false);
   }, []);
 
@@ -373,7 +370,7 @@ const Home: React.FC = () => {
 
     stopScriptureReading();
     setIsReadingScriptureAloud(true);
-    setNotificationStatus('Generating natural voice with OpenAI...');
+    setNotificationStatus('Generating ElevenLabs voice...');
 
     try {
       const response = await fetch('/api/eden/read-aloud', {
@@ -389,7 +386,7 @@ const Home: React.FC = () => {
 
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.success || !json?.audioBase64) {
-        throw new Error(json?.error || 'Could not generate natural read-aloud audio.');
+        throw new Error(json?.error || 'Could not generate read-aloud audio.');
       }
 
       const audio = new Audio(`data:${json.mimeType || 'audio/mpeg'};base64,${json.audioBase64}`);
@@ -408,31 +405,8 @@ const Home: React.FC = () => {
       };
 
       await audio.play();
-      setNotificationStatus('Reading aloud with OpenAI voice.');
+      setNotificationStatus('Reading aloud with ElevenLabs voice.');
     } catch (error: any) {
-      // Fallback to browser speech so the button always does something useful.
-      try {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(ttsInput);
-          utterance.rate = 0.96;
-          utterance.pitch = 1;
-          utterance.onend = () => {
-            setIsReadingScriptureAloud(false);
-            setNotificationStatus('Read aloud finished.');
-          };
-          utterance.onerror = () => {
-            setIsReadingScriptureAloud(false);
-            setNotificationStatus('Read aloud failed.');
-          };
-          window.speechSynthesis.speak(utterance);
-          setNotificationStatus('Read aloud fallback enabled (device voice).');
-          return;
-        }
-      } catch {
-        // Ignore fallback errors and surface original issue below.
-      }
-
       scriptureAudioRef.current = null;
       setIsReadingScriptureAloud(false);
       setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');

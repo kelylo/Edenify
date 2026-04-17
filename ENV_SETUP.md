@@ -43,6 +43,10 @@ OPENAI_API_KEY=your-openai-api-key
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token-from-botfather
 RESEND_API_KEY=your-resend-api-key
+
+# ElevenLabs TTS (server-only)
+ELEVENLABS_API_KEY=your-elevenlabs-api-key
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM
 ```
 
 ## Production Deployment (Render)
@@ -61,6 +65,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 GEMINI_API_KEY_1=your-gemini-api-key
 VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+ELEVENLABS_API_KEY=your-elevenlabs-api-key
 NODE_ENV=production
 PORT=6001
 ```

@@ -21,6 +21,8 @@ let isLoaded = false;
 let readingPlan: Record<number, string> | null = null;
 let planLoaded = false;
 const PLAN_CACHE_KEY = 'edenify-bible-plan-v2'; // Cache bust on version change
+let verseSearchIndex: Map<string, number[]> | null = null;
+let verseSearchText: string[] = [];
 
 async function loadBibleDataFromJson(): Promise<BibleVerse[]> {
   const response = await fetch('/bible-data.json');
@@ -56,6 +58,124 @@ async function loadBibleData(): Promise<BibleVerse[]> {
     console.error('Error loading Bible data:', error);
     return [];
   }
+}
+
+function tokenize(value: string) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s:]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function ensureVerseSearchIndex(verses: BibleVerse[]) {
+  if (verseSearchIndex && verseSearchText.length === verses.length) return;
+
+  const index = new Map<string, number[]>();
+  const searchableText: string[] = new Array(verses.length).fill('');
+
+  verses.forEach((verse, idx) => {
+    const ref = `${verse.bookName} ${verse.chapter}:${verse.verse}`;
+    const chapterRef = `${verse.bookName} ${verse.chapter}`;
+    const text = `${ref} ${chapterRef} ${verse.text}`.toLowerCase();
+    searchableText[idx] = text;
+
+    const tokens = new Set<string>([...tokenize(text), verse.bookName.toLowerCase(), String(verse.chapter), `${verse.chapter}:${verse.verse}`]);
+    tokens.forEach((token) => {
+      const bucket = index.get(token) || [];
+      bucket.push(idx);
+      index.set(token, bucket);
+    });
+  });
+
+  verseSearchIndex = index;
+  verseSearchText = searchableText;
+}
+
+export async function searchVersesFast(keyword: string, limit = 30): Promise<BibleVerse[]> {
+  const verses = await loadBibleData();
+  const query = String(keyword || '').trim().toLowerCase();
+  if (!query) return [];
+
+  ensureVerseSearchIndex(verses);
+
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return [];
+
+  const candidateScores = new Map<number, number>();
+  tokens.forEach((token) => {
+    const exactHits = verseSearchIndex?.get(token) || [];
+    exactHits.forEach((index) => {
+      candidateScores.set(index, (candidateScores.get(index) || 0) + 5);
+    });
+
+    // Prefix matches for speed and flexible partial searches.
+    if (!verseSearchIndex) return;
+    for (const [indexedToken, indices] of verseSearchIndex.entries()) {
+      if (!indexedToken.startsWith(token) || token.length < 2) continue;
+      indices.forEach((index) => {
+        candidateScores.set(index, (candidateScores.get(index) || 0) + 2);
+      });
+    }
+  });
+
+  const ranked = Array.from(candidateScores.entries())
+    .map(([index, score]) => {
+      const hay = verseSearchText[index] || '';
+      const phraseBoost = hay.includes(query) ? 8 : 0;
+      return { index, score: score + phraseBoost };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(10, limit * 3));
+
+  const filtered = ranked
+    .map((entry) => verses[entry.index])
+    .filter((verse) => verse && verseSearchText[verse.verseId].includes(query));
+
+  if (filtered.length > 0) {
+    return filtered.slice(0, limit);
+  }
+
+  // Last-resort fallback for unusual query shapes.
+  const fallback = verses.filter((v) => `${v.bookName} ${v.chapter}:${v.verse} ${v.text}`.toLowerCase().includes(query));
+  return fallback.slice(0, limit);
+}
+
+export async function searchBibleByReference(query: string): Promise<{ mode: 'verse' | 'chapter'; label: string; verses: BibleVerse[] } | null> {
+  const trimmed = String(query || '').trim();
+  if (!trimmed) return null;
+
+  const verseMatch = trimmed.match(/^([1-3]?\s?[a-zA-Z]+(?:\s+[a-zA-Z]+)*)\s+(\d{1,3}):(\d{1,3})$/);
+  if (verseMatch) {
+    const book = verseMatch[1].replace(/\s+/g, ' ').trim();
+    const chapter = Number(verseMatch[2]);
+    const verse = Number(verseMatch[3]);
+    const hit = await getVerse(book, chapter, verse);
+    if (hit) {
+      return {
+        mode: 'verse',
+        label: `${hit.bookName} ${hit.chapter}:${hit.verse}`,
+        verses: [hit],
+      };
+    }
+  }
+
+  const chapterMatch = trimmed.match(/^([1-3]?\s?[a-zA-Z]+(?:\s+[a-zA-Z]+)*)\s+(\d{1,3})$/);
+  if (chapterMatch) {
+    const book = chapterMatch[1].replace(/\s+/g, ' ').trim();
+    const chapter = Number(chapterMatch[2]);
+    const verses = await getChapter(book, chapter);
+    if (verses.length > 0) {
+      return {
+        mode: 'chapter',
+        label: `${book} ${chapter}`,
+        verses,
+      };
+    }
+  }
+
+  return null;
 }
 
 export async function getRandomVerse(): Promise<BibleVerse | null> {
@@ -102,9 +222,7 @@ export async function getSuggestedVerse(): Promise<{ verse: BibleVerse; suggesti
 }
 
 export async function searchVerses(keyword: string, limit: number = 10): Promise<BibleVerse[]> {
-  const verses = await loadBibleData();
-  const results = verses.filter(v => v.text.toLowerCase().includes(keyword.toLowerCase()));
-  return results.slice(0, limit);
+  return searchVersesFast(keyword, limit);
 }
 
 function formatPassage(start: BibleVerse, end: BibleVerse) {

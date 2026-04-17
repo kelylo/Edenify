@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
 import { format } from 'date-fns';
-import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Play, Plus, RefreshCw, Search, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
-import { BibleVerse, getChapter, getSuggestedVerse, searchVerses } from '../services/bible';
+import { BibleVerse, getChapter, getSuggestedVerse, searchBibleByReference, searchVerses, searchVersesFast } from '../services/bible';
 import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync } from '../services/notifications';
 import { playTaskAlarm, playBibleReminderAlarm, stopAlarm as stopPlaybackAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
@@ -154,6 +154,7 @@ const Home: React.FC = () => {
   const [showScripturePage, setShowScripturePage] = useState(false);
   const [showFocusPage, setShowFocusPage] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
@@ -201,6 +202,16 @@ const Home: React.FC = () => {
   const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchDomain, setSearchDomain] = useState<'all' | 'bible' | 'tasks'>('all');
+  const [searchingBible, setSearchingBible] = useState(false);
+  const [bibleSearchLabel, setBibleSearchLabel] = useState('');
+  const [bibleSearchResults, setBibleSearchResults] = useState<BibleVerse[]>([]);
+  const [editingSearchTaskId, setEditingSearchTaskId] = useState<string | null>(null);
+  const [editingSearchTaskName, setEditingSearchTaskName] = useState('');
+  const [editingSearchTaskTime, setEditingSearchTaskTime] = useState('');
+  const [editingSearchTaskRepeat, setEditingSearchTaskRepeat] = useState<'once' | 'daily' | 'weekly'>('once');
+  const [editingSearchTaskPriority, setEditingSearchTaskPriority] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('C');
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
   const [googleCalendarConnected, setGoogleCalendarConnected] = useState(() => isGoogleCalendarConnected());
   const isSubPageOpen = showScripturePage || showFocusPage;
@@ -693,6 +704,94 @@ const Home: React.FC = () => {
     }, 7000);
     return () => window.clearTimeout(id);
   }, [toastReminder]);
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const searchedTasks = useMemo(() => {
+    if (!normalizedSearch || (searchDomain !== 'all' && searchDomain !== 'tasks')) return [] as Task[];
+
+    return tasks
+      .filter((task) => {
+        const layer = layers.find((item) => item.id === task.layerId);
+        const hay = `${task.name} ${task.time} ${task.repeat || 'once'} ${task.priority} ${layer?.name || ''}`.toLowerCase();
+        return hay.includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        const aDone = isTaskCompletedForToday(a) ? 1 : 0;
+        const bDone = isTaskCompletedForToday(b) ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+        return a.time.localeCompare(b.time);
+      })
+      .slice(0, 40);
+  }, [layers, normalizedSearch, searchDomain, tasks]);
+
+  useEffect(() => {
+    if (!showGlobalSearch) return;
+    if (!normalizedSearch || (searchDomain !== 'all' && searchDomain !== 'bible')) {
+      setBibleSearchLabel('');
+      setBibleSearchResults([]);
+      return;
+    }
+
+    let active = true;
+    const timeoutId = window.setTimeout(async () => {
+      setSearchingBible(true);
+      try {
+        const direct = await searchBibleByReference(searchQuery);
+        if (!active) return;
+
+        if (direct) {
+          setBibleSearchLabel(direct.mode === 'chapter' ? `Chapter: ${direct.label}` : `Verse: ${direct.label}`);
+          setBibleSearchResults(direct.verses.slice(0, 120));
+          return;
+        }
+
+        const verses = await searchVersesFast(searchQuery, 80);
+        if (!active) return;
+        setBibleSearchLabel(verses.length > 0 ? 'Verses' : '');
+        setBibleSearchResults(verses);
+      } catch {
+        if (!active) return;
+        setBibleSearchLabel('');
+        setBibleSearchResults([]);
+      } finally {
+        if (active) setSearchingBible(false);
+      }
+    }, 120);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [normalizedSearch, searchDomain, searchQuery, showGlobalSearch]);
+
+  const openTaskEditorFromSearch = (task: Task) => {
+    setEditingSearchTaskId(task.id);
+    setEditingSearchTaskName(task.name);
+    setEditingSearchTaskTime(task.time);
+    setEditingSearchTaskRepeat(task.repeat || 'once');
+    setEditingSearchTaskPriority(task.priority);
+  };
+
+  const saveTaskEditorFromSearch = () => {
+    if (!editingSearchTaskId) return;
+
+    const normalizedTime = parseAnyTimeTo24(editingSearchTaskTime);
+    if (!normalizedTime) {
+      setNotificationStatus('Please enter a valid time for task edit (HH:MM or H:MM AM/PM).');
+      return;
+    }
+
+    updateTask(editingSearchTaskId, {
+      name: editingSearchTaskName.trim() || 'Untitled task',
+      time: normalizedTime,
+      repeat: editingSearchTaskRepeat,
+      priority: editingSearchTaskPriority,
+    });
+
+    setEditingSearchTaskId(null);
+    setNotificationStatus('Task updated from search.');
+  };
 
   const stopTaskPreview = () => {
     if (taskPreviewEndRef.current) {
@@ -1691,15 +1790,26 @@ const Home: React.FC = () => {
             </div>
           </div>
 
-          <button
-            aria-label="Notifications"
-            title="Notifications"
-            onClick={toggleNotifications}
-            className="relative h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary hover:opacity-80 transition-opacity"
-          >
-            <span className="material-symbols-outlined text-[20px]">{notificationsEnabled ? 'notifications_active' : 'notifications_off'}</span>
-            <span className={cn('absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full', notificationsEnabled ? 'bg-emerald-500' : 'bg-outline')} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label="Search"
+              title="Search"
+              onClick={() => setShowGlobalSearch(true)}
+              className="h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary hover:opacity-80 transition-opacity"
+            >
+              <Search size={18} />
+            </button>
+
+            <button
+              aria-label="Notifications"
+              title="Notifications"
+              onClick={toggleNotifications}
+              className="relative h-10 w-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary hover:opacity-80 transition-opacity"
+            >
+              <span className="material-symbols-outlined text-[20px]">{notificationsEnabled ? 'notifications_active' : 'notifications_off'}</span>
+              <span className={cn('absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full', notificationsEnabled ? 'bg-emerald-500' : 'bg-outline')} />
+            </button>
+          </div>
         </div>
       </header>
       )}
@@ -2492,6 +2602,182 @@ const Home: React.FC = () => {
                     </button>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showGlobalSearch && !isSubPageOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowGlobalSearch(false)}
+            className="fixed inset-0 z-[85] bg-black/45 backdrop-blur-sm flex items-start justify-center p-5"
+          >
+            <motion.div
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 220 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-4xl overflow-hidden rounded-[2rem] bg-surface-container-low border border-outline-variant/25 shadow-[0_20px_50px_rgba(44,33,24,0.08)] max-h-[88vh] overflow-y-auto no-scrollbar"
+            >
+              <div className="p-4 sm:p-5 border-b border-outline-variant/20 flex items-center gap-3 sticky top-0 bg-surface-container-low z-10">
+                <Search size={18} className="text-primary" />
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search verses (John 3:16, Psalm 23), chapters, or tasks"
+                  className="flex-1 bg-transparent text-sm text-on-surface outline-none"
+                />
+                <button
+                  onClick={() => setShowGlobalSearch(false)}
+                  className="h-9 w-9 rounded-full hover:bg-surface-container-lowest flex items-center justify-center text-primary"
+                  aria-label="Close search"
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="px-4 sm:px-5 pt-3 flex items-center gap-2">
+                {(['all', 'bible', 'tasks'] as const).map((domain) => (
+                  <button
+                    key={domain}
+                    onClick={() => setSearchDomain(domain)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full text-[10px] uppercase tracking-[0.14em] font-bold border',
+                      searchDomain === domain
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-surface-container-lowest text-secondary border-outline-variant/40'
+                    )}
+                  >
+                    {domain}
+                  </button>
+                ))}
+                {searchingBible && <span className="text-[11px] text-secondary">Searching Bible...</span>}
+              </div>
+
+              <div className="p-4 sm:p-5 space-y-6">
+                {(searchDomain === 'all' || searchDomain === 'bible') && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-primary">Bible Results</h3>
+                      {bibleSearchLabel && <p className="text-[11px] text-secondary font-semibold">{bibleSearchLabel}</p>}
+                    </div>
+                    {!normalizedSearch && <p className="text-sm text-secondary">Type a verse, chapter, or keyword to search Scripture at high speed.</p>}
+                    {normalizedSearch && bibleSearchResults.length === 0 && !searchingBible && (
+                      <p className="text-sm text-secondary">No verse match yet. Try John 3:16, Psalm 23, or faith.</p>
+                    )}
+                    {bibleSearchResults.length > 0 && (
+                      <div className="max-h-[34vh] overflow-y-auto rounded-xl border border-outline-variant/20 divide-y divide-outline-variant/20">
+                        {bibleSearchResults.map((verse) => (
+                          <div key={`search-verse-${verse.verseId}`} className="p-3 bg-surface-container-lowest">
+                            <p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">{verse.bookName} {verse.chapter}:{verse.verse}</p>
+                            <p className="text-sm text-on-surface leading-6 mt-1">{verse.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {(searchDomain === 'all' || searchDomain === 'tasks') && (
+                  <section className="space-y-3">
+                    <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-primary">Task Results (Editable)</h3>
+                    {!normalizedSearch && <p className="text-sm text-secondary">Search by task name, layer, repeat, time, or priority.</p>}
+                    {normalizedSearch && searchedTasks.length === 0 && <p className="text-sm text-secondary">No task match for this query.</p>}
+
+                    {searchedTasks.length > 0 && (
+                      <div className="space-y-2 max-h-[34vh] overflow-y-auto">
+                        {searchedTasks.map((task) => {
+                          const layer = layers.find((l) => l.id === task.layerId);
+                          const editing = editingSearchTaskId === task.id;
+                          return (
+                            <div key={`search-task-${task.id}`} className="rounded-xl border border-outline-variant/25 p-3 bg-surface-container-lowest space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-on-surface">{task.name}</p>
+                                  <p className="text-[11px] text-secondary">{layer?.name || 'General'} • {task.time} • {task.repeat || 'once'} • {task.priority}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTask(task.id)}
+                                    className="text-[11px] px-2.5 py-1 rounded-full bg-surface-container-low text-primary font-bold uppercase"
+                                  >
+                                    {isTaskCompletedForToday(task) ? 'Undo' : 'Done'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openTaskEditorFromSearch(task)}
+                                    className="text-[11px] px-2.5 py-1 rounded-full bg-primary text-white font-bold uppercase"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteTask(task.id)}
+                                    className="text-[11px] px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold uppercase"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+
+                              {editing && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <input
+                                    value={editingSearchTaskName}
+                                    onChange={(e) => setEditingSearchTaskName(e.target.value)}
+                                    className="rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-2 text-sm"
+                                    placeholder="Task name"
+                                  />
+                                  <input
+                                    value={editingSearchTaskTime}
+                                    onChange={(e) => setEditingSearchTaskTime(e.target.value)}
+                                    className="rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-2 text-sm"
+                                    placeholder="14:30 or 2:30 PM"
+                                  />
+                                  <select
+                                    value={editingSearchTaskRepeat}
+                                    onChange={(e) => setEditingSearchTaskRepeat(e.target.value as 'once' | 'daily' | 'weekly')}
+                                    aria-label="Task repeat"
+                                    className="rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-2 text-sm"
+                                  >
+                                    <option value="once">Once</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                  </select>
+                                  <select
+                                    value={editingSearchTaskPriority}
+                                    onChange={(e) => setEditingSearchTaskPriority(e.target.value as 'A' | 'B' | 'C' | 'D' | 'E')}
+                                    aria-label="Task priority"
+                                    className="rounded-lg border border-outline-variant/40 bg-surface px-2.5 py-2 text-sm"
+                                  >
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                    <option value="D">D</option>
+                                    <option value="E">E</option>
+                                  </select>
+                                  <div className="sm:col-span-2 flex gap-2">
+                                    <button onClick={saveTaskEditorFromSearch} className="px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold uppercase tracking-[0.12em]">Save</button>
+                                    <button onClick={() => setEditingSearchTaskId(null)} className="px-3 py-2 rounded-lg bg-surface-container-low text-secondary text-xs font-bold uppercase tracking-[0.12em]">Cancel</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                )}
               </div>
             </motion.div>
           </motion.div>

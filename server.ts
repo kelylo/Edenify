@@ -223,16 +223,14 @@ function buildSessionCookie(req: express.Request, sessionId: string) {
   return parts.join('; ');
 }
 
+
 const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
-const openAiModels = ['gpt-4o-mini', 'gpt-4.1-mini'];
+
 
 function hasGeminiKeys() {
   return getGeminiKeyOrder().length > 0;
 }
 
-function hasOpenAIKeys() {
-  return getOpenAIKeyOrder().length > 0;
-}
 
 function getGeminiKeyOrder() {
   const keys = [
@@ -242,18 +240,10 @@ function getGeminiKeyOrder() {
     .map((key) => String(key || '').trim())
     .filter((key): key is string => Boolean(key));
 
-  if (keys.length <= 1) return keys;
-  return Math.random() < 0.5 ? [keys[1], keys[0]] : keys;
-}
-
-function getOpenAIKeyOrder() {
-  const keys = [
-    process.env.OPENAI_API_KEY_1,
-    process.env.OPENAI_API_KEY_2,
-    process.env.OPENAI_API_KEY,
-  ]
-    .map((key) => String(key || '').trim())
-    .filter((key): key is string => Boolean(key));
+  // Add fallback GEMINI_API_KEY if numbered keys are missing or fail
+  if (process.env.GEMINI_API_KEY && !keys.includes(process.env.GEMINI_API_KEY)) {
+    keys.push(String(process.env.GEMINI_API_KEY).trim());
+  }
 
   if (keys.length <= 1) return keys;
   return Math.random() < 0.5 ? [keys[1], keys[0], ...keys.slice(2)] : keys;
@@ -274,328 +264,13 @@ function normalizePromptText(value: any): string {
   return String(value ?? '');
 }
 
-function buildOpenAIMessages(prompt: { contents: any; systemInstruction?: string }) {
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [];
 
-  if (prompt.systemInstruction) {
-    messages.push({ role: 'system', content: prompt.systemInstruction });
-  }
 
-  const entries = Array.isArray(prompt.contents)
-    ? prompt.contents
-    : [{ role: 'user', parts: [{ text: normalizePromptText(prompt.contents) }] }];
 
-  for (const entry of entries) {
-    const role = entry?.role === 'model' ? 'assistant' : 'user';
-    const content = normalizePromptText(entry?.parts ?? entry?.content ?? entry?.text ?? entry);
-    if (content.trim().length > 0) {
-      messages.push({ role, content });
-    }
-  }
 
-  return messages;
-}
 
-async function generateWithOpenAI(prompt: {
-  contents: any;
-  systemInstruction?: string;
-  responseMimeType?: string;
-}) {
-  const keys = getOpenAIKeyOrder();
-  if (keys.length === 0) return null;
 
-  const messages = buildOpenAIMessages(prompt);
-  let lastError: unknown;
 
-  for (const model of openAiModels) {
-    for (const key of keys) {
-      try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            temperature: 0.4,
-            ...(prompt.responseMimeType === 'application/json' ? { response_format: { type: 'json_object' } } : {}),
-          }),
-        });
-
-        const json = await response.json().catch(() => null);
-        if (!response.ok) {
-          lastError = json?.error?.message || `OpenAI HTTP ${response.status}`;
-          continue;
-        }
-
-        const text = String(json?.choices?.[0]?.message?.content || '').trim();
-        if (text) {
-          return text;
-        }
-      } catch (error) {
-        lastError = error;
-      }
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-
-  return null;
-}
-
-async function generateWithGeminiOnly(prompt: {
-  contents: any;
-  systemInstruction?: string;
-  responseMimeType?: string;
-  tools?: any[];
-}) {
-  const keys = getGeminiKeyOrder();
-  let lastError: unknown;
-
-  for (const model of geminiModels) {
-    for (const key of keys) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: key });
-        const response = await ai.models.generateContent({
-          model,
-          contents: prompt.contents,
-          config: {
-            systemInstruction: prompt.systemInstruction,
-            responseMimeType: prompt.responseMimeType,
-            tools: prompt.tools,
-          },
-        });
-        const text = response.text || '';
-        if (text.trim().length > 0) {
-          return text;
-        }
-      } catch (error) {
-        lastError = error;
-      }
-    }
-  }
-
-  if (lastError) throw lastError;
-  return null;
-}
-
-async function generateCollaborativeEdenText(prompt: {
-  contents: any;
-  systemInstruction?: string;
-}) {
-  const canGemini = hasGeminiKeys();
-  const canOpenAI = hasOpenAIKeys();
-
-  if (!canGemini && !canOpenAI) {
-    throw new Error('No AI provider is configured on the server.');
-  }
-
-  if (canGemini && canOpenAI) {
-    const [geminiDraft, openAiDraft] = await Promise.all([
-      generateWithGeminiOnly({
-        contents: prompt.contents,
-        systemInstruction: prompt.systemInstruction,
-      }).catch(() => null),
-      generateWithOpenAI({
-        contents: prompt.contents,
-        systemInstruction: prompt.systemInstruction,
-      }).catch(() => null),
-    ]);
-
-    if (geminiDraft && openAiDraft) {
-      const fused = await generateWithGeminiOnly({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Fuse these two drafts into one concise final response for Eden user chat. Keep practical next steps and spiritual tone where relevant.\n\nGemini draft:\n${geminiDraft}\n\nOpenAI draft:\n${openAiDraft}`,
-              },
-            ],
-          },
-        ],
-        systemInstruction:
-          'You are an editor combining two assistant drafts. Output one final response only, concise and practical.',
-      }).catch(() => null);
-
-      if (fused) return fused;
-      return openAiDraft;
-    }
-
-    if (openAiDraft) return openAiDraft;
-    if (geminiDraft) return geminiDraft;
-  }
-
-  if (canGemini) {
-    return await generateWithGeminiOnly({
-      contents: prompt.contents,
-      systemInstruction: prompt.systemInstruction,
-    });
-  }
-
-  return await generateWithOpenAI({
-    contents: prompt.contents,
-    systemInstruction: prompt.systemInstruction,
-  });
-}
-
-function getElevenLabsApiKey() {
-  const keys = [
-    process.env.ELEVENLABS_API_KEY,
-    process.env.ELEVENLAB_API_KEY,
-    process.env.ELEVEN_API_KEY,
-    process.env.VITE_ELEVENLABS_API_KEY,
-  ]
-    .map((key) => String(key || '').trim())
-    .filter((key): key is string => Boolean(key));
-
-  return keys[0] || '';
-}
-
-function getElevenLabsVoiceId() {
-  return String(process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM').trim();
-}
-
-function formatProviderError(error: unknown) {
-  if (!error) return 'unknown error';
-  if (typeof error === 'string') return error;
-  if (error instanceof Error) return error.message || 'unknown error';
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-async function buildReadAloudNarration(sourceText: string) {
-  const text = String(sourceText || '').trim();
-  if (!text) return '';
-
-  const openAiScript = await generateWithOpenAI({
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: `Rewrite this scripture for spoken audio while preserving meaning exactly. Keep it natural, concise, and easy to listen to. Do not add commentary or new claims.\n\n${text}`,
-          },
-        ],
-      },
-    ],
-    systemInstruction: 'You prepare scripture text for spoken narration. Output plain text only.',
-  }).catch(() => null);
-
-  return String(openAiScript || text).trim();
-}
-
-async function generateSpeechWithElevenLabs(input: string) {
-  const text = String(input || '').trim();
-  if (!text) return null;
-
-  const apiKey = getElevenLabsApiKey();
-  if (!apiKey) {
-    throw new Error('No ElevenLabs API key is configured for TTS.');
-  }
-
-  const voiceId = getElevenLabsVoiceId();
-  if (!voiceId) {
-    throw new Error('No ElevenLabs voice is configured for TTS.');
-  }
-
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=mp3_44100_128`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'xi-api-key': apiKey,
-      Accept: 'audio/mpeg',
-    },
-    body: JSON.stringify({
-      text,
-      model_id: 'eleven_multilingual_v2',
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.85,
-        style: 0.3,
-        use_speaker_boost: true,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorJson = await response.json().catch(() => null);
-    throw new Error(errorJson?.detail?.message || errorJson?.message || `ElevenLabs TTS HTTP ${response.status}`);
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length > 0) {
-    return {
-      audioBase64: buffer.toString('base64'),
-      mimeType: 'audio/mpeg',
-      model: 'eleven_multilingual_v2',
-      voice: voiceId,
-    };
-  }
-
-  return null;
-}
-
-async function generateSpeechWithOpenAI(input: string) {
-  const text = String(input || '').trim();
-  if (!text) return null;
-
-  const keys = getOpenAIKeyOrder();
-  if (keys.length === 0) {
-    throw new Error('No OpenAI API key is configured for TTS fallback.');
-  }
-
-  const ttsModels = ['gpt-4o-mini-tts', 'tts-1-hd', 'tts-1'];
-  let lastError: unknown;
-
-  for (const model of ttsModels) {
-    for (const key of keys) {
-      try {
-        const response = await fetch('https://api.openai.com/v1/audio/speech', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model,
-            input: text,
-            voice: 'alloy',
-            response_format: 'mp3',
-          }),
-        });
-
-        if (!response.ok) {
-          const errorJson = await response.json().catch(() => null);
-          lastError = errorJson?.error?.message || `OpenAI TTS HTTP ${response.status}`;
-          continue;
-        }
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (buffer.length > 0) {
-          return {
-            audioBase64: buffer.toString('base64'),
-            mimeType: 'audio/mpeg',
-            model,
-            voice: 'alloy',
-          };
-        }
-      } catch (error) {
-        lastError = error;
-      }
-    }
-  }
-
-  if (lastError) throw lastError;
-  return null;
-}
 
 async function generateWithServerGemini(prompt: {
   contents: any;
@@ -794,12 +469,21 @@ async function startServer() {
         return;
       }
 
-      const text = await generateWithServerGemini({
-        contents: `Based on this user context, provide a short, impactful Eden Insight (1-2 sentences).\nContext: ${context}\nTone: Meditative, disciplined, wise.`,
-      });
+      let text = null;
+      try {
+        text = await generateWithServerGemini({
+          contents: `Based on this user context, provide a short, impactful Eden Insight (1-2 sentences).\nContext: ${context}\nTone: Meditative, disciplined, wise.`,
+        });
+      } catch (err) {
+        // Log error details for debugging
+        console.error('[Gemini Insight Error]', err && (err.stack || err.message || err));
+        res.status(500).json({ success: false, error: err?.message || String(err) || 'Could not generate insight.' });
+        return;
+      }
 
       res.json({ success: true, text: text || 'Consistency over intensity. Keep one promise today.' });
     } catch (error: any) {
+      console.error('[Insight Endpoint Error]', error && (error.stack || error.message || error));
       res.status(500).json({ success: false, error: error?.message || 'Could not generate insight.' });
     }
   });
@@ -814,7 +498,7 @@ async function startServer() {
         tools: [{ googleSearch: {} }],
       });
 
-      const reading = parseJsonSafely<{ passage: string; text: string; context: string }>(raw);
+      const reading = raw ? parseJsonSafely<{ passage: string; text: string; context: string }>(raw) : null;
       res.json({ success: true, reading });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message || 'Could not generate reading.' });
@@ -837,7 +521,7 @@ async function startServer() {
         responseMimeType: 'application/json',
       });
 
-      const suggestion = parseJsonSafely<{ name: string; time: string; preferredMusic: string }>(raw);
+      const suggestion = raw ? parseJsonSafely<{ name: string; time: string; preferredMusic: string }>(raw) : null;
       if (!suggestion.preferredMusic && preferredMusicHint) suggestion.preferredMusic = preferredMusicHint;
       res.json({ success: true, suggestion });
     } catch (error: any) {
@@ -862,7 +546,7 @@ async function startServer() {
       }));
       contents.push({ role: 'user', parts: [{ text: message }] });
 
-      const text = await generateCollaborativeEdenText({
+      const text = await generateWithServerGemini({
         contents,
         systemInstruction: `You are Eden, a spiritual and personal growth companion.\nYour purpose is to provide personalized insights, suggestions, and motivation based on the user's goals and progress across different life layers: Spiritual, Academic, Financial, Physical, and General.\nYour tone is meditative, disciplined, encouraging, and wise.\nApp knowledge:\n${appKnowledge.join('\n')}\nExecution policy:\n- Handle simple requests directly without over-explaining.\n- Reserve deep analysis for complex requests only.\n- Prefer concrete actions, short plans, and next-step clarity.\n- If data is missing, make a useful assumption and continue.\n- If the user asks to create/edit/complete/delete tasks, provide concise structured intent that a task action layer can execute.\n- For communication/social-skill questions, provide practical scripts and drills, not generic motivation.\nKeep responses concise and editorial in feel.`,
       });
@@ -913,14 +597,26 @@ async function startServer() {
         },
       });
 
-      if (!response.audio) {
+      // Gemini SDK: audio is returned as response.audio, response.audioContent, or response.candidates[0]?.audio
+      let audioBase64 = '';
+      // Try to extract audio from possible Gemini SDK response shapes
+      const anyResp = response as any;
+      if (anyResp.audio) {
+        audioBase64 = anyResp.audio;
+      } else if (anyResp.audioContent) {
+        audioBase64 = anyResp.audioContent;
+      } else if (anyResp.candidates && anyResp.candidates[0]?.audio) {
+        audioBase64 = anyResp.candidates[0].audio;
+      }
+
+      if (!audioBase64) {
         res.status(500).json({ success: false, error: 'Gemini did not return audio.' });
         return;
       }
 
       res.json({
         success: true,
-        audioBase64: response.audio,
+        audioBase64,
         mimeType: 'audio/mpeg',
         model: 'gemini-2.5-flash',
         providerFlow: 'gemini-tts',

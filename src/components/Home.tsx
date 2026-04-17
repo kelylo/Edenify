@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
+import toast from 'react-hot-toast';
+import { Modal } from '../components/Modal';
+import { Skeleton, SkeletonList } from '../components/Skeleton';
+import { useInfiniteScroll } from '../lib/useInfiniteScroll';
+import { useDragAndDrop } from '../lib/useDragAndDrop';
+import { highlightSearch } from '../lib/highlightSearch';
 import { format } from 'date-fns';
 import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximize2, Minimize2, Pause, Pencil, Play, Plus, RefreshCw, Search, SkipForward, Timer, Trash2, WandSparkles, X } from 'lucide-react';
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
@@ -164,21 +170,14 @@ const Home: React.FC = () => {
   const [showFocusPage, setShowFocusPage] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
-  import { useApp } from '../AppContext';
-  import toast from 'react-hot-toast';
-  import { Modal } from '../components/Modal';
-  import { Skeleton, SkeletonList } from '../components/Skeleton';
-  import { useInfiniteScroll } from '../lib/useInfiniteScroll';
-  import { useDragAndDrop } from '../lib/useDragAndDrop';
-  import { highlightSearch } from '../lib/highlightSearch';
   const [showInstallSuggestion, setShowInstallSuggestion] = useState(false);
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
 
-  const [readingSuggestion, setReadingSuggestion] = useState('');
-  const [scripturePages, setScripturePages] = useState<BibleVerse[][]>([]);
-  const [scripturePageLabels, setScripturePageLabels] = useState<string[]>([]);
-  const [scripturePageIndex, setScripturePageIndex] = useState(0);
-  const [loadingScriptureText, setLoadingScriptureText] = useState(false);
+    const [readingSuggestion, setReadingSuggestion] = useState('');
+    const [scripturePages, setScripturePages] = useState<BibleVerse[][]>([]);
+    const [scripturePageLabels, setScripturePageLabels] = useState<string[]>([]);
+    const [scripturePageIndex, setScripturePageIndex] = useState(0);
+    const [loadingScriptureText, setLoadingScriptureText] = useState(false);
   const [isScriptureFullscreen, setIsScriptureFullscreen] = useState(false);
   const [isReadingScriptureAloud, setIsReadingScriptureAloud] = useState(false);
   const [showReflectionComposer, setShowReflectionComposer] = useState(false);

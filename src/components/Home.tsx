@@ -15,6 +15,14 @@ import { AnimatePresence, motion } from 'motion/react';
 import Focus from './Focus';
 import { BibleReadingUI } from './BibleReadingUI';
 
+type InteractionHealthEvent = {
+  id: string;
+  action: string;
+  status: 'ok' | 'blocked';
+  reason: string;
+  at: string;
+};
+
 const DEFAULT_REVISION_TASK_ID = 'default-academic-revision-task';
 const ACADEMIC_TIMETABLE: Record<number, string[]> = {
   0: [],
@@ -197,12 +205,15 @@ const Home: React.FC = () => {
   const [alarmOpen, setAlarmOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState('');
   const scriptureAudioRef = useRef<HTMLAudioElement | null>(null);
+  const scriptureUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [reminderFeed, setReminderFeed] = useState<Array<{ id: string; title: string; detail: string; createdAt: string }>>([]);
   const [toastReminder, setToastReminder] = useState<{ id: string; title: string; detail: string } | null>(null);
   const [mediaPermissionGranted, setMediaPermissionGranted] = useState<boolean | null>(null);
   const [opsLastCheckedAt, setOpsLastCheckedAt] = useState('');
   const [opsCheckError, setOpsCheckError] = useState('');
   const [opsChecking, setOpsChecking] = useState(false);
+  const [interactionDebugOpen, setInteractionDebugOpen] = useState(false);
+  const [interactionEvents, setInteractionEvents] = useState<InteractionHealthEvent[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchDomain, setSearchDomain] = useState<'all' | 'bible' | 'tasks'>('all');
   const [searchingBible, setSearchingBible] = useState(false);
@@ -252,8 +263,8 @@ const Home: React.FC = () => {
   const readingElapsedDays = Number.isFinite(readingElapsedMs)
     ? Math.max(0, Math.floor(readingElapsedMs / (24 * 60 * 60 * 1000)))
     : 0;
-  const maxBibleDay = Math.max(1, Math.min(bibleReading.totalDays, readingElapsedDays + 1));
-  const canNavigateBible = true;
+  const maxBibleDay = Math.max(1, bibleReading.totalDays || 1);
+  const canNavigateBible = !loadingBible && maxBibleDay > 0;
   const notificationsEnabled = Boolean(
     user?.preferences.notifications.taskReminders &&
     user?.preferences.notifications.dailyScripture &&
@@ -264,6 +275,28 @@ const Home: React.FC = () => {
 
   const activeScripturePage = scripturePages[scripturePageIndex] || [];
   const activeScriptureLabel = scripturePageLabels[scripturePageIndex] || bibleReading.passage;
+
+  const recordInteractionEvent = useCallback((event: Omit<InteractionHealthEvent, 'id' | 'at'>) => {
+    setInteractionEvents((prev) => [
+      {
+        id: `interaction-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+        at: new Date().toISOString(),
+        ...event,
+      },
+      ...prev,
+    ].slice(0, 30));
+  }, []);
+
+  const reportActionBlocked = useCallback((action: string, reason: string, withToast = true) => {
+    recordInteractionEvent({ action, status: 'blocked', reason });
+    if (withToast) {
+      setNotificationStatus(reason);
+    }
+  }, [recordInteractionEvent]);
+
+  const reportActionSuccess = useCallback((action: string, reason: string) => {
+    recordInteractionEvent({ action, status: 'ok', reason });
+  }, [recordInteractionEvent]);
 
   useEffect(() => {
     if (!accountCacheKey) return;
@@ -351,7 +384,54 @@ const Home: React.FC = () => {
       scriptureAudioRef.current.currentTime = 0;
       scriptureAudioRef.current = null;
     }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore speech synthesis cancellation failures.
+      }
+    }
+    scriptureUtteranceRef.current = null;
+
     setIsReadingScriptureAloud(false);
+  }, []);
+
+  const speakWithBrowserFallback = useCallback(async (text: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      throw new Error('Read aloud is unavailable right now.');
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      try {
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1;
+        scriptureUtteranceRef.current = utterance;
+
+        utterance.onend = () => {
+          scriptureUtteranceRef.current = null;
+          setIsReadingScriptureAloud(false);
+          setNotificationStatus('Read aloud finished.');
+          resolve();
+        };
+
+        utterance.onerror = () => {
+          scriptureUtteranceRef.current = null;
+          setIsReadingScriptureAloud(false);
+          reject(new Error('Browser read aloud failed.'));
+        };
+
+        window.speechSynthesis.speak(utterance);
+        setNotificationStatus('Reading aloud with device voice fallback.');
+      } catch (error) {
+        scriptureUtteranceRef.current = null;
+        setIsReadingScriptureAloud(false);
+        reject(error);
+      }
+    });
   }, []);
 
   const readScriptureAloud = useCallback(async () => {
@@ -408,10 +488,14 @@ const Home: React.FC = () => {
       setNotificationStatus('Reading aloud with ElevenLabs voice.');
     } catch (error: any) {
       scriptureAudioRef.current = null;
-      setIsReadingScriptureAloud(false);
-      setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
+      try {
+        await speakWithBrowserFallback(ttsInput);
+      } catch {
+        setIsReadingScriptureAloud(false);
+        setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
+      }
     }
-  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, stopScriptureReading]);
+  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, speakWithBrowserFallback, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];
@@ -532,7 +616,7 @@ const Home: React.FC = () => {
   const connectGoogleCalendar = async () => {
     const appUserEmail = String(user?.email || '').trim().toLowerCase();
     if (!appUserEmail) {
-      setNotificationStatus('Sign in with your Edenify account first so Google Calendar can be tied to your email.');
+      reportActionBlocked('google-calendar-connect', 'Sign in with your Edenify account first so Google Calendar can be tied to your email.');
       return;
     }
 
@@ -558,10 +642,12 @@ const Home: React.FC = () => {
         });
       }
       setNotificationStatus('Google Calendar connected and tied to your email.');
+      reportActionSuccess('google-calendar-connect', 'Calendar connected and verified.');
     } catch (error: any) {
       setGoogleCalendarConnected(false);
       setGoogleCalendarAccountEmail('');
       setNotificationStatus(error?.message || 'Could not connect Google Calendar.');
+      reportActionBlocked('google-calendar-connect', error?.message || 'Could not connect Google Calendar.', false);
     } finally {
       setGoogleCalendarBusy(false);
     }
@@ -575,7 +661,10 @@ const Home: React.FC = () => {
   };
 
   const toggleGoogleCalendarSync = () => {
-    if (!user) return;
+    if (!user) {
+      reportActionBlocked('google-calendar-sync-toggle', 'Sign in to manage Google Calendar sync.');
+      return;
+    }
     const nextEnabled = !Boolean(user.preferences.googleCalendarEnabled);
 
     if (nextEnabled && !googleCalendarConnected) {
@@ -591,6 +680,7 @@ const Home: React.FC = () => {
       },
     });
     setNotificationStatus(nextEnabled ? 'Google Calendar sync enabled.' : 'Google Calendar sync disabled.');
+    reportActionSuccess('google-calendar-sync-toggle', nextEnabled ? 'Google Calendar sync enabled.' : 'Google Calendar sync disabled.');
   };
 
   const stopActiveAlarm = () => {
@@ -690,7 +780,10 @@ const Home: React.FC = () => {
   };
 
   const toggleNotifications = async () => {
-    if (!user) return;
+    if (!user) {
+      reportActionBlocked('notifications-toggle', 'Sign in to change notification settings.');
+      return;
+    }
 
     const turningOn = !notificationsEnabled;
     if (turningOn) {
@@ -711,6 +804,7 @@ const Home: React.FC = () => {
     });
 
     setNotificationStatus(turningOn ? 'Notification is ON' : 'Notification is OFF');
+    reportActionSuccess('notifications-toggle', turningOn ? 'Notifications turned on.' : 'Notifications turned off.');
 
     if (!turningOn) {
       stopActiveAlarm();
@@ -895,11 +989,15 @@ const Home: React.FC = () => {
   };
 
   const saveTaskEditorFromSearch = () => {
-    if (!editingSearchTaskId) return;
+    if (!editingSearchTaskId) {
+      reportActionBlocked('search-task-save', 'No task is currently selected for editing.');
+      return;
+    }
 
     const normalizedTime = parseAnyTimeTo24(editingSearchTaskTime);
     if (!normalizedTime) {
       setNotificationStatus('Please enter a valid time for task edit (HH:MM or H:MM AM/PM).');
+      reportActionBlocked('search-task-save', 'Invalid task time in search editor.', false);
       return;
     }
 
@@ -912,6 +1010,7 @@ const Home: React.FC = () => {
 
     setEditingSearchTaskId(null);
     setNotificationStatus('Task updated from search.');
+    reportActionSuccess('search-task-save', 'Task updated from global search.');
   };
 
   const openTaskDetails = (task: Task) => {
@@ -934,17 +1033,22 @@ const Home: React.FC = () => {
   };
 
   const saveTaskDetails = () => {
-    if (!detailTaskId) return;
+    if (!detailTaskId) {
+      reportActionBlocked('task-details-save', 'No task is selected in details panel.');
+      return;
+    }
 
     const normalizedTime = parseAnyTimeTo24(detailTaskTime);
     if (!normalizedTime) {
       setDetailTaskError('Please provide a valid time (HH:MM or H:MM AM/PM).');
+      reportActionBlocked('task-details-save', 'Task details time is invalid.', false);
       return;
     }
 
     const trimmedName = detailTaskName.trim();
     if (!trimmedName) {
       setDetailTaskError('Task name is required.');
+      reportActionBlocked('task-details-save', 'Task name is required.', false);
       return;
     }
 
@@ -974,6 +1078,7 @@ const Home: React.FC = () => {
     }
 
     setNotificationStatus('Task details updated. Calendar sync will update automatically.');
+    reportActionSuccess('task-details-save', 'Task details saved.');
     closeTaskDetails();
   };
 
@@ -1047,21 +1152,28 @@ const Home: React.FC = () => {
   const previewUploadedReminder = () => {
     if (!newTaskCustomAlarmDataUrl) {
       setQuickAddError('Upload a reminder song first.');
+      reportActionBlocked('quick-add-preview-reminder', 'Upload a reminder song first.', false);
       return;
     }
     previewCustomReminder();
+    reportActionSuccess('quick-add-preview-reminder', 'Preview started.');
   };
 
   const previewCustomReminder = () => {
-    if (!newTaskCustomAlarmDataUrl) return;
+    if (!newTaskCustomAlarmDataUrl) {
+      reportActionBlocked('quick-add-preview-reminder', 'No custom reminder audio is available.', false);
+      return;
+    }
     stopTaskPreview();
 
     const media = new Audio(newTaskCustomAlarmDataUrl);
     media.volume = 0.85;
     media.play().then(() => {
       setIsTaskPreviewPlaying(true);
+      reportActionSuccess('quick-add-preview-reminder', 'Preview audio playing.');
     }).catch(() => {
       setIsTaskPreviewPlaying(false);
+      reportActionBlocked('quick-add-preview-reminder', 'Could not play uploaded reminder audio.', false);
     });
     media.onended = () => {
       setIsTaskPreviewPlaying(false);
@@ -1576,15 +1688,22 @@ const Home: React.FC = () => {
   };
 
   const handleBibleNavigation = async (direction: 'prev' | 'next') => {
-    if (!canNavigateBible) return;
+    if (!canNavigateBible) {
+      reportActionBlocked('bible-navigation', 'Bible navigation is temporarily unavailable right now.', false);
+      return;
+    }
 
     const delta = direction === 'next' ? 1 : -1;
     const targetDay = Math.min(maxBibleDay, Math.max(1, bibleReading.day + delta));
-    if (targetDay === bibleReading.day) return;
+    if (targetDay === bibleReading.day) {
+      reportActionBlocked('bible-navigation', direction === 'next' ? 'You are already at the latest available reading day.' : 'You are already at day 1.', false);
+      return;
+    }
 
     setLoadingBible(true);
     try {
       await goToBibleDay(targetDay);
+      reportActionSuccess('bible-navigation', `Moved to Bible day ${targetDay}.`);
     } finally {
       setLoadingBible(false);
     }
@@ -1598,17 +1717,20 @@ const Home: React.FC = () => {
     const trimmedName = newTaskName.trim();
     if (!trimmedName) {
       setQuickAddError('Task name is required.');
+      reportActionBlocked('quick-add-create-task', 'Task name is required.', false);
       return;
     }
 
     if (newTaskRepeat === 'weekly' && !newTaskDate) {
       setQuickAddError('Please choose a calendar date for weekly tasks.');
+      reportActionBlocked('quick-add-create-task', 'Calendar date is required for weekly tasks.', false);
       return;
     }
 
     const resolvedTime = buildTimeFromEditor(newTaskTimeFormat, newTaskHourInput, newTaskMinuteInput, newTaskPeriod);
     if (!resolvedTime) {
       setQuickAddError('Please enter a valid time (hour and minute).');
+      reportActionBlocked('quick-add-create-task', 'Task time is invalid.', false);
       return;
     }
 
@@ -1635,11 +1757,13 @@ const Home: React.FC = () => {
     const due = parseTaskDueDate(draftTask);
     if (!due) {
       setQuickAddError('Could not understand this time. Please check hour/minute values.');
+      reportActionBlocked('quick-add-create-task', 'Task due time could not be parsed.', false);
       return;
     }
 
     if (newTaskRepeat === 'once' && due.getTime() <= Date.now()) {
       setQuickAddError('Please choose a future time. Past times cannot be used.');
+      reportActionBlocked('quick-add-create-task', 'One-time task cannot be scheduled in the past.', false);
       return;
     }
 
@@ -1684,6 +1808,7 @@ const Home: React.FC = () => {
     setShowTemplatePicker(false);
     setEdenTemplatePool([]);
     setShowQuickAdd(false);
+    reportActionSuccess('quick-add-create-task', `Task created: ${trimmedName}.`);
   };
 
   const readFileAsDataUrl = (file: File): Promise<string> => {
@@ -1784,6 +1909,7 @@ const Home: React.FC = () => {
         setQuickAddError('Task by Eden is unavailable right now. Try again.');
       }
       setIsGeneratingTask(false);
+      reportActionBlocked('task-by-eden', 'Task by Eden is unavailable right now.', false);
       return;
     }
 
@@ -1807,6 +1933,7 @@ const Home: React.FC = () => {
       setNewTaskCustomAlarmDataUrl(favoriteFocusTrack.dataUrl);
     }
     setIsGeneratingTask(false);
+    reportActionSuccess('task-by-eden', 'Task draft generated from Eden recommendations.');
   };
 
   useEffect(() => {
@@ -1828,12 +1955,18 @@ const Home: React.FC = () => {
   }, [newTaskTimeFormat]);
 
   const handleInstallApp = async () => {
-    if (!installPromptEvent) return;
+    if (!installPromptEvent) {
+      reportActionBlocked('install-app', 'Install prompt is not available yet on this device/browser.');
+      return;
+    }
 
     installPromptEvent.prompt();
     const choice = await installPromptEvent.userChoice;
     if (choice?.outcome === 'accepted') {
       setShowInstallSuggestion(false);
+      reportActionSuccess('install-app', 'Install prompt accepted.');
+    } else {
+      reportActionBlocked('install-app', 'Install prompt was dismissed.', false);
     }
     setInstallPromptEvent(null);
   };
@@ -1872,6 +2005,7 @@ const Home: React.FC = () => {
   };
 
   const openLayerFromHome = (layerId: LayerId) => {
+    reportActionSuccess('open-layer', `Opened ${layerId} layer.`);
     window.dispatchEvent(new CustomEvent('edenify:navigate', {
       detail: {
         tab: 'layers',
@@ -1879,6 +2013,37 @@ const Home: React.FC = () => {
       },
     }));
   };
+
+  const handleOpenQuickAdd = () => {
+    setShowQuickAdd(true);
+    reportActionSuccess('open-quick-add', 'Opened quick add task modal.');
+  };
+
+  const handleTaskToggleAction = (taskId: string, source: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) {
+      reportActionBlocked('task-toggle', `Task was not found (${source}).`, false);
+      return;
+    }
+
+    const nextState = !isTaskCompletedForToday(task);
+    toggleTask(taskId);
+    reportActionSuccess('task-toggle', `${nextState ? 'Completed' : 'Reopened'} task: ${task.name} (${source}).`);
+  };
+
+  const handleTaskDeleteAction = (taskId: string, source: string) => {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) {
+      reportActionBlocked('task-delete', `Task was not found (${source}).`, false);
+      return;
+    }
+
+    deleteTask(taskId);
+    reportActionSuccess('task-delete', `Deleted task: ${task.name} (${source}).`);
+  };
+
+  const blockedInteractionCount = interactionEvents.filter((event) => event.status === 'blocked').length;
+  const recentInteractionEvents = interactionEvents.slice(0, 8);
 
   return (
     <div className="min-h-screen bg-surface pb-24">
@@ -1990,7 +2155,7 @@ const Home: React.FC = () => {
             <div className="p-6 sm:p-7 text-left bg-surface-container-lowest rounded-2xl">
               <BibleReadingUI
                 currentDay={bibleReading.day || 1}
-                completedToday={bibleReading.completed || false}
+                completedToday={completedToday}
                 onToggleComplete={(completed) => {
                   completeBibleDay(completed);
                 }}
@@ -2021,7 +2186,7 @@ const Home: React.FC = () => {
             <h3 className="display-text text-2xl text-on-surface">{priorityTask.name}</h3>
             <div className="mt-5 flex items-center gap-3">
               <div className="flex-1 h-px bg-outline-variant/30" />
-              <button onClick={() => toggleTask(priorityTask.id)} className="text-primary font-label text-xs uppercase tracking-[0.14em] font-bold hover:opacity-70">Start now</button>
+              <button onClick={() => handleTaskToggleAction(priorityTask.id, 'priority-card')} className="text-primary font-label text-xs uppercase tracking-[0.14em] font-bold hover:opacity-70">Start now</button>
             </div>
           </motion.section>
         )}
@@ -2115,7 +2280,7 @@ const Home: React.FC = () => {
                       focusedTaskId === task.id ? 'ring-2 ring-primary border-primary/60 shadow-[0_0_0_3px_rgba(150,68,7,0.15)]' : ''
                     )}
                   >
-                    <button aria-label={`Toggle task ${task.name}`} title="Toggle task" onClick={() => toggleTask(task.id)} className={cn('transition-colors', completed ? 'text-primary' : 'text-secondary/35 hover:text-primary')}>
+                    <button aria-label={`Toggle task ${task.name}`} title="Toggle task" onClick={() => handleTaskToggleAction(task.id, 'home-task-list')} className={cn('transition-colors', completed ? 'text-primary' : 'text-secondary/35 hover:text-primary')}>
                       {completed ? <CheckCircle2 size={22} /> : <Circle size={22} />}
                     </button>
 
@@ -2141,7 +2306,7 @@ const Home: React.FC = () => {
                       type="button"
                       aria-label={`Delete task ${task.name}`}
                       title="Delete task"
-                      onClick={() => deleteTask(task.id)}
+                      onClick={() => handleTaskDeleteAction(task.id, 'home-task-list')}
                       className="h-8 w-8 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
                     >
                       <Trash2 size={14} />
@@ -2159,11 +2324,92 @@ const Home: React.FC = () => {
       <button
         aria-label="Quick add task"
         title="Quick add task"
-        onClick={() => setShowQuickAdd(true)}
+        onClick={handleOpenQuickAdd}
         className="fixed bottom-24 right-6 z-[60] h-14 w-14 rounded-full bg-gradient-to-br from-primary to-primary-container text-white shadow-[0_12px_32px_rgba(150,68,7,0.3)] flex items-center justify-center transition-transform active:scale-95"
       >
         <Plus size={24} />
       </button>
+      )}
+
+      {!isSubPageOpen && (
+      <div className="fixed bottom-24 left-4 z-[60]">
+        {interactionDebugOpen ? (
+          <div className="w-[320px] rounded-2xl border border-outline-variant/35 bg-surface-container-low shadow-[0_10px_28px_rgba(44,33,24,0.12)] p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-primary">Interaction Health</p>
+                <p className="text-[11px] text-secondary">Blocked {blockedInteractionCount} of {interactionEvents.length} tracked actions</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInteractionDebugOpen(false)}
+                className="h-8 w-8 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center"
+                title="Close interaction panel"
+                aria-label="Close interaction panel"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
+                <p className="uppercase tracking-[0.12em] text-outline font-bold">Notifications</p>
+                <p className="text-on-surface mt-1">{notificationStateLabel}</p>
+              </div>
+              <div className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
+                <p className="uppercase tracking-[0.12em] text-outline font-bold">Alarms Ready</p>
+                <p className="text-on-surface mt-1">{alarmReadyCount}</p>
+              </div>
+            </div>
+
+            <div className="text-[11px] rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
+              <p className="uppercase tracking-[0.12em] text-outline font-bold">Backend Check</p>
+              <p className="mt-1 text-on-surface">{opsLastCheckedAt ? format(new Date(opsLastCheckedAt), 'HH:mm:ss') : 'Not checked yet'}</p>
+              {opsCheckError && <p className="mt-1 text-red-600">{opsCheckError}</p>}
+            </div>
+
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {recentInteractionEvents.length === 0 && (
+                <p className="text-[11px] text-secondary">No interactions logged yet.</p>
+              )}
+              {recentInteractionEvents.map((event) => (
+                <div key={event.id} className="rounded-lg border border-outline-variant/25 bg-surface-container-lowest px-2 py-1.5">
+                  <p className={cn('text-[10px] uppercase tracking-[0.12em] font-bold', event.status === 'blocked' ? 'text-red-600' : 'text-emerald-600')}>
+                    {event.status} • {event.action}
+                  </p>
+                  <p className="text-[11px] text-on-surface mt-1">{event.reason}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void runSystemCheck()}
+                className="flex-1 px-3 py-1.5 rounded-full bg-primary text-white text-[10px] uppercase tracking-[0.12em] font-bold"
+                disabled={opsChecking}
+              >
+                {opsChecking ? 'Checking...' : 'Run Check'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setInteractionEvents([])}
+                className="px-3 py-1.5 rounded-full bg-surface-container-lowest text-secondary text-[10px] uppercase tracking-[0.12em] font-bold"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setInteractionDebugOpen(true)}
+            className="px-3 py-2 rounded-full bg-surface-container-low border border-outline-variant/35 text-[10px] uppercase tracking-[0.14em] font-bold text-primary shadow-sm"
+          >
+            Interaction Health
+          </button>
+        )}
+      </div>
       )}
 
       <AnimatePresence>
@@ -2831,7 +3077,7 @@ const Home: React.FC = () => {
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => toggleTask(task.id)}
+                                    onClick={() => handleTaskToggleAction(task.id, 'global-search')}
                                     className="text-[11px] px-2.5 py-1 rounded-full bg-surface-container-low text-primary font-bold uppercase"
                                   >
                                     {isTaskCompletedForToday(task) ? 'Undo' : 'Done'}
@@ -2845,7 +3091,7 @@ const Home: React.FC = () => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => deleteTask(task.id)}
+                                    onClick={() => handleTaskDeleteAction(task.id, 'global-search')}
                                     className="text-[11px] px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold uppercase"
                                   >
                                     Delete

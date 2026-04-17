@@ -155,8 +155,22 @@ const physicalNutrition = [
   { title: 'Recovery Greens', detail: 'Repair muscle fibers and reduce inflammation with alkalizing nutrients.', points: ['Spinach and spirulina smoothie', 'Steamed broccoli with lemon zest'] },
 ];
 
+const toPaddedTime = (hours: number, minutes: number) => `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+const getRoundedFutureTime = (minutesAhead: number) => {
+  const now = new Date();
+  const next = new Date(now.getTime() + minutesAhead * 60 * 1000);
+  const rounded = Math.ceil(next.getMinutes() / 5) * 5;
+  if (rounded >= 60) {
+    next.setHours(next.getHours() + 1, 0, 0, 0);
+  } else {
+    next.setMinutes(rounded, 0, 0);
+  }
+  return toPaddedTime(next.getHours(), next.getMinutes());
+};
+
 const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId }) => {
-  const { user, layers, habits, tasks, addHabit, addTask, toggleHabit } = useApp();
+  const { user, layers, habits, tasks, addHabit, addTask, toggleHabit, bibleReading, completeBibleDay } = useApp();
 
   const [activeLayerId, setActiveLayerId] = useState<LayerId | null>(null);
   const [habitName, setHabitName] = useState('');
@@ -176,7 +190,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   const [showHabitSuggestions, setShowHabitSuggestions] = useState(false);
   const [habitSuggestions, setHabitSuggestions] = useState<Array<{ name: string; description: string; duration: number }>>([]);
   const [isGeneratingHabit, setIsGeneratingHabit] = useState(false);
-  const [bibleReadingToday, setBibleReadingToday] = useState(false);
+  const today = new Date();
+  const todayDateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const bibleCompletedToday = bibleReading.completed && bibleReading.lastCompletedDate === todayDateKey;
 
   const layerStats = useMemo(() => {
     return layers.map((layer) => {
@@ -204,6 +220,44 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
     if (!activeLayerId) return [];
     return habits.filter((h) => h.layerId === activeLayerId);
   }, [habits, activeLayerId]);
+
+  const primaryLayerTrack = useMemo(() => {
+    const names = user?.preferences.customFocusPlaylistNames || [];
+    const urls = user?.preferences.customFocusPlaylistDataUrls || [];
+    if (names[0] && urls[0]) {
+      return { name: names[0], dataUrl: urls[0] };
+    }
+    if (user?.preferences.customFocusSongName && user?.preferences.customFocusSongDataUrl) {
+      return { name: user.preferences.customFocusSongName, dataUrl: user.preferences.customFocusSongDataUrl };
+    }
+    return null;
+  }, [
+    user?.preferences.customFocusPlaylistNames,
+    user?.preferences.customFocusPlaylistDataUrls,
+    user?.preferences.customFocusSongName,
+    user?.preferences.customFocusSongDataUrl,
+  ]);
+
+  const layerInsightSummary = useMemo(() => {
+    return layerStats.reduce<Record<LayerId, string>>((acc, layer) => {
+      const incompleteCount = tasks.filter((task) => task.layerId === layer.id && !task.completed).length;
+      const activeHabitCount = habits.filter((habit) => habit.layerId === layer.id).length;
+      if (incompleteCount > 0) {
+        acc[layer.id] = `${incompleteCount} open tasks and ${activeHabitCount} active habits. Build momentum with one concrete execution block now.`;
+      } else if (activeHabitCount > 0) {
+        acc[layer.id] = `${activeHabitCount} habits are active. Protect consistency and increase quality on your next session.`;
+      } else {
+        acc[layer.id] = 'No active tasks yet. Start with one small guided action and lock consistency first.';
+      }
+      return acc;
+    }, {
+      spiritual: '',
+      academic: '',
+      financial: '',
+      physical: '',
+      general: '',
+    });
+  }, [habits, layerStats, tasks]);
 
   const buildHabitTime = () => {
     if (habitTimeFormat === '24') {
@@ -386,19 +440,26 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
 
   const createGuideTask = (layerId: LayerId, title: string, minutesLabel: string) => {
     const timeHint = /\d+/.exec(minutesLabel)?.[0] || '20';
+    const layerUpcomingTask = tasks.find((task) => task.layerId === layerId && !task.completed && String(task.time || '').trim().length > 0);
+    const suggestedTime = layerUpcomingTask?.time || getRoundedFutureTime(layerId === 'spiritual' ? 20 : layerId === 'academic' ? 35 : 30);
+    const progressSnapshot = layerStats.find((layer) => layer.id === layerId)?.progress || 0;
+    const dynamicPriority: 'A' | 'B' | 'C' = progressSnapshot < 35 ? 'A' : progressSnapshot < 70 ? 'B' : 'C';
+
     addTask({
       id: `task-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
       name: `${title} (${timeHint}m)`,
       layerId,
-      priority: layerId === 'spiritual' ? 'B' : 'C',
+      priority: dynamicPriority,
       repeat: 'once',
-      time: '08:00 AM',
+      time: suggestedTime,
       completed: false,
       date: new Date().toISOString(),
       alarmEnabled: true,
-      preferredMusic: 'Instrumental Warmth',
+      preferredMusic: primaryLayerTrack?.name || '',
+      customAlarmAudioName: primaryLayerTrack?.name,
+      customAlarmAudioDataUrl: primaryLayerTrack?.dataUrl,
     });
-    setLayerActionMessage(`Added to Home tasks: ${title}`);
+    setLayerActionMessage(`Added to Home tasks: ${title} at ${suggestedTime} with priority ${dynamicPriority}.`);
   };
 
   const handleViewPlan = async (layer: Layer) => {
@@ -415,8 +476,9 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
   };
 
   const handleViewAllGuides = (layerId: LayerId) => {
-    setShowAllGuides((prev) => !prev);
-    setLayerActionMessage(showAllGuides ? 'Guide list collapsed.' : 'Guide list expanded.');
+    const nextValue = !showAllGuides;
+    setShowAllGuides(nextValue);
+    setLayerActionMessage(`${layerId} guide list ${nextValue ? 'expanded' : 'collapsed'}.`);
   };
 
   return (
@@ -514,7 +576,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                             <span className="font-label uppercase text-[10px] tracking-[0.2em] font-bold text-[var(--color-physical)]">Eden Insight</span>
                           </div>
                           <h2 className="text-4xl text-on-surface mb-6 leading-tight">The Rhythm of Restoration</h2>
-                          <p className="text-secondary leading-relaxed mb-8 font-body">True physical progress is found in the stillness between the strain. Prioritize magnesium-rich greens and 7 hours of deep recovery tonight to optimize your metabolic threshold.</p>
+                          <p className="text-secondary leading-relaxed mb-8 font-body">{layerInsightSummary.physical}</p>
                           <button onClick={() => handleViewPlan(activeLayer)} className="bg-gradient-to-br from-primary to-primary-container text-on-primary px-8 py-3 rounded-full font-label font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all">
                             View Plan
                           </button>
@@ -604,9 +666,11 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                     </div>
 
                     <BibleReadingUI
-                      currentDay={1}
-                      completedToday={bibleReadingToday}
-                      onToggleComplete={setBibleReadingToday}
+                      currentDay={bibleReading.day || 1}
+                      completedToday={bibleCompletedToday}
+                      onToggleComplete={(completed) => {
+                        void completeBibleDay(completed);
+                      }}
                       isProgressionEnforced={true}
                     />
                   </section>
@@ -616,7 +680,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                     <p className={cn('text-[10px] uppercase tracking-[0.15em] font-bold mb-3', layerColorClasses[activeLayer.id].icon)}>Eden Insight</p>
                     <h2 className="text-4xl font-serif italic text-on-surface mb-4">{layerHeroTitle[activeLayer.id]}</h2>
                     <p className="text-sm text-on-surface-variant leading-relaxed">
-                      {layerSubtitle[activeLayer.id]} Focus on consistency over intensity, then let repetition compound your results.
+                      {layerInsightSummary[activeLayer.id]}
                     </p>
                     <button onClick={() => handleViewPlan(activeLayer)} className="mt-5 px-5 py-2 rounded-full bg-gradient-to-br from-primary to-primary-container text-white text-[11px] font-bold uppercase tracking-[0.14em]">
                       View Plan
@@ -650,7 +714,7 @@ const Pillars: React.FC<{ initialLayerId?: string | null }> = ({ initialLayerId 
                     <p className={cn('text-[10px] uppercase tracking-[0.15em] font-bold mb-3', layerColorClasses[activeLayer.id].icon)}>Eden Insight</p>
                     <h2 className="text-4xl font-serif italic text-on-surface mb-4">{layerHeroTitle[activeLayer.id]}</h2>
                     <p className="text-sm text-on-surface-variant leading-relaxed">
-                      {layerSubtitle[activeLayer.id]} Focus on consistency over intensity, then let repetition compound your results.
+                      {layerInsightSummary[activeLayer.id]}
                     </p>
                     <button onClick={() => handleViewPlan(activeLayer)} className="mt-5 px-5 py-2 rounded-full bg-gradient-to-br from-primary to-primary-container text-white text-[11px] font-bold uppercase tracking-[0.14em]">
                       View Plan

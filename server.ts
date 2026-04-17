@@ -407,54 +407,6 @@ async function generateCollaborativeEdenText(prompt: {
   });
 }
 
-async function buildCollaborativeNarrationScript(sourceText: string) {
-  const text = String(sourceText || '').trim();
-  if (!text) return '';
-
-  const canGemini = hasGeminiKeys();
-  const canOpenAI = hasOpenAIKeys();
-
-  if (!canGemini && !canOpenAI) return text;
-
-  const geminiDraft = canGemini
-    ? await generateWithGeminiOnly({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Rewrite this passage for natural spoken narration while preserving scripture meaning exactly. Keep it clear, warm, and paced for audio delivery.\n\n${text}`,
-              },
-            ],
-          },
-        ],
-        systemInstruction:
-          'You are a narration script editor for faith content. Keep theological meaning unchanged while improving spoken rhythm.',
-      }).catch(() => null)
-    : null;
-
-  const baseDraft = geminiDraft || text;
-
-  const openAiDraft = canOpenAI
-    ? await generateWithOpenAI({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Polish this narration script for premium TTS delivery. Keep wording faithful and avoid adding new claims.\n\n${baseDraft}`,
-              },
-            ],
-          },
-        ],
-        systemInstruction:
-          'You optimize scripts for natural, emotionally warm voice delivery. Output plain text only.',
-      }).catch(() => null)
-    : null;
-
-  return String(openAiDraft || baseDraft || text).trim();
-}
-
 async function generateSpeechWithOpenAI(input: string, voice = 'alloy') {
   const text = String(input || '').trim();
   if (!text) return null;
@@ -811,13 +763,12 @@ async function startServer() {
         return;
       }
 
-      if (text.length > 12000) {
-        res.status(400).json({ success: false, error: 'Read-aloud text is too long. Shorten the passage and try again.' });
+      if (text.length > 5000) {
+        res.status(400).json({ success: false, error: 'Read-aloud text is too long. Please read a shorter passage.' });
         return;
       }
 
-      const narrationScript = await buildCollaborativeNarrationScript(text);
-      const audio = await generateSpeechWithOpenAI(narrationScript, voice);
+      const audio = await generateSpeechWithOpenAI(text, voice);
       if (!audio) {
         res.status(500).json({ success: false, error: 'Could not synthesize audio.' });
         return;
@@ -829,7 +780,7 @@ async function startServer() {
         mimeType: audio.mimeType,
         model: audio.model,
         voice: audio.voice,
-        providerFlow: 'gemini+openai',
+        providerFlow: 'openai-tts',
       });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error?.message || 'Could not synthesize read-aloud audio.' });

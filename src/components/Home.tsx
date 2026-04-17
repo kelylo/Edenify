@@ -350,23 +350,22 @@ const Home: React.FC = () => {
       scriptureAudioRef.current.currentTime = 0;
       scriptureAudioRef.current = null;
     }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     setIsReadingScriptureAloud(false);
   }, []);
 
   const readScriptureAloud = useCallback(async () => {
-    const flattenedPassage = scripturePages.flat();
-    const versesToRead = flattenedPassage.length > 0
-      ? flattenedPassage
+    const versesToRead = activeScripturePage.length > 0
+      ? activeScripturePage
           .map((verse) => `${verse.bookName} ${verse.chapter}:${verse.verse}. ${verse.text}`)
           .join(' ')
-      : activeScripturePage.length > 0
-        ? activeScripturePage
-            .map((verse) => `${verse.bookName} ${verse.chapter}:${verse.verse}. ${verse.text}`)
-            .join(' ')
-        : bibleReading.text;
-    const textToRead = `${bibleReading.passage}. ${versesToRead}`.trim();
+      : bibleReading.text;
+    const textToRead = `${activeScriptureLabel}. ${versesToRead}`.trim();
+    const ttsInput = textToRead.slice(0, 3500);
 
-    if (!textToRead) {
+    if (!ttsInput) {
       setNotificationStatus('No scripture text is available to read aloud yet.');
       return;
     }
@@ -382,7 +381,7 @@ const Home: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          text: textToRead,
+          text: ttsInput,
           voice: 'alloy',
         }),
       });
@@ -410,11 +409,34 @@ const Home: React.FC = () => {
       await audio.play();
       setNotificationStatus('Reading aloud with OpenAI voice.');
     } catch (error: any) {
+      // Fallback to browser speech so the button always does something useful.
+      try {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(ttsInput);
+          utterance.rate = 0.96;
+          utterance.pitch = 1;
+          utterance.onend = () => {
+            setIsReadingScriptureAloud(false);
+            setNotificationStatus('Read aloud finished.');
+          };
+          utterance.onerror = () => {
+            setIsReadingScriptureAloud(false);
+            setNotificationStatus('Read aloud failed.');
+          };
+          window.speechSynthesis.speak(utterance);
+          setNotificationStatus('Read aloud fallback enabled (device voice).');
+          return;
+        }
+      } catch {
+        // Ignore fallback errors and surface original issue below.
+      }
+
       scriptureAudioRef.current = null;
       setIsReadingScriptureAloud(false);
       setNotificationStatus(error?.message || 'Read aloud failed. Please try again.');
     }
-  }, [activeScripturePage, bibleReading.passage, bibleReading.text, scripturePages, stopScriptureReading]);
+  }, [activeScriptureLabel, activeScripturePage, bibleReading.text, stopScriptureReading]);
 
   const favoriteFocusTrack = useMemo(() => {
     const names = user?.preferences.customFocusPlaylistNames || [];

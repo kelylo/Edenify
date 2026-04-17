@@ -92,6 +92,32 @@ Result:
 - Telegram bot remains available 24/7 without your PC being on.
 - Wake-up delay is minimized on free tier.
 
+## Free Autonomous Mode (No Render, No VS Code Open)
+
+You can run this bot without paid Render and without keeping your laptop/VS Code open.
+
+This repo includes a GitHub Actions workflow:
+
+- `.github/workflows/telegram-standalone-cron.yml`
+
+How it works:
+
+1. Every 5 minutes, GitHub Actions runs the bot once (`BOT_RUN_MODE=once`).
+2. It processes pending Telegram updates and due reminders, then exits.
+3. No always-on local machine is required.
+
+Setup:
+
+1. In GitHub repo settings, open `Settings -> Secrets and variables -> Actions`.
+2. Add secret: `TELEGRAM_BOT_TOKEN`.
+3. Push to `main` (workflow runs on schedule), or trigger manually via `Actions -> Telegram Standalone Cron -> Run workflow`.
+
+Notes:
+
+- GitHub scheduled workflows run at best-effort timing and minimum interval is 5 minutes.
+- This is zero-cost and autonomous, but reminders may be delayed by a few minutes compared with a true always-on server.
+- For near-instant command replies and second-level reminder precision, an always-on host is still required.
+
 ## Notes
 
 - Default todo storage file: `telegram-standalone/data/store.json`

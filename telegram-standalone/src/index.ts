@@ -48,6 +48,9 @@ interface ChatStore {
 
 interface BotStore {
   chats: Record<string, ChatStore>;
+  meta?: {
+    updateOffset?: number;
+  };
 }
 
 interface BibleDayEntry {
@@ -104,6 +107,7 @@ const reminderLeadMs = 5 * 60 * 1000;
 const reminderIntervalMs = 30 * 1000;
 const defaultScriptureFirstTime = '06:30';
 const defaultScriptureSecondTime = '20:30';
+const runMode = (process.env.BOT_RUN_MODE || 'daemon').trim().toLowerCase();
 
 const bot = new Telegraf(botToken);
 
@@ -380,11 +384,12 @@ async function readStore(): Promise<BotStore> {
     const parsed = JSON.parse(raw) as BotStore;
     return {
       chats: parsed.chats || {},
+      meta: parsed.meta || {},
     };
   } catch (error) {
     const maybeNodeError = error as NodeJS.ErrnoException;
     if (maybeNodeError.code === 'ENOENT') {
-      return { chats: {} };
+      return { chats: {}, meta: {} };
     }
     throw error;
   }
@@ -404,6 +409,32 @@ async function mutateChat(chatId: string, mutate: (chat: ChatStore) => void): Pr
   store.chats[chatId] = chat;
   await writeStore(store);
   return chat;
+}
+
+async function processPendingUpdates(limit = 100): Promise<number> {
+  const store = await readStore();
+  let offset = store.meta?.updateOffset || 0;
+  let processed = 0;
+
+  for (let batch = 0; batch < 5; batch += 1) {
+    const updates = await bot.telegram.getUpdates(0, limit, offset, ['message']);
+
+    if (!updates.length) break;
+
+    for (const update of updates) {
+      await bot.handleUpdate(update);
+      processed += 1;
+      offset = Math.max(offset, update.update_id + 1);
+    }
+  }
+
+  if (offset !== (store.meta?.updateOffset || 0)) {
+    store.meta = store.meta || {};
+    store.meta.updateOffset = offset;
+    await writeStore(store);
+  }
+
+  return processed;
 }
 
 async function loadBiblePlan(): Promise<BiblePlan> {
@@ -1123,6 +1154,15 @@ async function start(): Promise<void> {
   await fs.mkdir(path.dirname(storePath), { recursive: true });
   await loadBiblePlan();
   await loadBibleVerses();
+
+  if (runMode === 'once') {
+    const processed = await processPendingUpdates();
+    await processTaskReminders();
+    await processScriptureReminders();
+    console.log(`[telegram-standalone] One-shot run complete. Updates processed: ${processed}`);
+    return;
+  }
+
   await bot.launch();
 
   const webServer = createServer((req, res) => {
@@ -1153,6 +1193,7 @@ async function start(): Promise<void> {
   console.log(`[telegram-standalone] Bible plan file: ${biblePlanPath}`);
   console.log(`[telegram-standalone] Bible database file: ${bibleDbPath}`);
   console.log(`[telegram-standalone] Reminder interval ms: ${reminderIntervalMs}`);
+  console.log(`[telegram-standalone] Run mode: ${runMode}`);
 }
 
 void start();

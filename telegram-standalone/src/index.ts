@@ -1110,7 +1110,7 @@ bot.command('scripturestart', async (ctx) => {
   );
 });
 
-bot.on('text', async (ctx) => {
+bot.on('text', async (ctx, next) => {
   const text = messageTextFrom(ctx);
   const known = new Set([
     'start',
@@ -1138,7 +1138,7 @@ bot.on('text', async (ctx) => {
       await ctx.reply('Unknown command. Type /help to see all commands.');
       return;
     }
-    return;
+    return next();
   }
 
   await ctx.reply('I did not understand that. Type /help to see commands.');
@@ -1201,7 +1201,16 @@ async function start(): Promise<void> {
     return;
   }
 
-  await bot.launch();
+  try {
+    await bot.launch();
+  } catch (error) {
+    const description = String((error as { response?: { description?: string } })?.response?.description || '');
+    if (description.includes('terminated by other getUpdates request')) {
+      console.warn('[telegram-standalone] Another polling instance is running. Exiting this duplicate instance.');
+      return;
+    }
+    throw error;
+  }
 
   const webServer = createServer((req, res) => {
     const url = req.url || '/';
@@ -1234,7 +1243,10 @@ async function start(): Promise<void> {
   console.log(`[telegram-standalone] Run mode: ${runMode}`);
 }
 
-void start();
+void start().catch((error) => {
+  console.error('[telegram-standalone] Fatal startup error:', error);
+  process.exitCode = 1;
+});
 
 process.once('SIGINT', () => {
   bot.stop('SIGINT');

@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, BellRing, CheckCircle2, Circle, Loader2, Maximiz
 import { cn, getDailyTaskStats, getProgress, isTaskCompletedForToday, isTaskScheduledForToday, parseTaskDueDate, requestMediaPermission, isTaskFailedByDuration } from '../lib/utils';
 import { getEdenInsight, suggestTaskWithGemini } from '../services/gemini';
 import { BibleVerse, getChapter, getSuggestedVerse, searchBibleByReference, searchVerses, searchVersesFast } from '../services/bible';
-import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync } from '../services/notifications';
+import { sendCrossChannelNotification, areNotificationsEnabled, registerBibleReminderSync, unregisterBibleReminderSync } from '../services/notifications';
 import { playTaskAlarm, playBibleReminderAlarm, stopAlarm as stopPlaybackAlarm } from '../services/alarm-playback';
 import { analyzeMostRepeatedTasks } from '../services/taskAnalytics';
 import { EDEN_TEMPLATE_COUNT, EdenTemplate, getEdenTypingSuggestions, getRecommendedEdenTemplates } from '../services/taskTemplates';
@@ -108,24 +108,6 @@ const parseAnyTimeTo24 = (value: string) => {
   return null;
 };
 
-const buildTwiceDailyReminderSlots = (preferredTime: string) => {
-  const primary = parseAnyTimeTo24(preferredTime || '06:30 AM') || '06:30';
-  const [primaryHour, primaryMinute] = primary.split(':').map(Number);
-
-  const secondaryHourRaw = Number(primaryHour) + 12;
-  const secondaryHour = secondaryHourRaw >= 24 ? secondaryHourRaw - 24 : secondaryHourRaw;
-  const secondary = `${pad2(secondaryHour)}:${pad2(Number(primaryMinute) || 0)}`;
-
-  return [primary, secondary].map((value, index) => {
-    const [hour, minute] = value.split(':').map(Number);
-    return {
-      hour,
-      minute,
-      key: `${pad2(hour)}:${pad2(minute)}`,
-      label: index === 0 ? 'primary' : 'follow-up',
-    };
-  });
-};
 
 const useDebouncedValue = <T,>(value: T, delayMs: number) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -251,16 +233,13 @@ const Home: React.FC = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   })();
 
-  const reminderTimeoutsRef = useRef<Record<string, number>>({});
   const alarmTimeoutsRef = useRef<Record<string, number>>({});
-  const triggeredRef = useRef<Set<string>>(new Set());
   const alarmTriggeredRef = useRef<Set<string>>(new Set());
   const scripturePageRef = useRef<HTMLDivElement | null>(null);
   const reflectionComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const taskPreviewMediaRef = useRef<HTMLAudioElement | null>(null);
   const taskPreviewAudioRef = useRef<AudioContext | null>(null);
   const taskPreviewEndRef = useRef<number | null>(null);
-  const bibleReminderTriggeredRef = useRef<Record<string, boolean>>({});
   const academicReminderTimeoutRef = useRef<number | null>(null);
   const academicReminderTriggeredDateRef = useRef('');
   const audioFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1226,8 +1205,6 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     const clearAllScheduledTimeouts = () => {
-      (Object.values(reminderTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
-      reminderTimeoutsRef.current = {};
       (Object.values(alarmTimeoutsRef.current) as number[]).forEach((timeoutId) => window.clearTimeout(timeoutId));
       alarmTimeoutsRef.current = {};
     };
@@ -1246,19 +1223,6 @@ const Home: React.FC = () => {
       return reminderDue;
     };
 
-    const triggerReminder = async (task: Task, reminderKey: string) => {
-      if (triggeredRef.current.has(reminderKey)) return;
-      triggeredRef.current.add(reminderKey);
-
-      const layerName = layers.find((layer) => layer.id === task.layerId)?.name || 'General';
-      await pushReminderEvent('Task reminder', `${task.name} from ${layerName} starts in 5 minutes.`, task.id);
-
-      if (user?.preferences.notifications.taskReminders) {
-        await tryBrowserNotification('Edenify Task Reminder', `${task.name} from ${layerName} starts in 5 minutes.`);
-      }
-      setNotificationStatus(`${task.name} from ${layerName} is coming in 5 minutes.`);
-    };
-
     const triggerAlarm = async (task: Task, alarmKey: string) => {
       if (alarmTriggeredRef.current.has(alarmKey)) return;
       alarmTriggeredRef.current.add(alarmKey);
@@ -1274,7 +1238,6 @@ const Home: React.FC = () => {
     clearAllScheduledTimeouts();
 
     const now = Date.now();
-    const remindersEnabled = Boolean(user?.preferences.notifications.taskReminders);
     tasks.forEach((task) => {
       if (isTaskCompletedForToday(task) || task.alarmEnabled === false) return;
 
@@ -1284,19 +1247,10 @@ const Home: React.FC = () => {
       const dueMs = reminderDue.getTime();
       if (dueMs <= now) return;
 
-      const reminderAtMs = dueMs - 5 * 60 * 1000;
-      const delay = reminderAtMs <= now ? 500 : reminderAtMs - now;
-      const reminderKey = `${task.id}|${reminderDue.toISOString().slice(0, 16)}`;
       const alarmDelay = dueMs <= now ? 500 : dueMs - now;
       const alarmKey = `${task.id}|alarm|${reminderDue.toISOString().slice(0, 16)}`;
 
-      if (delay > 1000 * 60 * 60 * 26) return;
-
-      if (remindersEnabled) {
-        reminderTimeoutsRef.current[reminderKey] = window.setTimeout(() => {
-          void triggerReminder(task, reminderKey);
-        }, delay);
-      }
+      if (alarmDelay > 1000 * 60 * 60 * 26) return;
 
       alarmTimeoutsRef.current[alarmKey] = window.setTimeout(() => {
         void triggerAlarm(task, alarmKey);
@@ -1398,70 +1352,13 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (!user.preferences.notifications.dailyScripture) return;
+    if (user.preferences.notifications.dailyScripture) {
+      void registerBibleReminderSync();
+      return;
+    }
 
-    void registerBibleReminderSync();
-
-    const preferredTime = user.preferences.bibleReminderTime || '06:30 AM';
-    const reminderSlots = buildTwiceDailyReminderSlots(preferredTime);
-
-    const fireBibleReminder = async (slotLabel: string, dateSlotKey: string) => {
-      if (bibleReminderTriggeredRef.current[dateSlotKey]) return;
-      bibleReminderTriggeredRef.current[dateSlotKey] = true;
-
-      try {
-        const cleanLabel = slotLabel === 'primary' ? 'Primary' : 'Follow-up';
-        await pushReminderEvent(`Bible reminder (${cleanLabel})`, `Day ${bibleReading.day}: ${bibleReading.passage}`);
-        await tryBrowserNotification('Edenify Bible Reading', `Day ${bibleReading.day}: ${bibleReading.passage}`);
-
-        if (user?.preferences.bibleReminderAlarm) {
-          await playBibleReminderAlarm(getDefaultAlarmFromPreferences()?.dataUrl);
-        }
-      } catch (err) {
-        console.error('[Bible Reminder] Error during execution:', err);
-      }
-    };
-
-    const checkBibleReminderSlots = () => {
-      const now = new Date();
-      const todayKey = format(now, 'yyyy-MM-dd');
-
-      reminderSlots.forEach((slot) => {
-        const scheduledToday = new Date(now);
-        scheduledToday.setHours(slot.hour, slot.minute, 0, 0);
-
-        const lagMs = now.getTime() - scheduledToday.getTime();
-        const dateSlotKey = `${todayKey}|${slot.key}`;
-
-        // Fire if due now or app resumed within 6 hours of scheduled slot.
-        if (lagMs >= 0 && lagMs <= 6 * 60 * 60 * 1000) {
-          void fireBibleReminder(slot.label, dateSlotKey);
-        }
-      });
-    };
-
-    checkBibleReminderSlots();
-    const catchUpId = window.setInterval(checkBibleReminderSlots, 60_000);
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') return;
-      checkBibleReminderSlots();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
-    return () => {
-      window.clearInterval(catchUpId);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
-  }, [
-    user?.id,
-    user?.preferences.notifications.dailyScripture,
-    user?.preferences.bibleReminderAlarm,
-    user?.preferences.bibleReminderTime,
-    bibleReading.day,
-    bibleReading.passage,
-  ]);
+    void unregisterBibleReminderSync();
+  }, [user?.id, user?.preferences.notifications.dailyScripture]);
 
   useEffect(() => {
     if (!showScripturePage) return;

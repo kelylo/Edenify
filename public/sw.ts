@@ -110,6 +110,7 @@ async function checkBackgroundReminder(): Promise<void> {
   try {
     const response = await fetch('/api/user/reminder-check', {
       method: 'GET',
+      credentials: 'include',
     }).catch(() => null);
 
     if (!response || !response.ok) {
@@ -120,19 +121,31 @@ async function checkBackgroundReminder(): Promise<void> {
     const data = await response.json();
     
     if (data.shouldNotify && data.reminder) {
-      const title = data.reminder.title || 'Edenify Reminder';
+      const reminderKey = String(data.reminder.key || '').trim();
+      const title = String(data.reminder.title || '').trim();
+      const body = String(data.reminder.body || '').trim();
+      const tag = String(data.reminder.tag || '').trim();
+      if (!reminderKey || !title || !body || !tag) {
+        return;
+      }
+
+      const existing = await self.registration.getNotifications({ tag }).catch(() => [] as Notification[]);
+      if (Array.isArray(existing) && existing.length > 0) {
+        return;
+      }
+
       const options = {
-        body: data.reminder.body || 'Time for your reminder',
+        body,
         icon: '/edenify-logo.png',
         badge: '/edenify-logo.png',
-        tag: data.reminder.tag || 'edenify-reminder',
+        tag,
         renotify: true,
         vibrate: [240, 120, 240, 120, 240],
         requireInteraction: true,
         data: { 
           url: data.reminder.taskId ? `/?tab=home&taskId=${encodeURIComponent(String(data.reminder.taskId))}` : '/?tab=home', 
           isReminder: true, 
-          reminderKey: data.reminder.key,
+          reminderKey,
           shouldPlayAlarm: true 
         },
       };
@@ -142,8 +155,9 @@ async function checkBackgroundReminder(): Promise<void> {
 
       await fetch('/api/user/reminder-sent', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: data.reminder.key }),
+        body: JSON.stringify({ key: reminderKey }),
       }).catch(() => null);
     }
   } catch (error) {

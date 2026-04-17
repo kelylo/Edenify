@@ -1048,11 +1048,12 @@ async function startServer() {
         if (!due) continue;
 
         const dueStamp = due.toISOString().slice(0, 16);
-        const reminderAt = due.getTime() - 5 * 60 * 1000;
-        const reminderKey = `${sessionUserId}|sw|${task.id}|${dueStamp}|reminder`;
         const alarmKey = `${sessionUserId}|sw|${task.id}|${dueStamp}|alarm`;
 
         if (!db.reminders[alarmKey] && nowMs >= due.getTime() - 60_000 && nowMs <= due.getTime() + 75_000) {
+          // Pre-lock reminder key before returning to avoid duplicate notifications if client ack fails.
+          db.reminders[alarmKey] = new Date().toISOString();
+          writeDb(DB_PATH, db);
           res.json({
             shouldNotify: true,
             reminder: {
@@ -1066,46 +1067,10 @@ async function startServer() {
           return;
         }
 
-        if (!db.reminders[reminderKey] && nowMs >= reminderAt - 60_000 && nowMs <= reminderAt + 75_000) {
-          res.json({
-            shouldNotify: true,
-            reminder: {
-              key: reminderKey,
-              title: 'Task reminder',
-              body: `${task.name} starts in 5 minutes (${task.time}).`,
-              tag: `task-reminder-${task.id}`,
-              taskId: task.id,
-            },
-          });
-          return;
-        }
       }
 
-      if (prefs.notifications?.dailyScripture) {
-        const parsedTime = parseBibleReminderTime(String(prefs.bibleReminderTime || defaultUserPreferences.bibleReminderTime));
-        if (parsedTime) {
-          const scheduled = new Date(now);
-          scheduled.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
-          const deltaMs = nowMs - scheduled.getTime();
-          const catchUpWindowMs = 6 * 60 * 60 * 1000;
-          const dateKey = now.toISOString().slice(0, 10);
-          const bibleReminderKey = `${sessionUserId}|sw|bible-reminder|${dateKey}`;
-
-          if (!db.reminders[bibleReminderKey] && deltaMs >= -120_000 && deltaMs <= catchUpWindowMs) {
-            const reading = userData.bibleReading || {};
-            res.json({
-              shouldNotify: true,
-              reminder: {
-                key: bibleReminderKey,
-                title: `Daily Scripture${reading?.day ? ` (Day ${reading.day})` : ''}`,
-                body: reading?.passage || 'Time to read your daily Scripture passage.',
-                tag: 'bible-reminder',
-              },
-            });
-            return;
-          }
-        }
-      }
+      // Bible reminders are delivered strictly through the scheduled Bible task.
+      // No additional fallback/default scripture reminder is emitted here.
 
       res.json({ shouldNotify: false });
     } catch (error) {

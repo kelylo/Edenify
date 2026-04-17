@@ -78,16 +78,6 @@ function buildNativeAlarms(tasks: Task[], user: User): NativeAlarmItem[] {
     const horizonMs = 48 * 60 * 60 * 1000;
     if (dueDate.getTime() - nowMs > horizonMs) return;
 
-    const reminderDate = new Date(dueDate.getTime() - 5 * 60 * 1000);
-    if (reminderDate.getTime() > nowMs) {
-      items.push({
-        id: `${task.id}|reminder|${dueDate.toISOString().slice(0, 16)}`,
-        title: 'Edenify Reminder',
-        body: `${task.name} starts in 5 minutes (${task.time}).`,
-        dueAt: reminderDate.toISOString(),
-      });
-    }
-
     const audioDataUrl = task.customAlarmAudioDataUrl || defaultUploadedAudio?.dataUrl;
     const audioFileName = task.customAlarmAudioName || defaultUploadedAudio?.name;
     items.push({
